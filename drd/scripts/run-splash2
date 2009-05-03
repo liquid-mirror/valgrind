@@ -10,53 +10,69 @@ function run_test {
   local tmp avg1 stddev1 avg2 stddev2 avg4 stddev4 p
 
   tmp="/tmp/test-timing.$$"
-  rm -f "${tmp}"
 
+  rm -f "${tmp}"
   p=1
   test_output="${1}-p${p}.out" measure_runtime "$@" -p${psep}${p} "${test_args}" | avgstddev > "$tmp"
-  read avg1 stddev1 vsz1 vszdev1 < "$tmp"
+  read avg1 stddev1 vsz1 vszdev1 rest < "$tmp"
   echo "Average time: ${avg1} +/- ${stddev1} seconds." \
        " VSZ: ${vsz1} +/- ${vszdev1} KB"
 
+  if [ "${rest}" != "" ]; then
+    echo "Internal error ($rest)"
+    exit 1
+  fi
+
+  rm -f "${tmp}"
   p=2
   test_output="${1}-p${p}.out" measure_runtime "$@" -p${psep}${p} "${test_args}" | avgstddev > "$tmp"
-  read avg2 stddev2 vsz2 vszdev2 < "$tmp"
+  read avg2 stddev2 vsz2 vszdev2 rest < "$tmp"
   echo "Average time: ${avg2} +/- ${stddev2} seconds." \
        " VSZ: ${vsz2} +/- ${vszdev2} KB"
 
+  if [ "${rest}" != "" ]; then
+    echo "Internal error ($rest)"
+    exit 1
+  fi
+
+  rm -f "${tmp}"
   p=4
   test_output="${1}-p${p}.out" measure_runtime "$@" -p${psep}${p} "${test_args}" | avgstddev > "$tmp"
-  read avg4 stddev4 vsz4 vszdev4 < "$tmp"
+  read avg4 stddev4 vsz4 vszdev4 rest < "$tmp"
   echo "Average time: ${avg4} +/- ${stddev4} seconds." \
        " VSZ: ${vsz4} +/- ${vszdev4} KB"
+  rm -f "$tmp"
+
+  if [ "${rest}" != "" ]; then
+    echo "Internal error ($rest)"
+    exit 1
+  fi
 
   p=1
   test_output="/dev/null" \
-  print_runtime_ratio ${avg1} ${stddev1} ${vsz1} ${vszdev1} $VG --tool=none "$@" -p${psep}${p} "${test_args}"
+  print_runtime_ratio "${avg1}" "${stddev1}" "${vsz1}" "${vszdev1}" "$VG" --tool=none "$@" -p${psep}${p} "${test_args}"
 
   p=4
   test_output="/dev/null" \
-  print_runtime_ratio ${avg4} ${stddev4} ${vsz4} ${vszdev4} $VG --tool=none "$@" -p${psep}${p} "${test_args}"
+  print_runtime_ratio "${avg4}" "${stddev4}" "${vsz4}" "${vszdev4}" "$VG" --tool=none "$@" -p${psep}${p} "${test_args}"
 
   p=4
   test_output="${1}-drd-with-stack-var-4.out" \
-  print_runtime_ratio ${avg4} ${stddev4} ${vsz4} ${vszdev4} \
-    $VG --tool=drd --first-race-only=yes --check-stack-var=yes \
+  print_runtime_ratio "${avg4}" "${stddev4}" "${vsz4}" "${vszdev4}" \
+    "$VG" --tool=drd --first-race-only=yes --check-stack-var=yes \
     "$@" -p${psep}${p} "${test_args}"
 
   p=4
   test_output="${1}-drd-without-stack-var-4.out" \
-  print_runtime_ratio ${avg4} ${stddev4} ${vsz4} ${vszdev4} \
-    $VG --tool=drd --first-race-only=yes --check-stack-var=no \
-   "$@" -p${psep}${p} "${test_args}"
+  print_runtime_ratio "${avg4}" "${stddev4}" "${vsz4}" "${vszdev4}" \
+    "$VG" --tool=drd --first-race-only=yes --check-stack-var=no \
+    "$@" -p${psep}${p} "${test_args}"
 
   p=4
   test_output="${1}-helgrind-4.out" \
-  print_runtime_ratio ${avg4} ${stddev4} ${vsz4} ${vszdev4} $VG --tool=helgrind "$@" -p${psep}${p} "${test_args}"
+  print_runtime_ratio "${avg4}" "${stddev4}" "${vsz4}" "${vszdev4}" "$VG" --tool=helgrind "$@" -p${psep}${p} "${test_args}"
 
   echo ''
-
-  rm -f "$tmp"
 }
 
 
@@ -111,33 +127,30 @@ fi
 #   DRD uses a granularity of four bytes.
 # - Helgrind does detect data races on stack variables. DRD only detects
 #   data races on stack variables with --check-stack-var=yes.
-# - There is an artificial upper limit in Helgrind on the number
-#   of segments (--max-segment-set-size=<n>). This will cause real
-#   data races to be suppressed for small values of <n>.
-# - The ITC tests have been run on a 4-way 2.5 GHz Pentium 4 workstation.
-#   Not yet clear to me: have these tests been run on a 32-bit or on a 64-bit
-#   OS ? Which OS ? Which granularity does ITC use ? And which m4 macro's
-#   have been used by ITC as implementation of the synchronization primitives ?
+# - The ITC tests have been run on a 4-way 2.5 GHz Pentium 4 workstation, most
+#   likely running a 32-bit OS. Not yet clear to me: which OS ? Which
+#   granularity does ITC use ? And which m4 macro's have been used by ITC as
+#   implementation of the synchronization primitives ?
 #
-####################################################################################################################################
-# Results:                native       native       native       none     none       DRD       DRD      HG         HG-hb     ITC ITC
-#                         -p1          -p2          -p4           -p1      -p4       -p4      -p4+f     -p4        -p4     -p4 -p4+f
-# ..................................................................................................................................
-# Cholesky                0.09  11880  0.06  21888  0.56  41883 12.1  5.2  4.8 2.17   17 2.33  13 2.33   16  3.62   16  4.33 239  82
-# FFT                     0.02   6560  0.02  15784  0.02  31835 16.0  8.5 17.0 2.53   91 2.68 107 2.81  306  4.25   83  4.97  90  41
-# LU, contiguous          0.07   3968  0.04  12176  0.05  28584 12.3 13.4 18.2 2.73  103 2.84  93 2.84  207  4.52  181  5.36 428 128
-# Ocean, contiguous       0.22  16720  0.20  25256  0.17  42392  6.4  3.9  9.2 2.17   59 2.30  44 2.30   67  3.61   67  4.15  90  28
-# Radiosity               
-# Radix                   0.20  15008  0.10  23200  0.11  39592 12.7  4.3 23.5 2.25   57 2.38  53 2.48  157  3.80   75  4.41 222  56
-# Raytrace                0.61 206976  0.47 215509  0.47 232235  8.8  1.2 11.5 1.21  245 1.44  85 1.46  108  2.11   83  3.61 172  53
-# Water-n2                0.16  10560  0.09  26944  0.10  59704 13.6  5.7 22.1 1.84 2368 2.18  85 2.18  117  3.12  105  3.60 189  39
-# Water-sp                0.19   4312  0.10  13400  0.10  29496 10.8 12.4 20.9 2.60  248 2.69  60 2.83  105  4.32   98  5.20 183  34
-# ..................................................................................................................................
-# geometric mean          0.13  12823  0.09  25655  0.12  47561 11.2 5.53 14.3 2.13  129 2.31  58 2.36  104  3.58   75  4.41 180  51
-# ..................................................................................................................................
-# Hardware: dual-core Intel Core2 Duo E6750, 2.66 GHz, 4 MB L2 cache, 2 GB RAM.                                             
-# Software: openSUSE 11.0, 64-bit, gcc 4.3.1, runlevel 3.                                                                   
-####################################################################################################################################
+#     1                    2     3      4      5      6     7     8    9   10   11   12  13   14  15   16    17   18    19
+###########################################################################################################################
+# Results:                native       native       native       none      none       DRD       DRD      HG         ITC ITC
+#                         -p1          -p2          -p4           -p1       -p4       -p4      -p4+f     -p4      -p4 -p4+f
+# .........................................................................................................................
+# Cholesky                0.09  11880  0.07  21888  0.65  41883 13.2  4.86  2.5 2.08   19 2.34  13 2.53   29  6.04  239  82
+# FFT                     0.03   6560  0.02  15101  0.02  32176 21.0  7.92 20.5 2.41  118 2.81  53 3.06  120  5.42   90  41
+# LU, contiguous          0.07   3968  0.05  12176  0.06  28584 14.8 12.29 21.0 2.62  124 2.87  74 3.16  157  5.53  428 128
+# Ocean, contiguous       0.19  23208  0.18  31744  0.13  48888  6.7  3.75 10.6 2.09   69 2.52  43 2.71  264  5.95   90  28
+# Radix                   0.20  15008  0.11  23200  0.11  39592 13.1  4.06 22.6 2.17   56 2.61  41 2.82  111  6.11  222  56
+# Raytrace                0.66 206976  0.47 215168  0.47 232235  8.4  1.22 10.8 1.20  272 1.53  88 1.56  211  3.79  172  53
+# Water-n2                0.19  10560  0.09  26944  0.10  59704 12.9  5.40 24.0 1.79 3793 2.92 621 2.95  109  3.54  189  39
+# Water-sp                0.21   4312  0.10  13400  0.10  29496 10.2 11.41 22.0 2.52  279 3.03  55 5.55   97  4.76  183  34
+# .........................................................................................................................
+# geometric mean          0.14  13360  0.09  26319  0.12  48476 11.9  5.21 14.0 2.06  154 2.53  64 2.88  117  5.05  180  51
+# .........................................................................................................................
+# Hardware: dual-core Intel Core2 Duo E6750, 2.66 GHz, 4 MB L2 cache, 2 GB RAM.                                    
+# Software: openSUSE 11.0 (64-bit edition), runlevel 3, gcc 4.3.1, 32 bit executables, valgrind trunk r9629.
+###########################################################################################################################
 
 ####
 # Notes:

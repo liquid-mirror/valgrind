@@ -50,8 +50,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	movx.stderr.exp movx.stdout.exp movx.vgtest \
 	pushpopseg.stderr.exp pushpopseg.stdout.exp pushpopseg.vgtest \
 	sbbmisc.stderr.exp sbbmisc.stdout.exp sbbmisc.vgtest \
-	seg_override.stderr.exp seg_override.stdout.exp seg_override.vgtest \
-	sigcontext.stdout.exp sigcontext.stderr.exp sigcontext.vgtest \
 	smc1.stderr.exp smc1.stdout.exp smc1.vgtest \
 	ssse3_misaligned.stderr.exp ssse3_misaligned.stdout.exp \
 	ssse3_misaligned.vgtest \
@@ -59,32 +57,48 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	yield.stderr.exp yield.stdout.exp yield.disabled
 
 check_PROGRAMS = \
-	badseg bt_everything bt_literal \
+	badseg \
+	bt_everything \
+	bt_literal \
 	bug125959-x86 \
 	bug126147-x86 \
 	bug132813-x86 \
 	bug135421-x86 \
 	bug137714-x86 \
 	bug152818-x86 \
-	cmpxchg8b cpuid cse_fail \
-	faultstatus fcmovnu fpu_lazy_eflags fxtract \
-	getseg incdec_alt $(INSN_TESTS) \
+	cmpxchg8b \
+	cpuid \
+	cse_fail \
+	faultstatus \
+        fcmovnu \
+        fpu_lazy_eflags \
+        fxtract \
+	getseg \
+        incdec_alt \
+        $(INSN_TESTS) \
+        int \
 	jcxz \
-	lahf looper movx int pushpopseg sbbmisc \
-	seg_override sigcontext smc1 yield
+	lahf \
+        looper \
+        movx \
+        pushpopseg \
+        sbbmisc \
+        smc1 \
+        yield
 if BUILD_SSSE3_TESTS
  check_PROGRAMS += ssse3_misaligned
 endif
 
-AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
-AM_CXXFLAGS += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
-AM_CCASFLAGS = @FLAG_M32@
+
+AM_CFLAGS    += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
+AM_CXXFLAGS  += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
+AM_CCASFLAGS += @FLAG_M32@
 
 
 # generic C ones
-cpuid_SOURCES 		= cpuid_c.c cpuid_s.s
+cpuid_SOURCES 		= cpuid_c.c cpuid_s.S
 # fpu_lazy_eflags must use these flags -- the bug only occurred with them
-fpu_lazy_eflags_CFLAGS	= @FLAG_M32@ -O2 -march=pentiumpro
+fpu_lazy_eflags_CFLAGS	= $(AM_CFLAGS) -O2 -march=pentiumpro
 fxtract_LDADD		= -lm
 insn_basic_SOURCES	= insn_basic.def
 insn_basic_LDADD	= -lm

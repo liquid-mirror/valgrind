@@ -163,7 +163,8 @@ Addr first_address_with_same_uword_lsb(const Addr a)
    return (a & (~UWORD_LSB_MASK << ADDR_IGNORED_BITS));
 }
 
-/** First address that will go in the UWord past the one 'a' goes in.
+/**
+ * First address that will go in the UWord past the one 'a' goes in.
  *
  *  @param a Address.
  */
@@ -241,12 +242,20 @@ static __inline__ void bm0_clear_range(UWord* bm0,
                                        const UWord a, const SizeT size)
 {
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
-   tl_assert(size > 0);
    tl_assert(address_msb(make_address(0, a)) == 0);
-   tl_assert(address_msb(make_address(0, a + size - 1)) == 0);
-   tl_assert(uword_msb(a) == uword_msb(a + size - 1));
+   tl_assert(address_msb(make_address(0, a) + size) == 0);
+   tl_assert(size == 0 || uword_msb(a) == uword_msb(a + size - 1));
 #endif
-   bm0[uword_msb(a)] &= ~(((UWord)1 << size) - 1) << uword_lsb(a);
+   /*
+    * Note: although the expression below yields a correct result even if 
+    * size == 0, do not touch bm0[] if size == 0 because this might otherwise
+    * cause an access of memory just past the end of the bm0[] array.
+    */
+   if (size > 0)
+   {
+      bm0[uword_msb(a)]
+         &= ~((((UWord)1 << size) - 1) << uword_lsb(a));
+   }
 }
 
 /** Test whether the bit corresponding to address a is set in bitmap bm0. */

@@ -27,6 +27,8 @@ EXTRA_DIST =                                        \
 	circular_buffer.stderr.exp-with-atomic-builtins		\
 	circular_buffer.stderr.exp-without-atomic-builtins	\
 	circular_buffer.vgtest			    \
+	custom_alloc.vgtest			    \
+	custom_alloc.stderr.exp			    \
 	drd_bitmap_test.stderr.exp                  \
 	drd_bitmap_test.stdout.exp                  \
 	drd_bitmap_test.vgtest                      \
@@ -98,6 +100,8 @@ EXTRA_DIST =                                        \
 	pth_create_chain.stderr.exp                 \
 	pth_create_chain.stderr.exp-ppc             \
 	pth_create_chain.vgtest                     \
+	pth_create_glibc_2_0.stderr.exp             \
+	pth_create_glibc_2_0.vgtest                 \
 	pth_detached.stderr.exp                     \
 	pth_detached.stdout.exp                     \
 	pth_detached.vgtest                         \
@@ -232,6 +236,10 @@ endif
 
 if HAVE_PTHREAD_BARRIER
 check_PROGRAMS += matinv pth_barrier pth_barrier_race pth_barrier_reinit
+endif
+
+if HAVE_PTHREAD_CREATE_GLIBC_2_0
+check_PROGRAMS += pth_create_glibc_2_0
 endif
 
 if HAVE_PTHREAD_SPINLOCK

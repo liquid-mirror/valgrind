@@ -117,6 +117,17 @@ void DRD_(bm_access_range)(struct bitmap* const bm,
                            const Addr a1, const Addr a2,
                            const BmAccessTypeT access_type)
 {
+   tl_assert(access_type == eLoad || access_type == eStore);
+
+   if (access_type == eLoad)
+      return DRD_(bm_access_range_load)(bm, a1, a2);
+   else
+      return DRD_(bm_access_range_store)(bm, a1, a2);
+}
+
+void DRD_(bm_access_range_load)(struct bitmap* const bm,
+                                const Addr a1, const Addr a2)
+{
    Addr b, b_next;
 
    tl_assert(bm);
@@ -128,8 +139,7 @@ void DRD_(bm_access_range)(struct bitmap* const bm,
       Addr b_start;
       Addr b_end;
       struct bitmap2* bm2;
-      UWord b0 = address_lsb(b);
-      const UWord b1 = address_msb(b);
+      UWord b0;
 
       b_next = first_address_with_higher_msb(b);
       if (b_next > a2)
@@ -137,7 +147,7 @@ void DRD_(bm_access_range)(struct bitmap* const bm,
          b_next = a2;
       }
 
-      bm2 = bm2_lookup_or_insert_exclusive(bm, b1);
+      bm2 = bm2_lookup_or_insert_exclusive(bm, address_msb(b));
       tl_assert(bm2);
 
       if (make_address(bm2->addr, 0) < a1)
@@ -147,37 +157,33 @@ void DRD_(bm_access_range)(struct bitmap* const bm,
             b_start = make_address(bm2->addr, 0);
          else
             break;
-      tl_assert(a1 <= b_start && b_start <= a2);
 
-      if (first_address_with_higher_msb(make_address(bm2->addr, 0)) < a2)
-         b_end = first_address_with_higher_msb(make_address(bm2->addr, 0));
+      if (make_address(bm2->addr + 1, 0) < a2)
+         b_end = make_address(bm2->addr + 1, 0);
       else
          b_end = a2;
-      tl_assert(a1 <= b_end && b_end <= a2);
-      tl_assert(b_start < b_end);
+
+      tl_assert(a1 <= b_start && b_start < b_end && b_end && b_end <= a2);
+      tl_assert(address_msb(b_start) == address_msb(b_end - 1));
       tl_assert(address_lsb(b_start) <= address_lsb(b_end - 1));
-      
-      if (access_type == eLoad)
+
+      if (address_lsb(b_start) == 0 && address_lsb(b_end) == 0)
+      {
+         unsigned k;
+
+         for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
+         {
+            bm2->bm1.bm0_r[k] = ~(UWord)0;
+         }
+      }
+      else
       {
          for (b0 = address_lsb(b_start); b0 <= address_lsb(b_end - 1); b0++)
          {
             bm0_set(bm2->bm1.bm0_r, b0);
          }
       }
-      else
-      {
-         for (b0 = address_lsb(b_start); b0 <= address_lsb(b_end - 1); b0++)
-         {
-            bm0_set(bm2->bm1.bm0_w, b0);
-         }
-      }
    }
-}
-
-void DRD_(bm_access_range_load)(struct bitmap* const bm,
-                                const Addr a1, const Addr a2)
-{
-   DRD_(bm_access_range)(bm, a1, a2, eLoad);
 }
 
 void DRD_(bm_access_load_1)(struct bitmap* const bm, const Addr a1)
@@ -217,7 +223,62 @@ void DRD_(bm_access_load_8)(struct bitmap* const bm, const Addr a1)
 void DRD_(bm_access_range_store)(struct bitmap* const bm,
                                  const Addr a1, const Addr a2)
 {
-   DRD_(bm_access_range)(bm, a1, a2, eStore);
+   Addr b, b_next;
+
+   tl_assert(bm);
+   tl_assert(a1 < a2);
+   tl_assert(a2 < first_address_with_higher_msb(a2));
+
+   for (b = a1; b < a2; b = b_next)
+   {
+      Addr b_start;
+      Addr b_end;
+      struct bitmap2* bm2;
+      UWord b0;
+
+      b_next = first_address_with_higher_msb(b);
+      if (b_next > a2)
+      {
+         b_next = a2;
+      }
+
+      bm2 = bm2_lookup_or_insert_exclusive(bm, address_msb(b));
+      tl_assert(bm2);
+
+      if (make_address(bm2->addr, 0) < a1)
+         b_start = a1;
+      else
+         if (make_address(bm2->addr, 0) < a2)
+            b_start = make_address(bm2->addr, 0);
+         else
+            break;
+
+      if (make_address(bm2->addr + 1, 0) < a2)
+         b_end = make_address(bm2->addr + 1, 0);
+      else
+         b_end = a2;
+
+      tl_assert(a1 <= b_start && b_start < b_end && b_end && b_end <= a2);
+      tl_assert(address_msb(b_start) == address_msb(b_end - 1));
+      tl_assert(address_lsb(b_start) <= address_lsb(b_end - 1));
+
+      if (address_lsb(b_start) == 0 && address_lsb(b_end) == 0)
+      {
+         unsigned k;
+
+         for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
+         {
+            bm2->bm1.bm0_w[k] = ~(UWord)0;
+         }
+      }
+      else
+      {
+         for (b0 = address_lsb(b_start); b0 <= address_lsb(b_end - 1); b0++)
+         {
+            bm0_set(bm2->bm1.bm0_w, b0);
+         }
+      }
+   }
 }
 
 void DRD_(bm_access_store_1)(struct bitmap* const bm, const Addr a1)
@@ -257,15 +318,12 @@ void DRD_(bm_access_store_8)(struct bitmap* const bm, const Addr a1)
 Bool DRD_(bm_has)(struct bitmap* const bm, const Addr a1, const Addr a2,
                   const BmAccessTypeT access_type)
 {
-   Addr b;
-   for (b = a1; b < a2; b++)
-   {
-      if (! DRD_(bm_has_1)(bm, b, access_type))
-      {
-         return False;
-      }
-   }
-   return True;
+   tl_assert(access_type == eLoad || access_type == eStore);
+
+   if (access_type == eLoad)
+      return DRD_(bm_has_any_load)(bm, a1, a2);
+   else
+      return DRD_(bm_has_any_store)(bm, a1, a2);
 }
 
 Bool
@@ -301,8 +359,8 @@ DRD_(bm_has_any_load)(struct bitmap* const bm, const Addr a1, const Addr a2)
                break;
          tl_assert(a1 <= b_start && b_start <= a2);
 
-         if (first_address_with_higher_msb(make_address(bm2->addr, 0)) < a2)
-            b_end = first_address_with_higher_msb(make_address(bm2->addr, 0));
+         if (make_address(bm2->addr + 1, 0) < a2)
+            b_end = make_address(bm2->addr + 1, 0);
          else
             b_end = a2;
          tl_assert(a1 <= b_end && b_end <= a2);
@@ -354,8 +412,8 @@ Bool DRD_(bm_has_any_store)(struct bitmap* const bm,
                break;
          tl_assert(a1 <= b_start && b_start <= a2);
 
-         if (first_address_with_higher_msb(make_address(bm2->addr, 0)) < a2)
-            b_end = first_address_with_higher_msb(make_address(bm2->addr, 0));
+         if (make_address(bm2->addr + 1, 0) < a2)
+            b_end = make_address(bm2->addr + 1, 0);
          else
             b_end = a2;
          tl_assert(a1 <= b_end && b_end <= a2);
@@ -409,8 +467,8 @@ Bool DRD_(bm_has_any_access)(struct bitmap* const bm,
                break;
          tl_assert(a1 <= b_start && b_start <= a2);
 
-         if (first_address_with_higher_msb(make_address(bm2->addr, 0)) < a2)
-            b_end = first_address_with_higher_msb(make_address(bm2->addr, 0));
+         if (make_address(bm2->addr + 1, 0) < a2)
+            b_end = make_address(bm2->addr + 1, 0);
          else
             b_end = a2;
          tl_assert(a1 <= b_end && b_end <= a2);
@@ -453,7 +511,7 @@ Bool DRD_(bm_has_1)(struct bitmap* const bm,
    return False;
 }
 
-void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
+void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, Addr a2)
 {
    Addr b, b_next;
 
@@ -461,9 +519,22 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
    tl_assert(a1);
    tl_assert(a1 <= a2);
 
+#if 0
+   if (address_msb(a1) != address_msb(a2))
+      VG_(message)(Vg_DebugMsg, "bm_clear(bm = %p, a1 = 0x%lx, a2 = 0x%lx,"
+                   " delta = 0x%lx)", bm, a1, a2, a2 - a1);
+#endif
+
    for (b = a1; b < a2; b = b_next)
    {
-      struct bitmap2* const p2 = bm2_lookup_exclusive(bm, address_msb(b));
+      struct bitmap2* p2;
+      Addr c;
+
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b < a2);
+#endif
+
+      p2 = bm2_lookup_exclusive(bm, address_msb(b));
 
       b_next = first_address_with_higher_msb(b);
       if (b_next > a2)
@@ -471,47 +542,49 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
          b_next = a2;
       }
 
-      if (p2)
+      if (p2 == 0)
+         continue;
+
+      c = b;
+      /* If the first address in the bitmap that must be cleared does not */
+      /* start on an UWord boundary, start clearing the first addresses.  */
+      if (uword_lsb(address_lsb(c)))
       {
-         Addr c = b;
-         /* If the first address in the bitmap that must be cleared does not */
-         /* start on an UWord boundary, start clearing the first addresses.  */
-         if (uword_lsb(address_lsb(c)))
+         Addr c_next = first_address_with_higher_uword_msb(c);
+         if (c_next > b_next)
+            c_next = b_next;
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+         tl_assert(a1 <= b && b <= c && c <= c_next && c_next <= b_next
+                   && b_next <= a2);
+#endif
+         bm0_clear_range(p2->bm1.bm0_r, address_lsb(c), SCALED_SIZE(c_next - c));
+         bm0_clear_range(p2->bm1.bm0_w, address_lsb(c), SCALED_SIZE(c_next - c));
+         c = c_next;
+      }
+      /* If some UWords have to be cleared entirely, do this now. */
+      if (uword_lsb(address_lsb(c)) == 0)
+      {
+         Addr c_next = first_address_with_same_uword_lsb(b_next);
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+         tl_assert(uword_lsb(address_lsb(c)) == 0);
+         tl_assert(uword_lsb(address_lsb(c_next)) == 0);
+         tl_assert(c_next <= b_next);
+#endif
+         if (c_next > c)
          {
-            Addr c_next = first_address_with_higher_uword_msb(c);
-            if (c_next > b_next)
-               c_next = b_next;
-            bm0_clear_range(p2->bm1.bm0_r, address_lsb(c),
-                            SCALED_SIZE(c_next - c));
-            bm0_clear_range(p2->bm1.bm0_w, address_lsb(c),
-                            SCALED_SIZE(c_next - c));
+            UWord idx = uword_msb(address_lsb(c));
+            VG_(memset)(&p2->bm1.bm0_r[idx], 0, SCALED_SIZE((c_next - c) / 8));
+            VG_(memset)(&p2->bm1.bm0_w[idx], 0, SCALED_SIZE((c_next - c) / 8));
             c = c_next;
          }
-         /* If some UWords have to be cleared entirely, do this now. */
-         if (uword_lsb(address_lsb(c)) == 0)
-         {
-            const Addr c_next = first_address_with_same_uword_lsb(b_next);
-            tl_assert(uword_lsb(address_lsb(c)) == 0);
-            tl_assert(uword_lsb(address_lsb(c_next)) == 0);
-            tl_assert(c_next <= b_next);
-            if (b_next < a2)
-               tl_assert(c <= c_next);
-            if (c_next > c)
-            {
-               const UWord idx = uword_msb(address_lsb(c));
-               VG_(memset)(&p2->bm1.bm0_r[idx], 0, SCALED_SIZE((c_next - c) / 8));
-               VG_(memset)(&p2->bm1.bm0_w[idx], 0, SCALED_SIZE((c_next - c) / 8));
-               c = c_next;
-            }
-         }
-         /* If the last address in the bitmap that must be cleared does not */
-         /* fall on an UWord boundary, clear the last addresses.            */
-         /* tl_assert(c <= b_next); */
-         bm0_clear_range(p2->bm1.bm0_r, address_lsb(c),
-                         SCALED_SIZE(b_next - c));
-         bm0_clear_range(p2->bm1.bm0_w, address_lsb(c),
-                         SCALED_SIZE(b_next - c));
       }
+      /* If the last address in the bitmap that must be cleared does not */
+      /* fall on an UWord boundary, clear the last addresses.            */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      bm0_clear_range(p2->bm1.bm0_r, address_lsb(c), SCALED_SIZE(b_next - c));
+      bm0_clear_range(p2->bm1.bm0_w, address_lsb(c), SCALED_SIZE(b_next - c));
    }
 }
 
@@ -519,17 +592,84 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
  * Clear all references to loads in bitmap bm starting at address a1 and
  * up to but not including address a2.
  */
-void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, const Addr a2)
+void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, Addr a2)
 {
-   Addr a;
+   Addr b, b_next;
 
-   for (a = a1; a < a2; a++)
+   tl_assert(bm);
+   tl_assert(a1);
+   tl_assert(a1 <= a2);
+
+#if 0
+   if (address_msb(a1) != address_msb(a2))
+      VG_(message)(Vg_DebugMsg, "bm_clear_load(bm = %p, a1 = 0x%lx, a2 = 0x%lx,"
+                   " delta = 0x%lx)", bm, a1, a2, a2 - a1);
+#endif
+
+   for (b = a1; b < a2; b = b_next)
    {
-      struct bitmap2* const p2 = bm2_lookup_exclusive(bm, address_msb(a));
-      if (p2)
+      struct bitmap2* p2;
+      Addr c;
+
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b < a2);
+#endif
+
+      p2 = bm2_lookup_exclusive(bm, address_msb(b));
+
+      b_next = first_address_with_higher_msb(b);
+      if (b_next > a2)
       {
-         bm0_clear(p2->bm1.bm0_r, address_lsb(a));
+         b_next = a2;
       }
+
+      if (p2 == 0)
+         continue;
+
+      c = b;
+      /* If the first address in the bitmap that must be cleared does not */
+      /* start on an UWord boundary, start clearing the first addresses.  */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c < b_next && b_next <= a2);
+#endif
+      if (uword_lsb(address_lsb(c)))
+      {
+         Addr c_next = first_address_with_higher_uword_msb(c);
+         if (c_next > b_next)
+            c_next = b_next;
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+         tl_assert(a1 <= b && b <= c && c < c_next && c_next <= b_next
+                   && b_next <= a2);
+#endif
+         bm0_clear_range(p2->bm1.bm0_r, address_lsb(c), SCALED_SIZE(c_next - c));
+         c = c_next;
+      }
+      /* If some UWords have to be cleared entirely, do this now. */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      if (uword_lsb(address_lsb(c)) == 0)
+      {
+         Addr c_next = first_address_with_same_uword_lsb(b_next);
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+         tl_assert(uword_lsb(address_lsb(c)) == 0);
+         tl_assert(uword_lsb(address_lsb(c_next)) == 0);
+         tl_assert(a1 <= b && b <= c && c <= c_next && c_next <= b_next
+                   && b_next <= a2);
+#endif
+         if (c_next > c)
+         {
+            UWord idx = uword_msb(address_lsb(c));
+            VG_(memset)(&p2->bm1.bm0_r[idx], 0, SCALED_SIZE((c_next - c) / 8));
+            c = c_next;
+         }
+      }
+      /* If the last address in the bitmap that must be cleared does not */
+      /* fall on an UWord boundary, clear the last addresses.            */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      bm0_clear_range(p2->bm1.bm0_r, address_lsb(c), SCALED_SIZE(b_next - c));
    }
 }
 
@@ -537,18 +677,84 @@ void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, const Addr a2)
  * Clear all references to stores in bitmap bm starting at address a1 and
  * up to but not including address a2.
  */
-void DRD_(bm_clear_store)(struct bitmap* const bm,
-                          const Addr a1, const Addr a2)
+void DRD_(bm_clear_store)(struct bitmap* const bm, const Addr a1, Addr a2)
 {
-   Addr a;
+   Addr b, b_next;
 
-   for (a = a1; a < a2; a++)
+   tl_assert(bm);
+   tl_assert(a1);
+   tl_assert(a1 <= a2);
+
+#if 0
+   if (address_msb(a1) != address_msb(a2))
+      VG_(message)(Vg_DebugMsg, "bm_clear_store(bm = %p, a1 = 0x%lx, a2 = 0x%lx,"
+                   " delta = 0x%lx)", bm, a1, a2, a2 - a1);
+#endif
+
+   for (b = a1; b < a2; b = b_next)
    {
-      struct bitmap2* const p2 = bm2_lookup_exclusive(bm, address_msb(a));
-      if (p2)
+      struct bitmap2* p2;
+      Addr c;
+
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b < a2);
+#endif
+
+      p2 = bm2_lookup_exclusive(bm, address_msb(b));
+
+      b_next = first_address_with_higher_msb(b);
+      if (b_next > a2)
       {
-         bm0_clear(p2->bm1.bm0_w, address_lsb(a));
+         b_next = a2;
       }
+
+      if (p2 == 0)
+         continue;
+
+      c = b;
+      /* If the first address in the bitmap that must be cleared does not */
+      /* start on an UWord boundary, start clearing the first addresses.  */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c < b_next && b_next <= a2);
+#endif
+      if (uword_lsb(address_lsb(c)))
+      {
+         Addr c_next = first_address_with_higher_uword_msb(c);
+         if (c_next > b_next)
+            c_next = b_next;
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+         tl_assert(a1 <= b && b <= c && c < c_next && c_next <= b_next
+                   && b_next <= a2);
+#endif
+         bm0_clear_range(p2->bm1.bm0_w, address_lsb(c), SCALED_SIZE(c_next - c));
+         c = c_next;
+      }
+      /* If some UWords have to be cleared entirely, do this now. */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      if (uword_lsb(address_lsb(c)) == 0)
+      {
+         Addr c_next = first_address_with_same_uword_lsb(b_next);
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+         tl_assert(uword_lsb(address_lsb(c)) == 0);
+         tl_assert(uword_lsb(address_lsb(c_next)) == 0);
+         tl_assert(a1 <= b && b <= c && c <= c_next && c_next <= b_next
+                   && b_next <= a2);
+#endif
+         if (c_next > c)
+         {
+            UWord idx = uword_msb(address_lsb(c));
+            VG_(memset)(&p2->bm1.bm0_w[idx], 0, SCALED_SIZE((c_next - c) / 8));
+            c = c_next;
+         }
+      }
+      /* If the last address in the bitmap that must be cleared does not */
+      /* fall on an UWord boundary, clear the last addresses.            */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      bm0_clear_range(p2->bm1.bm0_w, address_lsb(c), SCALED_SIZE(b_next - c));
    }
 }
 
@@ -580,7 +786,6 @@ Bool DRD_(bm_has_conflict_with)(struct bitmap* const bm,
       const struct bitmap2* bm2 = bm2_lookup(bm, address_msb(b));
 
       b_next = first_address_with_higher_msb(b);
-      tl_assert(address_msb(b_next) == address_msb(b) + 1);
       if (b_next > a2)
       {
          b_next = a2;
@@ -602,8 +807,8 @@ Bool DRD_(bm_has_conflict_with)(struct bitmap* const bm,
                break;
          tl_assert(a1 <= b_start && b_start <= a2);
 
-         if (first_address_with_higher_msb(make_address(bm2->addr, 0)) < a2)
-            b_end = first_address_with_higher_msb(make_address(bm2->addr, 0));
+         if (make_address(bm2->addr + 1, 0) < a2)
+            b_end = make_address(bm2->addr + 1, 0);
          else
             b_end = a2;
          tl_assert(a1 <= b_end && b_end <= a2);
@@ -737,14 +942,16 @@ Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs)
                    make_address(bm2l->addr, 0));
 #endif
 
-      bm2r = VG_(OSetGen_Next)(rhs->oset);
-      if (bm2r == 0)
+      do
       {
-#if 0
-         VG_(message)(Vg_DebugMsg, "bm_equal: no match found");
-#endif
-         return False;
+         bm2r = VG_(OSetGen_Next)(rhs->oset);
+         if (bm2r == 0)
+            return False;
       }
+      while (! DRD_(bm_has_any_access)(rhs,
+                                       make_address(bm2r->addr, 0),
+                                       make_address(bm2r->addr + 1, 0)));
+
       tl_assert(bm2r);
       tl_assert(DRD_(bm_has_any_access)(rhs,
                                         make_address(bm2r->addr, 0),
@@ -761,7 +968,13 @@ Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs)
          return False;
       }
    }
-   bm2r = VG_(OSetGen_Next)(rhs->oset);
+
+   do
+   {
+      bm2r = VG_(OSetGen_Next)(rhs->oset);
+   } while (bm2r && ! DRD_(bm_has_any_access)(rhs,
+                                              make_address(bm2r->addr, 0),
+                                              make_address(bm2r->addr + 1, 0)));
    if (bm2r)
    {
       tl_assert(DRD_(bm_has_any_access)(rhs,
@@ -917,7 +1130,7 @@ void bm2_print(const struct bitmap2* const bm2)
 
    bm1 = &bm2->bm1;
    for (a = make_address(bm2->addr, 0);
-        a <= first_address_with_higher_msb(make_address(bm2->addr, 0)) - 1;
+        a <= make_address(bm2->addr + 1, 0) - 1;
         a++)
    {
       const Bool r = bm0_is_set(bm1->bm0_r, address_lsb(a)) != 0;

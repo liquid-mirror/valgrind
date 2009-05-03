@@ -67,7 +67,7 @@ AC_PROG_RANLIB
 # If no AR variable was specified, look up the name of the archiver. Otherwise
 # do not touch the AR variable.
 if test "x$AR" = "x"; then
-  AC_PATH_PROGS([AR], ["${LD%ld}ar" "ar"], [ar])
+  AC_PATH_PROGS([AR], [`echo $LD | sed 's/ld$/ar/'` "ar"], [ar])
 fi
 AC_ARG_VAR([AR],[Archiver command])
 
@@ -881,6 +881,35 @@ CFLAGS=$safe_CFLAGS
 
 AM_CONDITIONAL([HAS_ALTIVEC], [test x$ac_have_altivec = xyes])
 AM_CONDITIONAL([HAVE_ALTIVEC_H], [test x$ac_have_altivec = xyes])
+
+
+# Check for pthread_create@GLIBC2.0
+AC_MSG_CHECKING([for pthread_create@GLIBC2.0()])
+
+safe_CFLAGS=$CFLAGS
+CFLAGS="-lpthread"
+AC_TRY_LINK(
+[
+extern int pthread_create_glibc_2_0(void*, const void*,
+                                    void *(*)(void*), void*);
+__asm__(".symver pthread_create_glibc_2_0, pthread_create@GLIBC_2.0");
+], [
+  pthread_create_glibc_2_0(0, 0, 0, 0);
+  return 0;
+],
+[
+ac_have_pthread_create_glibc_2_0=yes
+AC_MSG_RESULT([yes])
+AC_DEFINE([HAVE_PTHREAD_CREATE_GLIBC_2_0], 1,
+          [Define to 1 if you have the `pthread_create@glibc2.0' function.])
+], [
+ac_have_pthread_create_glibc_2_0=no
+AC_MSG_RESULT([no])
+])
+CFLAGS=$safe_CFLAGS
+
+AM_CONDITIONAL(HAVE_PTHREAD_CREATE_GLIBC_2_0,
+	       test x$ac_have_pthread_create_glibc_2_0 = xyes)
 
 
 # Check for eventfd_t, eventfd() and eventfd_read()
@@ -1751,6 +1780,7 @@ AC_OUTPUT(
    none/tests/ppc64/Makefile
    none/tests/x86/Makefile
    none/tests/linux/Makefile
+   none/tests/x86-linux/Makefile
    none/docs/Makefile
    exp-omega/Makefile
    exp-omega/tests/Makefile

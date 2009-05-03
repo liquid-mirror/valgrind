@@ -69,6 +69,29 @@ struct { Addr address; SizeT size; BmAccessTypeT access_type; }
 #endif
   };
 
+/**
+ * Compare two bitmaps and if different, print the differences.
+ */
+int bm_equal_print_diffs(struct bitmap* bm1, struct bitmap* bm2)
+{
+  int equal;
+
+  equal = DRD_(bm_equal)(bm1, bm2);
+  if (s_verbose && ! equal)
+  {
+    VG_(printf)("Bitmaps are different.\n");
+    VG_(printf)("Bitmap 1:\n");
+    DRD_(bm_print)(bm1);
+    VG_(printf)("\n");
+    VG_(printf)("Bitmap 2:\n");
+    DRD_(bm_print)(bm2);
+    VG_(printf)("\n");
+    fflush(stdout);
+  }
+
+  return equal;
+}
+
 void bm_test1(void)
 {
   struct bitmap* bm;
@@ -109,7 +132,7 @@ void bm_test1(void)
   if (s_verbose)
     DRD_(bm_print)(bm2);
   //assert(bm_equal(bm, bm2));
-  assert(DRD_(bm_equal)(bm2, bm));
+  assert(bm_equal_print_diffs(bm2, bm));
 
   if (s_verbose)
     VG_(printf)("Deleting bitmap bm\n");
@@ -162,34 +185,61 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
     {
       DRD_(bm_access_range_load)(bm1, i, j);
       DRD_(bm_clear_load)(bm1, i, j);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_1)(bm1, i);
       DRD_(bm_clear_load)(bm1, i, i+1);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_2)(bm1, i);
       DRD_(bm_clear_load)(bm1, i, i+2);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_4)(bm1, i);
       DRD_(bm_clear_load)(bm1, i, i+4);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_8)(bm1, i);
       DRD_(bm_clear_load)(bm1, i, i+8);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
+
       DRD_(bm_access_range_store)(bm1, i, j);
       DRD_(bm_clear_store)(bm1, i, j);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_1)(bm1, i);
       DRD_(bm_clear_store)(bm1, i, i + 1);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_2)(bm1, i);
       DRD_(bm_clear_store)(bm1, i, i + 2);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_4)(bm1, i);
       DRD_(bm_clear_store)(bm1, i, i + 4);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_8)(bm1, i);
       DRD_(bm_clear_store)(bm1, i, i + 8);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
+
+      DRD_(bm_access_range_load)(bm1, i, j);
+      DRD_(bm_access_range_store)(bm1, i, j);
+      DRD_(bm_clear)(bm1, i, j);
+      assert(bm_equal_print_diffs(bm1, bm2));
+
+      DRD_(bm_access_range_load)(bm1, i, j);
+      DRD_(bm_access_range_store)(bm1, i, j);
+      DRD_(bm_clear)(bm1, i, j);
+      assert(bm_equal_print_diffs(bm1, bm2));
+      DRD_(bm_access_load_1)(bm1, i);
+      DRD_(bm_access_store_1)(bm1, i);
+      DRD_(bm_clear)(bm1, i, i+1);
+      assert(bm_equal_print_diffs(bm1, bm2));
+      DRD_(bm_access_load_2)(bm1, i);
+      DRD_(bm_access_store_2)(bm1, i);
+      DRD_(bm_clear)(bm1, i, i+2);
+      assert(bm_equal_print_diffs(bm1, bm2));
+      DRD_(bm_access_load_4)(bm1, i);
+      DRD_(bm_access_store_4)(bm1, i);
+      DRD_(bm_clear)(bm1, i, i+4);
+      assert(bm_equal_print_diffs(bm1, bm2));
+      DRD_(bm_access_load_8)(bm1, i);
+      DRD_(bm_access_store_8)(bm1, i);
+      DRD_(bm_clear)(bm1, i, i+8);
+      assert(bm_equal_print_diffs(bm1, bm2));
     }
   }
   DRD_(bm_access_range_load)(bm1, 0, make_address(2, 0) + 2 * BITS_PER_UWORD);
@@ -204,34 +254,34 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
     {
       DRD_(bm_clear_load)(bm1, i, j);
       DRD_(bm_access_range_load)(bm1, i, j);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_load)(bm1, i, i+1);
       DRD_(bm_access_load_1)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_load)(bm1, i, i+2);
       DRD_(bm_access_load_2)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_load)(bm1, i, i+4);
       DRD_(bm_access_load_4)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_load)(bm1, i, i+8);
       DRD_(bm_access_load_8)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_store)(bm1, i, j);
       DRD_(bm_access_range_store)(bm1, i, j);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_store)(bm1, i, i+1);
       DRD_(bm_access_store_1)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_store)(bm1, i, i+2);
       DRD_(bm_access_store_2)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_store)(bm1, i, i+4);
       DRD_(bm_access_store_4)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_store)(bm1, i, i+8);
       DRD_(bm_access_store_8)(bm1, i);
-      assert(DRD_(bm_equal)(bm1, bm2));
+      assert(bm_equal_print_diffs(bm1, bm2));
     }
   }
   DRD_(bm_delete)(bm2);

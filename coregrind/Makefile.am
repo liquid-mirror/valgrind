@@ -5,7 +5,7 @@
 
 include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.flags.am
-include $(top_srcdir)/Makefile.install.am
+include $(top_srcdir)/Makefile.core-tool.am
 
 
 AM_CPPFLAGS_CORE_COMMON = \
@@ -158,6 +158,7 @@ noinst_HEADERS = \
 	m_debuginfo/priv_storage.h	\
 	m_debuginfo/priv_tytypes.h      \
 	m_debuginfo/priv_readstabs.h	\
+	m_debuginfo/priv_readpdb.h	\
 	m_debuginfo/priv_d3basics.h	\
 	m_debuginfo/priv_readdwarf.h	\
 	m_debuginfo/priv_readdwarf3.h	\
@@ -237,15 +238,16 @@ COREGRIND_SOURCES_COMMON = \
 	m_syswrap/syswrap-main.c
 
 COREGRIND_LINUX_SOURCE = \
-	m_coredump/coredump-elf.c \
-	m_syswrap/syswrap-linux.c \
-	m_syswrap/syswrap-linux-variants.c \
 	m_aspacemgr/aspacemgr-linux.c \
-	m_initimg/initimg-linux.c \
+	m_coredump/coredump-elf.c \
 	m_debuginfo/readelf.c \
 	m_debuginfo/readdwarf.c \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
+	m_debuginfo/readpdb.c \
+	m_initimg/initimg-linux.c \
+	m_syswrap/syswrap-linux.c \
+	m_syswrap/syswrap-linux-variants.c \
 	m_syswrap/syswrap-generic.c \
 	m_ume/elf.c \
 	m_ume/main.c \

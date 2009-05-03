@@ -23,9 +23,11 @@ endif
 
 DIST_SUBDIRS = x86 amd64 linux x86-linux .
 
-noinst_SCRIPTS = filter_allocs \
-		 filter_stderr filter_xml \
-		 filter_varinfo3
+noinst_SCRIPTS = \
+	filter_addressable \
+	filter_allocs \
+	filter_stderr filter_xml \
+	filter_varinfo3
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	addressable.stderr.exp addressable.stdout.exp addressable.vgtest \
@@ -94,7 +96,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	metadata.stderr.exp metadata.stdout.exp metadata.vgtest \
 	mismatches.stderr.exp mismatches.vgtest \
 	mmaptest.stderr.exp mmaptest.vgtest \
-	nanoleak.stderr.exp nanoleak.vgtest \
 	nanoleak_supp.stderr.exp nanoleak_supp.vgtest nanoleak.supp \
 	nanoleak2.stderr.exp nanoleak2.vgtest \
 	new_nothrow.stderr.exp new_nothrow.vgtest \
@@ -155,13 +156,11 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	varinfo3.vgtest varinfo3.stdout.exp varinfo3.stderr.exp \
 	varinfo4.vgtest varinfo4.stdout.exp varinfo4.stderr.exp \
 	varinfo5.vgtest varinfo5.stdout.exp varinfo5.stderr.exp \
-	varinfo6.vgtest varinfo6.stdout.exp \
-	varinfo6.stderr.exp-glibc25-amd64 varinfo6.stderr.exp-glibc25-x86 \
+	varinfo6.vgtest varinfo6.stdout.exp varinfo6.stderr.exp \
 	vcpu_bz2.stdout.exp vcpu_bz2.stderr.exp vcpu_bz2.vgtest \
 	vcpu_fbench.stdout.exp vcpu_fbench.stderr.exp vcpu_fbench.vgtest \
 	vcpu_fnfns.stdout.exp vcpu_fnfns.stdout.exp-glibc28-amd64 \
 	vcpu_fnfns.stderr.exp vcpu_fnfns.vgtest \
-	with-space.stderr.exp with-space.stdout.exp with-space.vgtest \
 	wrap1.vgtest wrap1.stdout.exp wrap1.stderr.exp \
 	wrap2.vgtest wrap2.stdout.exp wrap2.stderr.exp \
 	wrap3.vgtest wrap3.stdout.exp wrap3.stderr.exp \
@@ -198,7 +197,7 @@ check_PROGRAMS = \
 	match-overrun \
 	memalign_test memalign2 memcmptest mempool mmaptest \
 	mismatches new_override metadata \
-	nanoleak nanoleak2 new_nothrow \
+	nanoleak_supp nanoleak2 new_nothrow \
 	noisy_child \
 	null_socket \
 	origin1-yes origin2-not-quite origin3-no \

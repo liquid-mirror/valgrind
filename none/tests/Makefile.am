@@ -22,6 +22,11 @@ if VGCONF_OS_IS_LINUX
 SUBDIRS += linux
 endif
 
+# Platform-specific tests
+if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
+SUBDIRS += x86-linux
+endif
+
 DIST_SUBDIRS = x86 amd64 ppc32 ppc64 linux .
 
 noinst_SCRIPTS = \
@@ -33,9 +38,8 @@ noinst_HEADERS = fdleak.h
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	ansi.stderr.exp ansi.vgtest \
 	args.stderr.exp args.stdout.exp args.vgtest \
-	async-sigs.stderr.exp async-sigs.stdout.exp async-sigs.vgtest \
+	async-sigs.stderr.exp async-sigs.vgtest \
 	bitfield1.stderr.exp bitfield1.vgtest \
-	blockfault.vgtest blockfault.stderr.exp blockfault.stdout.exp \
 	bug129866.vgtest bug129866.stderr.exp bug129866.stdout.exp \
 	closeall.stderr.exp closeall.vgtest \
 	cmdline0.stderr.exp cmdline0.stdout.exp cmdline0.vgtest \
@@ -109,7 +113,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	shell_valid2 shell_valid2.vgtest shell_valid2.stderr.exp \
 	shell_valid3 shell_valid3.vgtest shell_valid3.stderr.exp \
 	shell_zerolength shell_zerolength.vgtest shell_zerolength.stderr.exp \
-	susphello.stdout.exp susphello.stderr.exp susphello.vgtest \
 	sha1_test.stderr.exp sha1_test.vgtest \
 	shortpush.stderr.exp shortpush.vgtest \
 	shorts.stderr.exp shorts.vgtest \
@@ -127,7 +130,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = \
 	ansi args \
-	async-sigs bitfield1 blockfault \
+	async-sigs bitfield1 \
 	bug129866 \
 	closeall coolo_strlen \
 	discard exec-sigmask execve faultstatus fcntl_setown \
@@ -143,7 +146,7 @@ check_PROGRAMS = \
 	pth_stackalign \
 	rcrl readline1 res_search resolv \
 	rlimit_nofile selfrun sem semlimit sha1_test \
-	shortpush shorts stackgrowth sigstackgrowth susphello \
+	shortpush shorts stackgrowth sigstackgrowth \
 	syscall-restart1 syscall-restart2 system \
 	thread-exits threaded-fork threadederrno \
 	tls tls.so tls2.so vgprintf \
@@ -176,7 +179,6 @@ else
  res_search_LDADD       = -lresolv -lpthread
 endif
 semlimit_LDADD		= -lpthread
-susphello_LDADD		= -lpthread
 thread_exits_LDADD	= -lpthread
 threaded_fork_LDADD	= -lpthread
 threadederrno_LDADD	= -lpthread
