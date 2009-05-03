@@ -136,6 +136,8 @@ EXTRA_DIST =                                        \
 	sem_as_mutex.vgtest                         \
 	sem_as_mutex2.stderr.exp                    \
 	sem_as_mutex2.vgtest                        \
+	sem_as_mutex3.stderr.exp                    \
+	sem_as_mutex3.vgtest                        \
 	sigalrm.stderr.exp                          \
 	sigalrm.vgtest                              \
 	tc01_simple_race.stderr.exp                 \
@@ -175,7 +177,8 @@ EXTRA_DIST =                                        \
 	tc17_sembar.vgtest                          \
 	tc18_semabuse.stderr.exp                    \
 	tc18_semabuse.vgtest                        \
-	tc19_shadowmem.stderr.exp                   \
+	tc19_shadowmem.stderr.exp-32bit             \
+	tc19_shadowmem.stderr.exp-64bit             \
 	tc19_shadowmem.vgtest                       \
 	tc20_verifywrap.stderr.exp-glibc2.3         \
 	tc20_verifywrap.stderr.exp-glibc2.5         \
