@@ -219,11 +219,6 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
       DRD_(bm_access_range_store)(bm1, i, j);
       DRD_(bm_clear)(bm1, i, j);
       assert(bm_equal_print_diffs(bm1, bm2));
-
-      DRD_(bm_access_range_load)(bm1, i, j);
-      DRD_(bm_access_range_store)(bm1, i, j);
-      DRD_(bm_clear)(bm1, i, j);
-      assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_1)(bm1, i);
       DRD_(bm_access_store_1)(bm1, i);
       DRD_(bm_clear)(bm1, i, i+1);
@@ -267,6 +262,7 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
       DRD_(bm_clear_load)(bm1, i, i+8);
       DRD_(bm_access_load_8)(bm1, i);
       assert(bm_equal_print_diffs(bm1, bm2));
+
       DRD_(bm_clear_store)(bm1, i, j);
       DRD_(bm_access_range_store)(bm1, i, j);
       assert(bm_equal_print_diffs(bm1, bm2));
@@ -281,6 +277,11 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_clear_store)(bm1, i, i+8);
       DRD_(bm_access_store_8)(bm1, i);
+      assert(bm_equal_print_diffs(bm1, bm2));
+
+      DRD_(bm_clear)(bm1, i, j);
+      DRD_(bm_access_range_load)(bm1, i, j);
+      DRD_(bm_access_range_store)(bm1, i, j);
       assert(bm_equal_print_diffs(bm1, bm2));
     }
   }
