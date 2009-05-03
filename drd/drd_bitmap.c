@@ -59,16 +59,6 @@ static ULong s_bitmap2_merge_count;
 
 struct bitmap* DRD_(bm_new)()
 {
-   return bm_new_cb(0);
-}
-
-/** Allocate and initialize a new bitmap structure.
- *
- *  @param compute_bitmap2 Callback function for computing the actual bitmap
- *                         data.
- */
-struct bitmap* bm_new_cb(void (*compute_bitmap2)(UWord, struct bitmap2*))
-{
    unsigned i;
    struct bitmap* bm;
 
@@ -89,7 +79,6 @@ struct bitmap* bm_new_cb(void (*compute_bitmap2)(UWord, struct bitmap2*))
    }
    bm->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), "drd.bitmap.bn.2",
                                   VG_(free));
-   bm->compute_bitmap2 = compute_bitmap2;
 
    s_bitmap_creation_count++;
 

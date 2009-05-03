@@ -65,7 +65,7 @@
 
 /** Number of bits assigned to the least significant component of an address.
  */
-#define ADDR_LSB_BITS 12
+#define ADDR_LSB_BITS 14
 
 /** Mask that has to be applied to an address of type Addr in order to
  *  compute the least significant part of an address split, after having
@@ -318,7 +318,6 @@ struct bitmap
 {
    struct bm_cache_elem cache[N_CACHE_ELEM];
    OSet*                oset;
-   void                 (*compute_bitmap2)(const UWord a1, struct bitmap2* bm2);
 };
 
 
@@ -491,18 +490,7 @@ const struct bitmap2* bm2_lookup(struct bitmap* const bm, const UWord a1)
    if (! bm_cache_lookup(bm, a1, &bm2))
    {
       bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
-      if (bm2 == 0 && bm->compute_bitmap2)
-      {
-         bm2 = bm2_insert(bm, a1);
-         bm2_clear(bm2);
-         /* Compute the second-level bitmap, and insert the pointer to the
-          * computed bitmap. Note: this pointer may be NULL. */
-         (*bm->compute_bitmap2)(a1, bm2);
-      }
-      else
-      {
-         bm_update_cache(bm, a1, bm2);
-      }
+      bm_update_cache(bm, a1, bm2);
    }
    return bm2;
 }
@@ -521,7 +509,6 @@ bm2_lookup_exclusive(struct bitmap* const bm, const UWord a1)
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
    tl_assert(bm);
-   tl_assert(bm->compute_bitmap2 == 0);
 #endif
 
    if (! bm_cache_lookup(bm, a1, &bm2))
@@ -581,7 +568,6 @@ struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
    tl_assert(bm);
-   tl_assert(bm->compute_bitmap2 == 0);
 #endif
 
    if (bm_cache_lookup(bm, a1, &bm2))
@@ -626,7 +612,6 @@ void bm_access_aligned_load(struct bitmap* const bm,
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
    tl_assert(bm);
-   tl_assert(bm->compute_bitmap2 == 0);
 #endif
 
    bm2 = bm2_lookup_or_insert_exclusive(bm, address_msb(a1));
@@ -643,7 +628,6 @@ void bm_access_aligned_store(struct bitmap* const bm,
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
    tl_assert(bm);
-   tl_assert(bm->compute_bitmap2 == 0);
 #endif
 
    bm2 = bm2_lookup_or_insert_exclusive(bm, address_msb(a1));
