@@ -503,7 +503,6 @@ static inline UWord getERR ( SyscallStatus* st ) {
 #endif
 
 
-// GrP can't think of a cleaner way to do this
 #if SYSCALL_PARAMS_IN_REGISTERS == 8
 #  define PRA1(s,t,a) PRRAn(1,s,t,a)
 #  define PRA2(s,t,a) PRRAn(2,s,t,a)
