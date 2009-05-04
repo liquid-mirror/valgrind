@@ -3766,12 +3766,6 @@ void read_fnnames_dwarf3_wrk (
          if (offset == 0) break;
          pubname = get_AsciiZ( &pubnames );
          TRACE_D3("    0x%016llx \"%s\"\n", offset, pubname);
-#if defined(VGO_darwin)
-         if (pubname[0] == '*') {
-             /* GrP fixme versioned symbols get a leading * - why? */
-             pubname++;
-         }
-#endif
 
          /* Read the DIE for this pubname */
          if (offset > d_i_length) {
