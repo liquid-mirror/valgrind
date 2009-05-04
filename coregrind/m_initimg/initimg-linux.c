@@ -47,6 +47,7 @@
 #include "pub_core_syscall.h"
 #include "pub_core_tooliface.h"       /* VG_TRACK */
 #include "pub_core_threadstate.h"     /* ThreadArchState */
+#include "priv_initimg_pathscan.h"
 #include "pub_core_initimg.h"         /* self */
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
@@ -136,24 +137,6 @@ static Bool match_executable(const char *entry)
    }
 }
 
-// Returns NULL if it wasn't found.
-static HChar* find_executable ( HChar* exec )
-{
-   vg_assert(NULL != exec);
-   if (VG_(strchr)(exec, '/')) {
-      // Has a '/' - use the name as is
-      VG_(strncpy)( executable_name_out, exec, VKI_PATH_MAX-1 );
-   } else {
-      // No '/' - we need to search the path
-      HChar* path;
-      VG_(strncpy)( executable_name_in,  exec, VKI_PATH_MAX-1 );
-      VG_(memset) ( executable_name_out, 0,    VKI_PATH_MAX );
-      path = VG_(getenv)("PATH");
-      scan_colsep(path, match_executable);
-   }
-   return VG_STREQ(executable_name_out, "") ? NULL : executable_name_out;
-}
-
 
 /*====================================================================*/
 /*=== Loading the client                                           ===*/
@@ -170,7 +153,7 @@ static void load_client ( /*OUT*/ExeInfo* info,
    SysRes res;
 
    vg_assert( VG_(args_the_exename) != NULL);
-   exe_name = find_executable( VG_(args_the_exename) );
+   exe_name = ML_(find_executable)( VG_(args_the_exename) );
 
    if (!exe_name) {
       VG_(printf)("valgrind: %s: command not found\n", VG_(args_the_exename));

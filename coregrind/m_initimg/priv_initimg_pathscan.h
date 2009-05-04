@@ -32,7 +32,6 @@
 #ifndef __PRIV_INITIMG_PATHSCAN_H
 #define __PRIV_INITIMG_PATHSCAN_
 
-// GrP fixme ML_() ?
-extern HChar* VG_(find_executable) ( HChar* exec );
+extern HChar* ML_(find_executable) ( HChar* exec );
 
 #endif

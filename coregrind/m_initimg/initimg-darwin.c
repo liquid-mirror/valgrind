@@ -64,7 +64,7 @@ static void load_client ( /*OUT*/ExeInfo* info,
    SysRes res;
 
    vg_assert( VG_(args_the_exename) != NULL);
-   exe_name = VG_(find_executable)( VG_(args_the_exename) );
+   exe_name = ML_(find_executable)( VG_(args_the_exename) );
 
    if (!exe_name) {
       VG_(printf)("valgrind: %s: command not found\n", VG_(args_the_exename));

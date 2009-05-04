@@ -47,6 +47,8 @@
 #include "pub_core_threadstate.h"     /* ThreadArchState */
 #include "pub_core_initimg.h"         /* self */
 
+#include "priv_initimg_pathscan.h"
+
 
 /*====================================================================*/
 /*=== Find executable                                              ===*/
@@ -128,7 +130,7 @@ static Bool match_executable(const char *entry)
 }
 
 // Returns NULL if it wasn't found.
-HChar* VG_(find_executable) ( HChar* exec )
+HChar* ML_(find_executable) ( HChar* exec )
 {
    vg_assert(NULL != exec);
    if (VG_(strchr)(exec, '/')) {

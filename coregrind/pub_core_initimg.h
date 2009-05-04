@@ -60,10 +60,6 @@ IIFinaliseImageInfo VG_(ii_create_image)( IICreateImageInfo );
 extern 
 void VG_(ii_finalise_image)( IIFinaliseImageInfo );
 
-/* Search for the named executable in PATH, and return its full path. */
-extern
-HChar* VG_(find_executable) ( HChar* exec );
-
 /* Note that both IICreateImageInfo and IIFinaliseImageInfo are
    OS-specific.  We now go on to give instantiations of them
    for supported OSes. */
