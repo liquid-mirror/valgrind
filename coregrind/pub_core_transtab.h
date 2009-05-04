@@ -97,10 +97,6 @@ typedef struct _BBProfEntry {
 
 extern ULong VG_(get_BB_profile) ( BBProfEntry tops[], UInt n_tops );
 
-// Prints some translation table details for the given host IP.  For
-// debugging.
-void VG_(untranslate) ( ULong *host_ip );
-
 #endif   // __PUB_CORE_TRANSTAB_H
 
 /*--------------------------------------------------------------------*/
