@@ -193,8 +193,9 @@ ALLOC_or_NULL(VG_Z_LIBSTDCXX_SONAME, malloc,      malloc);
 ALLOC_or_NULL(VG_Z_LIBC_SONAME,      malloc,      malloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 ALLOC_or_NULL(VG_Z_LIBC_SONAME,      malloc_common, malloc);
-#endif
+#elif defined(VGO_darwin)
 ZONEALLOC_or_NULL(VG_Z_LIBC_SONAME, malloc_zone_malloc, malloc);
+#endif
 
 
 /*---------------------- new ----------------------*/
@@ -322,8 +323,9 @@ FREE(VG_Z_LIBSTDCXX_SONAME,  free,                 free );
 FREE(VG_Z_LIBC_SONAME,       free,                 free );
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 FREE(VG_Z_LIBC_SONAME,       free_common,          free );
-#endif
+#elif defined(VGO_darwin)
 ZONEFREE(VG_Z_LIBC_SONAME,   malloc_zone_free,     free );
+#endif
 
 
 /*---------------------- cfree ----------------------*/
@@ -412,8 +414,9 @@ FREE(VG_Z_LIBC_SONAME,       _ZdaPvRKSt9nothrow_t, __builtin_vec_delete );
 CALLOC(VG_Z_LIBC_SONAME, calloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 CALLOC(VG_Z_LIBC_SONAME, calloc_common);
-#endif
+#elif defined(VGO_darwin)
 ZONECALLOC(VG_Z_LIBC_SONAME, malloc_zone_calloc);
+#endif
 
 
 /*---------------------- realloc ----------------------*/
@@ -469,8 +472,9 @@ ZONECALLOC(VG_Z_LIBC_SONAME, malloc_zone_calloc);
 REALLOC(VG_Z_LIBC_SONAME, realloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 REALLOC(VG_Z_LIBC_SONAME, realloc_common);
-#endif
+#elif defined(VGO_darwin)
 ZONEREALLOC(VG_Z_LIBC_SONAME, malloc_zone_realloc);
+#endif
 
 
 /*---------------------- memalign ----------------------*/
@@ -522,7 +526,9 @@ ZONEREALLOC(VG_Z_LIBC_SONAME, malloc_zone_realloc);
    }
 
 MEMALIGN(VG_Z_LIBC_SONAME, memalign);
+#if defined(VGO_darwin)
 ZONEMEMALIGN(VG_Z_LIBC_SONAME, malloc_zone_memalign);
+#endif
 
 
 /*---------------------- valloc ----------------------*/
@@ -562,7 +568,9 @@ static int local__getpagesize ( void ) {
    }
 
 VALLOC(VG_Z_LIBC_SONAME, valloc);
+#if defined(VGO_darwin)
 ZONEVALLOC(VG_Z_LIBC_SONAME, malloc_zone_valloc);
+#endif
 
 
 /*---------------------- mallopt ----------------------*/
@@ -763,8 +771,10 @@ static vki_malloc_zone_t vg_default_zone = {
       return &vg_default_zone; \
    }
 
+#if defined(VGO_darwin)
 DEFAULT_ZONE(VG_Z_LIBC_SONAME, malloc_zone_from_ptr);
 DEFAULT_ZONE(VG_Z_LIBC_SONAME, malloc_default_zone);
+#endif
 
 // GrP fixme bypass libc's use of zone->introspect->check
 #define ZONE_CHECK(soname, fnname) \
@@ -775,7 +785,9 @@ DEFAULT_ZONE(VG_Z_LIBC_SONAME, malloc_default_zone);
       return 1; \
    }
 
+#if defined(VGO_darwin)
 ZONE_CHECK(VG_Z_LIBC_SONAME, malloc_zone_check);    
+#endif
 
 #endif
 

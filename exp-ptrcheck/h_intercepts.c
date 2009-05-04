@@ -58,9 +58,11 @@
    }
 
 STRLEN(VG_Z_LIBC_SONAME,          strlen)
+#if defined(VGO_linux)
 STRLEN(VG_Z_LD_LINUX_SO_2,        strlen)
 STRLEN(VG_Z_LD_LINUX_X86_64_SO_2, strlen)
 STRLEN(VG_Z_LD_SO_1,              strlen)
+#endif
 
 
 #define STRCMP(soname, fnname) \
@@ -84,8 +86,10 @@ STRLEN(VG_Z_LD_SO_1,              strlen)
    }
 
 STRCMP(VG_Z_LIBC_SONAME,          strcmp)
+#if defined(VGO_linux)
 STRCMP(VG_Z_LD_LINUX_X86_64_SO_2, strcmp)
 STRCMP(VG_Z_LD64_SO_1,            strcmp)
+#endif
 
 
 #define MEMCPY(soname, fnname) \
@@ -131,8 +135,10 @@ STRCMP(VG_Z_LD64_SO_1,            strcmp)
    }
 
 MEMCPY(VG_Z_LIBC_SONAME, memcpy)
+#if defined(VGO_linux)
 MEMCPY(VG_Z_LD_SO_1,     memcpy) /* ld.so.1 */
 MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
+#endif
 
 
 /* Copy SRC to DEST, returning the address of the terminating '\0' in
@@ -148,8 +154,10 @@ MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
    }
 
 STPCPY(VG_Z_LIBC_SONAME,          stpcpy)
+#if defined(VGO_linux)
 STPCPY(VG_Z_LD_LINUX_SO_2,        stpcpy)
 STPCPY(VG_Z_LD_LINUX_X86_64_SO_2, stpcpy)
+#endif
 
 
 /*--------------------------------------------------------------------*/
