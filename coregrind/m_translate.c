@@ -661,8 +661,9 @@ IRSB* vg_SP_update_pass ( void*             closureV,
 
 /* Vex dumps the final code in here.  Then we can copy it off
    wherever we like. */
-// GrP fixme 20000 is too small for vecCGSScanConvolveAndIntegrate+268
-#define N_TMPBUF 128000
+/* 60000: should agree with assertion in VG_(add_to_transtab) in
+   m_transtab.c. */
+#define N_TMPBUF 60000
 static UChar tmpbuf[N_TMPBUF];
 
 

@@ -847,7 +847,9 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
 
    vg_assert(init_done);
    vg_assert(vge->n_used >= 1 && vge->n_used <= 3);
-   vg_assert(code_len > 0 && code_len < 128000);  // GrP fixme N_TMPBUF from m_translate.c?
+
+   /* 60000: should agree with N_TMPBUF in m_translate.c. */
+   vg_assert(code_len > 0 && code_len < 60000);
 
    if (0)
       VG_(printf)("add_to_transtab(entry = 0x%llx, len = %d)\n",
