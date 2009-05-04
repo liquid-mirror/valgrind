@@ -2357,8 +2357,8 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
    if (!ok)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
-// DDD: the Darwin tag used here seems to just be for statistical
-// purposes.  --njn
+// On Darwin, for anonymous maps you can pass in a tag which is used by
+// programs like vmmap for statistical purposes.
 #ifndef VM_TAG_VALGRIND
 #  define VM_TAG_VALGRIND 0
 #endif
