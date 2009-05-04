@@ -338,54 +338,6 @@ static void parse_procselfmaps (
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
-/*--- Functions for finding information about file descriptors. ---*/
-/*---                                                           ---*/
-/*-----------------------------------------------------------------*/
-
-/* Extract the device, inode and mode numbers for a fd. */
-static 
-Bool get_inode_for_fd ( Int fd, /*OUT*/ULong* dev, 
-                                /*OUT*/ULong* ino, /*OUT*/UInt* mode )
-{
-   return ML_(am_get_fd_d_i_m)(fd, dev, ino, mode);
-}
-
-/* Given a file descriptor, attempt to deduce its filename.  To do
-   this, we use /proc/self/fd/<FD>.  If this doesn't point to a file,
-   or if it doesn't exist, we return False. */
-static
-Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
-{
-#if HAVE_PROC
-    // Try /proc/self/fd/#
-   {
-   Int   i;
-   HChar tmp[64];
-
-   ML_(am_sprintf)(tmp, "/proc/self/fd/%d", fd);
-   for (i = 0; i < nbuf; i++) buf[i] = 0;
-   
-   if (ML_(am_readlink)(tmp, buf, nbuf) > 0 && buf[0] == '/')
-      return True;
-   }
-#endif
-
-#if defined(VGO_darwin)
-   // GrP fixme layering violation?
-   // Try fcntl(F_GETPATH)
-   extern Bool VG_(resolve_filename)(Int _fd, HChar *_buf, Int _nbuf);
-   if (VG_(resolve_filename)(fd, buf, nbuf)) {
-      return True;
-   }
-#endif
-
-   // Bummer.
-      return False;
-}
-
-
-/*-----------------------------------------------------------------*/
-/*---                                                           ---*/
 /*--- SegName array management.                                 ---*/
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/
@@ -2011,12 +1963,12 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    if (!(flags & VKI_MAP_ANONYMOUS)) {
       // Nb: We ignore offset requests in anonymous mmaps (see bug #126722)
       seg.offset = offset;
-      if (get_inode_for_fd(fd, &dev, &ino, &mode)) {
+      if (ML_(am_get_fd_d_i_m)(fd, &dev, &ino, &mode)) {
          seg.dev = dev;
          seg.ino = ino;
          seg.mode = mode;
       }
-      if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
+      if (ML_(am_resolve_filename)(fd, buf, VKI_PATH_MAX)) {
          seg.fnIdx = allocate_segname( buf );
       }
    }
@@ -2233,14 +2185,14 @@ SysRes VG_(am_mmap_named_file_fixed_client)
    seg.hasR   = toBool(prot & VKI_PROT_READ);
    seg.hasW   = toBool(prot & VKI_PROT_WRITE);
    seg.hasX   = toBool(prot & VKI_PROT_EXEC);
-   if (get_inode_for_fd(fd, &dev, &ino, &mode)) {
+   if (ML_(am_get_fd_d_i_m)(fd, &dev, &ino, &mode)) {
       seg.dev = dev;
       seg.ino = ino;
       seg.mode = mode;
    }
    if (name) {
       seg.fnIdx = allocate_segname( name );
-   } else if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
+   } else if (ML_(am_resolve_filename)(fd, buf, VKI_PATH_MAX)) {
       seg.fnIdx = allocate_segname( buf );
    }
    add_segment( &seg );
@@ -2523,12 +2475,12 @@ SysRes VG_(am_mmap_file_float_valgrind) ( SizeT length, UInt prot,
    seg.hasR   = toBool(prot & VKI_PROT_READ);
    seg.hasW   = toBool(prot & VKI_PROT_WRITE);
    seg.hasX   = toBool(prot & VKI_PROT_EXEC);
-   if (get_inode_for_fd(fd, &dev, &ino, &mode)) {
+   if (ML_(am_get_fd_d_i_m)(fd, &dev, &ino, &mode)) {
       seg.dev  = dev;
       seg.ino  = ino;
       seg.mode = mode;
    }
-   if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
+   if (ML_(am_resolve_filename)(fd, buf, VKI_PATH_MAX)) {
       seg.fnIdx = allocate_segname( buf );
    }
    add_segment( &seg );

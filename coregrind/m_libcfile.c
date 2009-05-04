@@ -87,6 +87,11 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
       return True;
    else
       return False;
+
+#  elif defined(VGO_aix5)
+   I_die_here; /* maybe just return False? */
+   return False;
+
 #  elif defined(VGO_darwin)
    HChar tmp[VKI_MAXPATHLEN+1];
    if (0 == VG_(fcntl)(fd, VKI_F_GETPATH, (UWord)tmp)) {
@@ -97,11 +102,9 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
       if (tmp[0] == '/') return True;
    }
    return False;
-#  elif defined(VGO_aix5)
-   I_die_here; /* maybe just return False? */
-   return False;
+
 #  else
-#     error "need fd-to-filename for this OS"
+#     error Unknown OS
 #  endif
 }
 

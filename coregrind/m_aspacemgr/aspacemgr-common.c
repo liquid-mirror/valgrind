@@ -270,6 +270,16 @@ Int ML_(am_readlink)(HChar* path, HChar* buf, UInt bufsiz)
    return sr_isError(res) ? -1 : sr_Res(res);
 }
 
+Int ML_(am_fcntl) ( Int fd, Int cmd, Addr arg )
+{
+#  if defined(VGO_darwin)
+   SysRes res = VG_(do_syscall3)(__NR_fcntl_nocancel, fd, cmd, arg);
+#  else
+   SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
+#  endif
+   return sr_isError(res) ? -1 : sr_Res(res);
+}
+
 /* Get the dev, inode and mode info for a file descriptor, if
    possible.  Returns True on success. */
 Bool ML_(am_get_fd_d_i_m)( Int fd, 
@@ -300,6 +310,39 @@ Bool ML_(am_get_fd_d_i_m)( Int fd,
    }
    return False;
 }
+
+Bool ML_(am_resolve_filename) ( Int fd, /*OUT*/HChar* buf, Int nbuf )
+{
+#if defined(VGO_linux)
+   HChar tmp[64];
+   for (i = 0; i < nbuf; i++) buf[i] = 0;
+   ML_(am_sprintf)(tmp, "/proc/self/fd/%d", fd);
+   if (ML_(am_readlink)(tmp, buf, nbuf) > 0 && buf[0] == '/')
+      return True;
+   else
+      return False;
+
+#elif defined(VGO_aix5)
+   I_die_here; /* maybe just return False? */
+   return False;
+
+#elif defined(VGO_darwin)
+   HChar tmp[VKI_MAXPATHLEN+1];
+   if (0 == ML_(am_fcntl)(fd, VKI_F_GETPATH, (UWord)tmp)) {
+      if (nbuf > 0) {
+         VG_(strncpy)( buf, tmp, nbuf < sizeof(tmp) ? nbuf : sizeof(tmp) );
+         buf[nbuf-1] = 0;
+      }
+      if (tmp[0] == '/') return True;
+   }
+   return False;
+
+#  else
+#     error Unknown OS
+#  endif
+}
+
+
 
 
 /*-----------------------------------------------------------------*/
