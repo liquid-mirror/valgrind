@@ -144,7 +144,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	sigprocmask.stderr.exp sigprocmask.stderr.exp2 sigprocmask.vgtest \
 	stack_changes.stderr.exp stack_changes.stdout.exp \
 	stack_changes.stdout.exp2 stack_changes.vgtest \
-	strchr.stderr.exp strchr.stderr.exp2 strchr.vgtest \
+	strchr.stderr.exp strchr.stderr.exp2 strchr.stderr.exp-darwin \
+	    strchr.vgtest \
 	str_tester.stderr.exp str_tester.vgtest \
 	supp_unknown.stderr.exp supp_unknown.vgtest supp_unknown.supp \
 	supp1.stderr.exp supp1.vgtest \
