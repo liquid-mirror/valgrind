@@ -26,10 +26,7 @@ int main ( void )
    // Likewise for Mac OS X.
 
 #  else
-   // Nb: assuming VG_MIN_MALLOC_SZB is 8!
-   // DDD: (this is no longer true)
-   // Should work with both 32-bit and 64-bit pointers, though.
-
+   // Nb: assuming VG_MIN_MALLOC_SZB is 8 or more...
    int* p;
    int  res;
    assert(sizeof(long int) == sizeof(void*));
