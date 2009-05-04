@@ -135,9 +135,6 @@ extern Addr VG_(get_tocptr) ( Addr guest_code_addr );
 extern
 Bool VG_(lookup_symbol_SLOW)(UChar* sopatt, UChar* name, Addr* pEnt, Addr* pToc);
 
-/* GrP fixme replace with lookup_symbol_SLOW ? */
-extern
-Addr VG_(dlsym)(Char *fnname);
 #endif   // __PUB_CORE_DEBUGINFO_H
 
 /*--------------------------------------------------------------------*/
