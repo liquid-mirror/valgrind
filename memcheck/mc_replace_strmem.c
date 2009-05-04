@@ -523,11 +523,11 @@ MEMCPY(NONE, _intel_fast_memcpy)
    }
 
 MEMCMP(VG_Z_LIBC_SONAME, memcmp)
-MEMCMP(VG_Z_DYLD,        memcmp)
 MEMCMP(VG_Z_LIBC_SONAME, bcmp)
 #if defined(VGO_linux)
 MEMCMP(VG_Z_LD_SO_1,     bcmp)
 #elif defined(VGO_darwin)
+MEMCMP(VG_Z_DYLD,        memcmp)
 MEMCMP(VG_Z_DYLD,        bcmp)
 #endif
 
@@ -584,7 +584,9 @@ STPCPY(VG_Z_DYLD,                 stpcpy)
    }
 
 MEMSET(VG_Z_LIBC_SONAME, memset)
+#if defined(VGO_darwin)
 MEMSET(VG_Z_DYLD,        memset)
+#endif
 
 
 #define MEMMOVE(soname, fnname) \
@@ -609,7 +611,9 @@ MEMSET(VG_Z_DYLD,        memset)
    }
 
 MEMMOVE(VG_Z_LIBC_SONAME, memmove)
+#if defined(VGO_darwin)
 MEMMOVE(VG_Z_DYLD,        memmove)
+#endif
 
 
 #define BCOPY(soname, fnname) \
@@ -633,7 +637,9 @@ MEMMOVE(VG_Z_DYLD,        memmove)
    }
 
 BCOPY(VG_Z_LIBC_SONAME, bcopy)
+#if defined(VGO_darwin)
 BCOPY(VG_Z_DYLD,        bcopy)
+#endif
 
 
 /* glibc 2.5 variant of memmove which checks the dest is big enough.
