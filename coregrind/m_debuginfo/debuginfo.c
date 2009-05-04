@@ -3404,29 +3404,6 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
 
 }
 
-
-// DDD: not used?
-Addr VG_(dlsym)(Char *fnname)
-{
-    DebugInfo const *si = NULL;
-
-    if (!fnname) return 0;
-
-    while ((si = VG_(next_seginfo)(si))) {
-        Int idx;
-        for (idx = 0; idx < si->symtab_used; idx++) {
-            if (si->symtab[idx].name) {
-                if (0 == VG_(strcmp)(si->symtab[idx].name, fnname)) {
-                    return si->symtab[idx].addr;
-                }
-            }
-        }
-        
-    }
-
-    return 0;
-}
-
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
