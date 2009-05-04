@@ -388,8 +388,6 @@ static Bool main_process_cmd_line_options( const HChar* toolname )
 
       else if VG_BOOL_CLO(arg, "--xml",            VG_(clo_xml)) {}
       else if VG_BOOL_CLO(arg, "--db-attach",      VG_(clo_db_attach)) {}
-      else if VG_BOOL_CLO(arg, "--db-listen",      VG_(clo_db_listen)) {}
-      else if VG_INT_CLO (arg, "--db-listen-port", VG_(clo_db_listen_port)) {}
       else if VG_BOOL_CLO(arg, "--demangle",       VG_(clo_demangle)) {}
       else if VG_BOOL_CLO(arg, "--error-limit",    VG_(clo_error_limit)) {}
       else if VG_INT_CLO (arg, "--error-exitcode", VG_(clo_error_exitcode)) {}
