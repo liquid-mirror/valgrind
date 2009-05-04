@@ -107,7 +107,10 @@ static void env_unsetenv ( Char **env, const Char *varname )
 	 to++;
       }
    }
-   *to = *from;
+   *(to++) = *(from++);
+   /* fix the 4th "char* apple" pointer (aka. executable path pointer) */
+   *(to++) = *(from++);
+   *to = NULL;
 }
 
 static void vg_cleanup_env(void)  __attribute__((constructor));

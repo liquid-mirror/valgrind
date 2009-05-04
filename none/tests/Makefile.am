@@ -21,6 +21,9 @@ endif
 if VGCONF_OS_IS_LINUX
 SUBDIRS += linux
 endif
+if VGCONF_OS_IS_DARWIN
+SUBDIRS += darwin
+endif
 
 # Platform-specific tests
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX

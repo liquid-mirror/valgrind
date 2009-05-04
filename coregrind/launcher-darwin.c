@@ -371,9 +371,11 @@ int main(int argc, char** argv, char** envp)
    /* tediously augment the env: VALGRIND_STARTUP_PWD_%PID_XYZZY=current_working_dir */
    asprintf(&set_cwd, "VALGRIND_STARTUP_PWD_%u_XYZZY=%s", getppid(), cwd);
 
+   // Note that Apple binaries get a secret fourth arg, "char* apple", which
+   // contains the executable path.  Don't forget about it.
    for (j = 0; envp[j]; j++)
       ;
-   new_env = malloc((j+3) * sizeof(char*));
+   new_env = malloc((j+4) * sizeof(char*));
    if (new_env == NULL)
       barf("malloc of new_env failed.");
    for (i = 0; i < j; i++)
@@ -381,6 +383,7 @@ int main(int argc, char** argv, char** envp)
    new_env[i++] = new_line;
    new_env[i++] = set_cwd;
    new_env[i++] = NULL;
+   new_env[i  ] = envp[i-2]; // the 'apple' arg == the executable_path
    assert(i == j+3);
 
    /* tediously edit env: hide dyld options from valgrind's captive dyld */
