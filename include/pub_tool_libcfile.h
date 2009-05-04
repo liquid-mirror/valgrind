@@ -67,7 +67,6 @@ extern SysRes VG_(open)   ( const Char* pathname, Int flags, Int mode );
 extern void   VG_(close)  ( Int fd );
 extern Int    VG_(read)   ( Int fd, void* buf, Int count);
 extern Int    VG_(write)  ( Int fd, const void* buf, Int count);
-extern Int    VG_(select) ( Int nfds, void *rfds, void *wfds, void *efds, void *timeout );
 extern Int    VG_(pipe)   ( Int fd[2] );
 extern OffT   VG_(lseek)  ( Int fd, OffT offset, Int whence );
 

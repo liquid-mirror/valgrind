@@ -64,17 +64,12 @@ extern UShort VG_(htons) ( UShort x );
 extern UShort VG_(ntohs) ( UShort x );
 
 extern Int VG_(socket) ( Int domain, Int type, Int protocol );
-extern Int VG_(bind)   ( Int sock, const struct vki_sockaddr *addr, vki_socklen_t len);
-extern Int VG_(listen) ( Int sock, Int backlog );
-extern Int VG_(accept) ( Int sock, struct vki_sockaddr *addr, vki_socklen_t *len);
 
 extern Int VG_(write_socket)( Int sd, void *msg, Int count );
 extern Int VG_(getsockname) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getsockopt)  ( Int sd, Int level, Int optname, 
                               void *optval, Int *optlen );
-extern Int VG_(setsockopt)  ( Int sd, Int level, Int optname, 
-                              const void *optval, Int optlen);
 
 extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
 

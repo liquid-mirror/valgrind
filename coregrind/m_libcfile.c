@@ -166,28 +166,6 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
    return ret;
 }
 
-Int VG_(select) ( Int nfds, void *rfds, void *wfds, void *efds, void *timeout)
-{
-   Int    ret;
-#  if defined(VGO_darwin)
-   SysRes res = VG_(do_syscall5)(__NR_select_nocancel, nfds,
-                                 (Addr)rfds, (Addr)wfds,
-                                 (Addr)efds, (Addr)timeout);
-#  else
-   SysRes res = VG_(do_syscall5)(__NR_select, nfds,
-                                 (Addr)rfds, (Addr)wfds,
-                                 (Addr)efds, (Addr)timeout);
-#  endif
-   if (sr_isError(res)) {
-      ret = - (Int)(Word)sr_Err(res);
-      vg_assert(ret < 0);
-   } else {
-      ret = (Int)(Word)sr_Res(res);
-      vg_assert(ret >= 0);
-   }
-   return ret;    
-}
-
 
 Int VG_(pipe) ( Int fd[2] )
 {
@@ -852,63 +830,6 @@ Int VG_(socket) ( Int domain, Int type, Int protocol )
 #  endif
 }
 
-Int VG_(bind) ( Int sock, const struct vki_sockaddr *addr, vki_socklen_t len)
-{
-#  if defined(VGO_linux)
-   I_die_here;
-
-#  elif defined(VGO_aix5)
-   I_die_here;
-
-#  elif defined(VGO_darwin)
-   SysRes res;
-   res = VG_(do_syscall3)(__NR_bind, sock, (UWord)addr, (UWord)len);
-   return sr_isError(res) ? -1 : sr_Res(res);
-
-#  else
-#    error "Unknown OS"
-#  endif
-}
-
-
-Int VG_(listen) ( Int sock, Int backlog )
-{
-#  if defined(VGO_linux)
-   I_die_here;
-
-#  elif defined(VGO_aix5)
-   I_die_here;
-
-#  elif defined(VGO_darwin)
-   SysRes res;
-   res = VG_(do_syscall2)(__NR_listen, sock, backlog);
-   return sr_isError(res) ? -1 : sr_Res(res);
-
-#  else
-#    error "Unknown OS"
-#  endif
-}
-
-
-// GrP fixme safe_fd?
-Int VG_(accept) ( Int sock, struct vki_sockaddr *addr, vki_socklen_t *len)
-{
-#  if defined(VGO_linux)
-   I_die_here;
-
-#  elif defined(VGO_aix5)
-   I_die_here;
-
-#  elif defined(VGO_darwin)
-   SysRes res;
-   res = VG_(do_syscall3)(__NR_accept_nocancel, sock, (UWord)addr, (UWord)len);
-   return sr_isError(res) ? -1 : sr_Res(res);
-
-#  else
-#    error "Unknown OS"
-#  endif
-}
-
 
 static
 Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr, 
@@ -1082,29 +1003,6 @@ Int VG_(getsockopt) ( Int sd, Int level, Int optname, void *optval,
 
 #  else
 #    error "Unknown platform"
-#  endif
-}
-
-
-Int VG_(setsockopt) ( Int sd, Int level, Int optname, const void *optval,
-                      Int optlen)
-{
-#  if defined(VGO_linux)
-   I_die_here;
-
-#  elif defined(VGO_aix5)
-   I_die_here;
-
-#  elif defined(VGO_darwin)
-   SysRes res;
-
-   res = VG_(do_syscall5)( __NR_setsockopt,
-                           (UWord)sd, (UWord)level, (UWord)optname, 
-                           (UWord)optval, (UWord)optlen );
-   return sr_isError(res) ? -1 : sr_Res(res);
-
-#  else
-#    error "Unknown OS"
 #  endif
 }
 
