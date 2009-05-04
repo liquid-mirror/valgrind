@@ -455,12 +455,10 @@ MEMCHR(VG_Z_DYLD,        memchr)
       return dst; \
    }
 
-#if defined(VGO_darwin)
-/* Darwin's memcpy() is overlap-safe, so replace it with MEMMOVE instead. */
-#else
 MEMCPY(VG_Z_LIBC_SONAME, memcpy)
-MEMCPY(VG_Z_LD_SO_1,     memcpy) /* ld.so.1 */
-MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
+MEMCPY(VG_Z_LD_SO_1,     memcpy)
+MEMCPY(VG_Z_LD64_SO_1,   memcpy)
+MEMCPY(VG_Z_DYLD,        memcpy)
 /* icc9 blats these around all over the place.  Not only in the main
    executable but various .so's.  They are highly tuned and read
    memory beyond the source boundary (although work correctly and
@@ -470,7 +468,6 @@ MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
    http://bugs.kde.org/show_bug.cgi?id=139776
  */
 MEMCPY(NONE, _intel_fast_memcpy)
-#endif
 
 
 #define MEMCMP(soname, fnname) \
@@ -580,11 +577,6 @@ MEMSET(VG_Z_DYLD,        memset)
 
 MEMMOVE(VG_Z_LIBC_SONAME, memmove)
 MEMMOVE(VG_Z_DYLD,        memmove)
-#if defined(VGO_darwin)
-/* Darwin's memcpy() is overlap-safe, so use MEMMOVE for memcpy() too. */
-MEMMOVE(VG_Z_LIBC_SONAME, memcpy)
-MEMMOVE(VG_Z_DYLD,        memcpy)
-#endif
 
 
 #define BCOPY(soname, fnname) \
