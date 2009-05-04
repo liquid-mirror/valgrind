@@ -1528,7 +1528,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    if (!need_help) {
       VG_(debugLog)(1, "main", "Create initial image\n");
 
-#     if defined(VGO_linux)
+#     if defined(VGO_linux) || defined(VGO_darwin)
       the_iicii.argv              = argv;
       the_iicii.envp              = envp;
       the_iicii.toolname          = toolname;
@@ -1538,10 +1538,6 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
       /* the_iicii.adler32_exp    already set up */
       /* the_iicii.sp_at_startup  is irrelevant */
       /* the_iicii.clstack_top    is irrelevant */
-      the_iicii.toolname          = toolname;
-#     elif defined(VGO_darwin)
-      the_iicii.argv              = argv;
-      the_iicii.envp              = envp;
       the_iicii.toolname          = toolname;
 #     else
 #       error "Unknown platform"
