@@ -1,0 +1,41 @@
+Index: coregrind/m_main.c
+===================================================================
+--- coregrind/m_main.c	(revision 9749)
++++ coregrind/m_main.c	(working copy)
+@@ -388,8 +388,6 @@
+ 
+       else if VG_BOOL_CLO(arg, "--xml",            VG_(clo_xml)) {}
+       else if VG_BOOL_CLO(arg, "--db-attach",      VG_(clo_db_attach)) {}
+-      else if VG_BOOL_CLO(arg, "--db-listen",      VG_(clo_db_listen)) {}
+-      else if VG_INT_CLO (arg, "--db-listen-port", VG_(clo_db_listen_port)) {}
+       else if VG_BOOL_CLO(arg, "--demangle",       VG_(clo_demangle)) {}
+       else if VG_BOOL_CLO(arg, "--error-limit",    VG_(clo_error_limit)) {}
+       else if VG_INT_CLO (arg, "--error-exitcode", VG_(clo_error_exitcode)) {}
+Index: coregrind/m_options.c
+===================================================================
+--- coregrind/m_options.c	(revision 9748)
++++ coregrind/m_options.c	(working copy)
+@@ -48,8 +48,6 @@
+ Int    VG_(clo_error_exitcode) = 0;
+ Bool   VG_(clo_db_attach)      = False;
+ Char*  VG_(clo_db_command)     = GDB_PATH " -nw -q '%f' %p";
+-Bool   VG_(clo_db_listen)      = True;
+-Int    VG_(clo_db_listen_port) = 2159; 
+ Int    VG_(clo_gen_suppressions) = 0;
+ Int    VG_(clo_sanity_level)   = 1;
+ Int    VG_(clo_verbosity)      = 1;
+Index: coregrind/pub_core_options.h
+===================================================================
+--- coregrind/pub_core_options.h	(revision 9748)
++++ coregrind/pub_core_options.h	(working copy)
+@@ -52,10 +52,6 @@
+ extern Bool  VG_(clo_db_attach);
+ /* The debugger command?  default: whatever gdb ./configure found */
+ extern Char* VG_(clo_db_command);
+-/* Listen for a remote debugger?  default: YES (GrP fixme no?) */
+-extern Bool  VG_(clo_db_listen);    // DDD: undocumented
+-/* TCP port to listen for remote debugger  default: 2159 (gdb-remote) */
+-extern Int   VG_(clo_db_listen_port);  // DDD: undocumented
+ /* Generating a suppression for each error?   default: 0 (NO)
+    Other values: 1 (yes, but ask user), 2 (yes, don't ask user) */
+ extern Int   VG_(clo_gen_suppressions);
