@@ -76,8 +76,6 @@
 // valgrind special
 
 // magic mmap() flags
-#define VKI_MAP_NOSYMS  0x40000000      // internal: disable symbol loading
-#define VKI_MAP_CLIENT  0x80000000      // internal: distinguish client mappings
 #define	VKI_MAP_ANONYMOUS MAP_ANON	// linux synonym
 
 // fds for mmap(MAP_ANON), displayed by vmmap
