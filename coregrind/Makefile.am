@@ -320,6 +320,7 @@ COREGRIND_LINUX_SOURCE = \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readpdb.c \
 	m_initimg/initimg-linux.c \
+	m_initimg/initimg-pathscan.c \
 	m_syswrap/syswrap-linux.c \
 	m_syswrap/syswrap-linux-variants.c \
 	m_syswrap/syswrap-generic.c
