@@ -1363,8 +1363,9 @@ void VG_(kill_self)(Int sigNo)
 // kernel, eg.: seg faults, illegal opcodes.  Some come from the user, eg.:
 // from kill() (SI_USER), or timer_settime() (SI_TIMER), or an async I/O
 // request (SI_ASYNCIO).  There's lots of implementation-defined leeway in
-// POSIX, but the user vs. kernal distinction is what we want here.
-static Bool is_signal_from_kernel(int si_code)
+// POSIX, but the user vs. kernal distinction is what we want here.  We also
+// pass in some other details that can help when si_code is unreliable.
+static Bool is_signal_from_kernel(ThreadId tid, int signum, int si_code)
 {
 #if defined(VGO_linux) || defined(VGO_aix5)
    // On Linux, SI_USER is zero, negative values are from the user, positive
@@ -1385,7 +1386,23 @@ static Bool is_signal_from_kernel(int si_code)
    // sub-cases in sys/signal.h.  Since it's fairly hopeless, we just pretend
    // like the problems don't exist.  Hopefully future versions of Darwin will
    // get closer to this ideal...
-   return ( si_code < VKI_SI_USER ? True : False );
+
+   // If we're blocked waiting on a syscall, it must be a user signal, because
+   // the kernel won't generate async signals within syscalls.
+   if (VG_(threads)[tid].status == VgTs_WaitSys) {
+      return False;
+
+   // If it's a SIGSEGV, use the proper condition, since it's fairly reliable.
+   } else if (SIGSEGV == signum) {
+      return ( si_code > 0 ? True : False );
+
+   // If it's anything else, assume it's kernel-generated.  Reason being that
+   // kernel-generated sync signals are more common, and it's probable that
+   // misdiagnosing a user signal as a kernel signal is better than the
+   // opposite.
+   } else {
+      return True;
+   }
 #else
 #  error Unknown OS
 #endif
@@ -1473,7 +1490,7 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
    }
 
    if ( (VG_(clo_verbosity) > 1 ||
-         (could_core && is_signal_from_kernel(info->si_code))
+         (could_core && is_signal_from_kernel(tid, sigNo, info->si_code))
         ) &&
         !VG_(clo_xml) ) {
       VG_UMSG("");
@@ -1481,7 +1498,7 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
               sigNo, signame(sigNo), core ? ": dumping core" : "");
 
       /* Be helpful - decode some more details about this fault */
-      if (is_signal_from_kernel(info->si_code)) {
+      if (is_signal_from_kernel(tid, sigNo, info->si_code)) {
 	 const Char *event = NULL;
 	 Bool haveaddr = True;
 
@@ -1563,7 +1580,7 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
          VG_(pp_ExeContext)( ec );
       }
       if (sigNo == VKI_SIGSEGV 
-          && info && is_signal_from_kernel(info->si_code)
+          && info && is_signal_from_kernel(tid, sigNo, info->si_code)
           && info->si_code == VKI_SEGV_MAPERR) {
          VG_UMSG(" If you believe this happened as a result of a stack" );
          VG_UMSG(" overflow in your program's main thread (unlikely but");
@@ -2293,7 +2310,7 @@ void sync_signalhandler ( Int sigNo,
 
    info->si_code = sanitize_si_code(info->si_code);
 
-   from_user = !is_signal_from_kernel(info->si_code);
+   from_user = !is_signal_from_kernel(tid, sigNo, info->si_code);
 
    if (VG_(clo_trace_signals)) {
       VG_DMSG("sync signal handler: "
@@ -2321,9 +2338,9 @@ void sync_signalhandler ( Int sigNo,
       kernel, then treat it more like an async signal than a sync signal --
       that is, merely queue it for later delivery. */
    if (from_user) {
-      sync_signalhandler_from_user(tid, sigNo, info, uc);
+      sync_signalhandler_from_user(  tid, sigNo, info, uc);
    } else {
-      sync_signalhandler_from_kernel( tid, sigNo, info, uc);
+      sync_signalhandler_from_kernel(tid, sigNo, info, uc);
    }
 }
 
