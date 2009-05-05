@@ -45,8 +45,9 @@ sed -e "s/frame #[0-9][0-9]*/frame #x/g" | \
 # "Thread #x was created" stack traces are unreliable once you get above
 # "pthread_create@* (hg_intercepts.c:...)" -- they can contan
 # "pthread_create@GLIBC_", "do_clone", "clone", etc.  So we cut all the
-# "at"/"by" lines above "pthread_create@*".
-perl -p -0 -e 's/(Thread #. was created\n)(   (at|by)[^\n]*\n)*(   by 0x........: pthread_create@\* \(hg_intercepts.c:...\)\n)/$1   ...\n$4/gs' |
+# "at"/"by" lines above "pthread_create@*".  We also convert
+# "pthread_create" into "pthread_create@*".
+perl -p -0 -e 's/(Thread #. was created\n)(   (at|by)[^\n]*\n)*(   by 0x........: pthread_create)(@\*)?( \(hg_intercepts.c:...\)\n)/$1   ...\n$4$5@*$6/gs' |
 
 # Anything below "mythread_wrapper" in stack traces is unreliable,
 # containing libc and libpthread stuff like start_thread, clone, etc.  So we

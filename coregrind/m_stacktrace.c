@@ -101,6 +101,9 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
    /* Assertion broken before main() is reached in pthreaded programs;  the
     * offending stack traces only have one item.  --njn, 2002-aug-16 */
    /* vg_assert(fp_min <= fp_max);*/
+   // On Darwin, this kicks in for pthread-related stack traces, so they're
+   // only 1 entry long which is wrong.
+#if !defined(VGO_darwin)
    if (fp_min + 512 >= fp_max) {
       /* If the stack limits look bogus, don't poke around ... but
          don't bomb out either. */
@@ -109,6 +112,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       ips[0] = ip;
       return 1;
    } 
+#endif
 
    /* Otherwise unwind the stack in a platform-specific way.  Trying
       to merge the x86, amd64, ppc32 and ppc64 logic into a single
