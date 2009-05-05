@@ -97,3 +97,72 @@
    obj:/usr/lib/libSystem*
    obj:/usr/lib/libSystem*
 }
+
+##----------------------------------------------------------------------##
+#
+# Suppressions for Helgrind.
+
+# These ones were necessary to give no errors on a tiny non-threaded
+# program.  I don't know if they're real problems or false positives (njn).
+
+# keymgr seems to deliberately do some bogus actions, and if they are bogus,
+# it passes the error codes back to the caller.
+{
+   __keymgr_initializer lock failed
+   Helgrind:PthAPIerror
+   fun:pthread_mutex_lock
+   fun:_dyld_register_func_for_*_image
+   fun:__keymgr_initializer
+   fun:libSystem_initializer
+}
+{
+   __keymgr_initializer unlock failed
+   Helgrind:PthAPIerror
+   fun:pthread_mutex_unlock
+   fun:_dyld_register_func_for_*_image
+   fun:__keymgr_initializer
+   fun:libSystem_initializer
+}
+{
+   __keymgr_initializer bogus unlock
+   Helgrind:UnlockBogus
+   fun:pthread_mutex_unlock
+   fun:_dyld_register_func_for_*_image
+   fun:__keymgr_initializer
+   fun:libSystem_initializer
+}
+
+# These ones were necessary to give no errors on a tiny threaded program.
+# I don't know if they're real problems or false positives (njn).
+
+{
+   crude1
+   Helgrind:Race
+   obj:/usr/lib/dyld
+}
+{
+   crude2
+   Helgrind:Race
+   ...
+   obj:/usr/lib/libSystem.B.dylib
+}
+# This would be better as "fun:\?\?\?" but string matching doesn't seem to
+# allow escaping meta-chars.
+{
+   crude3
+   Helgrind:Race
+   fun:???
+}
+{
+   crude4
+   Helgrind:Race
+   fun:mythread_wrapper
+}
+{
+   crude5
+   Helgrind:Race
+   ...
+   fun:pthread_create_WRK
+   fun:pthread_create
+}
+

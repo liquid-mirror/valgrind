@@ -11,7 +11,7 @@ $dir/../../tests/filter_addresses                       |
 sed "/^Helgrind, a thread error detector/ , /./ d" |
 
 # Anonymise line numbers in hg_intercepts.c
-sed "s/hg_intercepts.c:[0-9]\+/hg_intercepts.c:.../g"  |
+sed "s/hg_intercepts.c:[0-9]*/hg_intercepts.c:.../g"  |
 
 # Change (eg) "/lib64/libpthread-2.5.so" into "/...libpthread..."
 sed \
