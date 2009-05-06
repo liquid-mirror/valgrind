@@ -1,5 +1,7 @@
 include $(top_srcdir)/Makefile.tool.am
 
+SUBDIRS += perf
+
 noinst_PROGRAMS = 
 noinst_DSYMS = 
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
