@@ -143,7 +143,6 @@
 {
    crude2
    Helgrind:Race
-   ...
    obj:/usr/lib/libSystem.B.dylib
 }
 # This would be better as "fun:\?\?\?" but string matching doesn't seem to
