@@ -160,7 +160,11 @@ void page_align_addr_and_len( Addr* a, SizeT* len)
    we just pass di_handle=0 to notify_tool_of_mmap as we have no
    better information.  But really this function should be done away
    with; problem is I don't understand what POST(sys_io_setup) does or
-   how it works. */
+   how it works. 
+   
+   [This function is also used lots for Darwin, because
+   ML_(generic_PRE_sys_mmap) cannot be used for Darwin.] 
+ */
 void 
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                        UInt flags, Int fd, Off64T offset )
@@ -1944,14 +1948,14 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    MapRequest mreq;
    Bool       mreq_ok;
 
-   // GrP fixme this has races - don't use
+#if defined(VGO_darwin)
+   // Nb: we can't use this on Darwin, it has races:
    // * needs to RETRY if advisory succeeds but map fails  
    //   (could have been some other thread in a nonblocking call)
    // * needs to not use fixed-position mmap() on Darwin
    //   (mmap will cheerfully smash whatever's already there, which might 
    //   be a new mapping from some other thread in a nonblocking call)
-#if defined(VGO_darwin)
-   __builtin_trap();
+   VG_(core_panic)("can't use ML_(generic_PRE_sys_mmap) on Darwin");
 #endif
 
    if (arg2 == 0) {
