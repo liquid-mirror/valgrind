@@ -4,19 +4,8 @@
 #include <sched.h>
 #include <signal.h>
 
-
-// Here we are trying to trigger every syscall error (scalar errors and
-// memory errors) for every syscall.  We do this by passing a lot of bogus
-// arguments, mostly 0 and 1 (often it's 1 because NULL ptr args often aren't
-// checked for memory errors, or in order to have a non-zero length used
-// with some buffer).  So most of the syscalls don't actually succeed and do
-// anything.
-//
-// Occasionally we have to be careful not to cause Valgrind to seg fault in
-// its pre-syscall wrappers;  it does so because it can't know in general
-// when memory is unaddressable, and so tries to dereference it when doing
-// PRE_MEM_READ/PRE_MEM_WRITE calls.  (Note that Memcheck will
-// always issue an error message immediately before these seg faults occur).
+// See memcheck/tests/x86-linux/scalar.c for an explanation of what this test
+// is doing.
 
 int main(void)
 {
@@ -222,7 +211,11 @@ int main(void)
    // /* 166  old exportfs */
    // __NR_mount 167
    // /* 168  old ustat */
+
    // __NR_csops 169
+   GO(__NR_csops, "4s 1m");
+   SY(__NR_csops, x0, x0, x0+1, x0+1); FAILx(EFAULT);
+
    // /* 170  old table */
    // /* 171  old wait3 */
    // /* 172  old rpause */
@@ -346,8 +339,15 @@ int main(void)
    SY(__NR_sem_post, x0); FAIL;
 
    // __NR_sem_getvalue 274
+
    // __NR_sem_init 275
+   GO(__NR_sem_init, "3s 1m");
+   SY(__NR_sem_init, x0+1, x0, x0); FAILx(ENOSYS);
+
    // __NR_sem_destroy 276
+   GO(__NR_sem_destroy, "1s 1m");
+   SY(__NR_sem_destroy, x0+1); FAILx(ENOSYS);
+
    // __NR_open_extended 277
    // __NR_umask_extended 278
    // __NR_stat_extended 279

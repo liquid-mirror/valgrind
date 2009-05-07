@@ -83,7 +83,26 @@ Syscall param socketcall.getsockopt(optlen) points to unaddressable byte(s)
    ...
  Address 0x........ is 0 bytes after a block of size 4 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
-   by 0x........: main (scalar.c:24)
+   by 0x........: main (scalar.c:13)
+-----------------------------------------------------
+169:          __NR_csops 4s 1m
+-----------------------------------------------------
+
+Syscall param csops(pid) contains uninitialised byte(s)
+   ...
+
+Syscall param csops(ops) contains uninitialised byte(s)
+   ...
+
+Syscall param csops(useraddr) contains uninitialised byte(s)
+   ...
+
+Syscall param csops(usersize) contains uninitialised byte(s)
+   ...
+
+Syscall param csops(addr) points to unaddressable byte(s)
+   ...
+ Address 0x........ is not stack'd, malloc'd or (recently) free'd
 -----------------------------------------------------
 268:       __NR_sem_open 2s 1m
 -----------------------------------------------------
@@ -128,6 +147,32 @@ Syscall param sem_unlink(name) points to unaddressable byte(s)
 
 Syscall param sem_post(sem) contains uninitialised byte(s)
    ...
+-----------------------------------------------------
+275:       __NR_sem_init 3s 1m
+-----------------------------------------------------
+
+Syscall param sem_init(sem) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_init(pshared) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_init(value) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_init(sem) points to unaddressable byte(s)
+   ...
+ Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-----------------------------------------------------
+276:    __NR_sem_destroy 1s 1m
+-----------------------------------------------------
+
+Syscall param sem_destroy(sem) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_destroy(sem) points to unaddressable byte(s)
+   ...
+ Address 0x........ is not stack'd, malloc'd or (recently) free'd
 -----------------------------------------------------
 420:__NR_sem_wait_nocancel 1s 0m
 -----------------------------------------------------
