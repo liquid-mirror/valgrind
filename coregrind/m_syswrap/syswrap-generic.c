@@ -3107,6 +3107,12 @@ static void common_post_getrlimit(ThreadId tid, UWord a1, UWord a2)
 {
    POST_MEM_WRITE( a2, sizeof(struct vki_rlimit) );
 
+#ifdef _RLIMIT_POSIX_FLAG
+   // Darwin will sometimes set _RLIMIT_POSIX_FLAG on getrlimit calls.
+   // Unset it here to make the switch case below work correctly.
+   a1 &= ~_RLIMIT_POSIX_FLAG;
+#endif
+
    switch (a1) {
    case VKI_RLIMIT_NOFILE:
       ((struct vki_rlimit *)a2)->rlim_cur = VG_(fd_soft_limit);
@@ -3826,12 +3832,19 @@ PRE(sys_setreuid)
 
 PRE(sys_setrlimit)
 {
+   UWord arg1 = ARG1;
    PRINT("sys_setrlimit ( %ld, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "setrlimit",
                  unsigned int, resource, struct rlimit *, rlim);
    PRE_MEM_READ( "setrlimit(rlim)", ARG2, sizeof(struct vki_rlimit) );
 
-   if (ARG1 == VKI_RLIMIT_NOFILE) {
+#ifdef _RLIMIT_POSIX_FLAG
+   // Darwin will sometimes set _RLIMIT_POSIX_FLAG on setrlimit calls.
+   // Unset it here to make the if statements below work correctly.
+   arg1 &= ~_RLIMIT_POSIX_FLAG;
+#endif
+
+   if (arg1 == VKI_RLIMIT_NOFILE) {
       if (((struct vki_rlimit *)ARG2)->rlim_cur > VG_(fd_hard_limit) ||
           ((struct vki_rlimit *)ARG2)->rlim_max != VG_(fd_hard_limit)) {
          SET_STATUS_Failure( VKI_EPERM );
@@ -3841,7 +3854,7 @@ PRE(sys_setrlimit)
          SET_STATUS_Success( 0 );
       }
    }
-   else if (ARG1 == VKI_RLIMIT_DATA) {
+   else if (arg1 == VKI_RLIMIT_DATA) {
       if (((struct vki_rlimit *)ARG2)->rlim_cur > VG_(client_rlimit_data).rlim_max ||
           ((struct vki_rlimit *)ARG2)->rlim_max > VG_(client_rlimit_data).rlim_max) {
          SET_STATUS_Failure( VKI_EPERM );
@@ -3851,7 +3864,7 @@ PRE(sys_setrlimit)
          SET_STATUS_Success( 0 );
       }
    }
-   else if (ARG1 == VKI_RLIMIT_STACK && tid == 1) {
+   else if (arg1 == VKI_RLIMIT_STACK && tid == 1) {
       if (((struct vki_rlimit *)ARG2)->rlim_cur > VG_(client_rlimit_stack).rlim_max ||
           ((struct vki_rlimit *)ARG2)->rlim_max > VG_(client_rlimit_stack).rlim_max) {
          SET_STATUS_Failure( VKI_EPERM );

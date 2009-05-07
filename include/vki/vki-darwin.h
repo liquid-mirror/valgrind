@@ -636,7 +636,7 @@ typedef
 #define	VKI_RLIMIT_MEMLOCK	RLIMIT_MEMLOCK
 #define	VKI_RLIMIT_NPROC	RLIMIT_NPROC
 #define	VKI_RLIMIT_NOFILE	RLIMIT_NOFILE
-#define	VKI_RLIM_NLIMITS	RLIM_MLIMITS
+#define	VKI_RLIM_NLIMITS	RLIM_NLIMITS
 
 #define vki_rlim_t rlim_t
 #define vki_rlimit rlimit
