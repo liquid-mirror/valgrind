@@ -782,7 +782,6 @@ PRE(sys_ioctl)
       //tst->sys_flags &= ~SfMayBlock;
       break;
 
-   // DDD: #warning GrP fixme darwin-specific ioctl
    case VKI_FIODTYPE: 
       PRE_MEM_WRITE( "ioctl(FIONREAD)", ARG3, sizeof(int) );
       break;
@@ -909,7 +908,6 @@ POST(sys_ioctl)
    case VKI_SIOCSPGRP:
       break;
 
-   // DDD: #warning GrP fixme darwin-specific ioctl
    case VKI_FIODTYPE: 
       POST_MEM_WRITE( ARG3, sizeof(int) );
       break;
@@ -6699,39 +6697,6 @@ POST(iokit_user_client_trap)
 {
    VG_(sync_mappings)("after", "iokit_user_client_trap", ARG2);
 }
-
-
-/*
-// GrP fixme gone in Leopard
-PRE(MKGetTimeBaseInfo)
-{
-   PRINT("MKGetTimeBaseInfo(%p, %p, %p, %p, %p)", 
-         ARG1, ARG2, ARG3, ARG4, ARG5);
-   PRE_REG_READ5(long, "MKGetTimeBaseInfo", void*,"delta", 
-                 void*,"abs_to_ns_numer", void*,"abs_to_ns_denom", 
-                 void*,"proc_to_abs_numer", void*,"proc_to_abs_denom");
-
-   PRE_MEM_WRITE("MKGetTimeBaseInfo(delta)", 
-                 ARG1, sizeof(vki_uint32_t));
-   PRE_MEM_WRITE("MKGetTimeBaseInfo(abs_to_ns_numer)", 
-                 ARG1, sizeof(vki_uint32_t));
-   PRE_MEM_WRITE("MKGetTimeBaseInfo(abs_to_ns_denom)", 
-                 ARG1, sizeof(vki_uint32_t));
-   PRE_MEM_WRITE("MKGetTimeBaseInfo(proc_to_abs_numer)", 
-                 ARG1, sizeof(vki_uint32_t));
-   PRE_MEM_WRITE("MKGetTimeBaseInfo(proc_to_abs_denom)", 
-                 ARG1, sizeof(vki_uint32_t));
-}
-
-POST(MKGetTimeBaseInfo)
-{
-   POST_MEM_WRITE(ARG1, sizeof(vki_uint32_t));
-   POST_MEM_WRITE(ARG1, sizeof(vki_uint32_t));
-   POST_MEM_WRITE(ARG1, sizeof(vki_uint32_t));
-   POST_MEM_WRITE(ARG1, sizeof(vki_uint32_t));
-   POST_MEM_WRITE(ARG1, sizeof(vki_uint32_t));
-}
-*/
 
 
 PRE(swtch)
