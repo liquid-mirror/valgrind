@@ -291,6 +291,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_vkiscnums.c \
 	m_wordfm.c \
 	m_xarray.c \
+	m_aspacehl.c \
 	m_aspacemgr/aspacemgr-common.c \
 	m_debuginfo/misc.c \
 	m_debuginfo/d3basics.c \
