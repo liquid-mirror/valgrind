@@ -459,19 +459,19 @@ void wqthread_hijack(Addr self, Addr kport, Addr stackaddr, Addr workitem,
       tst->client_stack_highest_word = stack+stacksize;
       tst->client_stack_szB = stacksize;
 
-      // fixme scheduler lock?!
+      // GrP fixme scheduler lock?!
       
       // pthread structure
       ML_(notify_aspacem_and_tool_of_mmap)
           (stack+stacksize, pthread_structsize, 
            VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
       // stack contents
-      // fixme uninitialized!
+      // GrP fixme uninitialized!
       ML_(notify_aspacem_and_tool_of_mmap)
           (stack, stacksize, 
            VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
       // guard page
-      // fixme ban_mem_stack!
+      // GrP fixme ban_mem_stack!
       ML_(notify_aspacem_and_tool_of_mmap)
           (stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
            0, VKI_MAP_PRIVATE, -1, 0);

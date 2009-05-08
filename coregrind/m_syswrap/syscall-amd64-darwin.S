@@ -97,13 +97,13 @@ L_$0_1:	/* Even though we can't take a signal until the sigprocmask completes,
 
 	/* Set the signal mask which should be current during the syscall. */
 	/* GrP fixme signals
-           JRS fixme: use __NR___pthread_sigmask, not __NR_rt_sigprocmask
+           DDD: JRS fixme: use __NR___pthread_sigmask, not __NR_rt_sigprocmask
 	movq	$__NR_rt_sigprocmask, %rax	// syscall #
 	movq	$VKI_SIG_SETMASK, %rdi		// how
 	movq	-24(%rbp), %rsi			// sysmask
 	movq	-32(%rbp), %rdx			// postmask
 	movq	-40(%rbp), %r10			// sigsetSzB in r10 not rcx
-	fixme return address
+	DDD: fixme return address
 	syscall
 
 	jnc	7f	// sigprocmask failed
@@ -160,7 +160,7 @@ L_$0_3:	/* In the range [3, 4), the syscall result is in %rax,
 L_$0_4:	/* Re-block signals.  If eip is in [4,5), then the syscall 
 	   is complete and we needn't worry about it. */
 	/* GrP fixme signals
-           JRS fixme: use __NR___pthread_sigmask, not __NR_rt_sigprocmask
+           DDD: JRS fixme: use __NR___pthread_sigmask, not __NR_rt_sigprocmask
 	PUSH_di_si_dx_cx_8
 
 	movq	$__NR_rt_sigprocmask, %rax	// syscall #
@@ -168,7 +168,7 @@ L_$0_4:	/* Re-block signals.  If eip is in [4,5), then the syscall
 	movq	%rcx, %rsi			// postmask
 	xorq	%rdx, %rdx			// NULL
 	movq	%r8, %r10			// sigsetSzB
-	fixme return address
+	DDD: fixme return address
 	syscall
 
 	POP_di_si_dx_cx_8
@@ -183,7 +183,7 @@ L_$0_5:	/* now safe from signals */
 
 /* GrP fixme signals
 L_$0_7:	// failure:	 return 0x8000 | error code
-	fixme return value
+	DDD: fixme return value
 	movq	%rbp, %rsp
 	popq	%rbp
 	ret

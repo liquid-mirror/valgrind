@@ -52,7 +52,7 @@
    ------------------------------------------------------------------ */
 
 #if !defined(VGO_darwin)
-// GrP fixme
+// GrP GrP fixme
 
 void VG_NOTIFY_ON_LOAD(freeres)( void );
 void VG_NOTIFY_ON_LOAD(freeres)( void )
@@ -94,7 +94,7 @@ __private_extern__ char *__crashreporter_info__ = "Instrumented by Valgrind " VE
 #include <string.h>
 #include <crt_externs.h>
 
-// fixme copied from m_libcproc
+// GrP fixme copied from m_libcproc
 static void env_unsetenv ( Char **env, const Char *varname )
 {
    Char **from;
@@ -151,7 +151,7 @@ void VG_REPLACE_FUNCTION_ZU(libSystemZdZaZddylib, arc4random_addrandom)(unsigned
 void VG_REPLACE_FUNCTION_ZU(libSystemZdZaZddylib, arc4random_addrandom)(unsigned char *dat, int datlen)
 {
     // do nothing
-    // fixme ought to check [dat..dat+datlen) is defined
+    // GrP fixme ought to check [dat..dat+datlen) is defined
     // but don't care if it's initialized
 }
 

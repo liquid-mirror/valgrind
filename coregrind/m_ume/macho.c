@@ -204,7 +204,7 @@ load_segment(int fd, vki_off_t offset, vki_off_t size,
    }
 
    // Get desired memory protection
-   // fixme need maxprot too
+   // GrP fixme need maxprot too
    prot = (((segcmd->initprot & VM_PROT_READ) ? VKI_PROT_READ : 0) |
            ((segcmd->initprot & VM_PROT_WRITE) ? VKI_PROT_WRITE : 0) |
            ((segcmd->initprot & VM_PROT_EXECUTE) ? VKI_PROT_EXEC : 0));

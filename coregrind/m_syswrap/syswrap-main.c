@@ -537,7 +537,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       // syscall = Unix, 32-bit result
       // OR        Mach, 32-bit result
       if (canonical->sysno >= 0) {
-         // fixme hack  I386_SYSCALL_NUMBER_MASK
+         // GrP fixme hack  I386_SYSCALL_NUMBER_MASK
          canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(canonical->sysno
                                                              & 0xffff);
       } else {
@@ -935,7 +935,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
                    OFFSET_x86_EDX, sizeof(UInt) );
          LibVEX_GuestX86_put_eflag_c( sres._mode==SysRes_UNIX_ERR ? 1 : 0,
                                       gst );
-         // fixme sets defined for entire eflags, not just bit c
+         // GrP fixme sets defined for entire eflags, not just bit c
          // DDD: this breaks exp-ptrcheck.
          VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
                    offsetof(VexGuestX86State, guest_CC_DEP1), sizeof(UInt) );
@@ -968,7 +968,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
                    OFFSET_amd64_RDX, sizeof(ULong) );
          LibVEX_GuestAMD64_put_rflag_c( sres._mode==SysRes_UNIX_ERR ? 1 : 0,
                                         gst );
-         // fixme sets defined for entire rflags, not just bit c
+         // GrP fixme sets defined for entire rflags, not just bit c
          // DDD: this breaks exp-ptrcheck.
          VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
                    offsetof(VexGuestAMD64State, guest_CC_DEP1), sizeof(ULong) );

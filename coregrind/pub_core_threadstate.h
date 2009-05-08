@@ -167,7 +167,7 @@ typedef
 
       // Workqueue re-entry 
       // (setjmp in PRE(workq_ops), longjmp in wqthread_hijack)
-      // JRS fixme: this comment is no longer correct; wq_jmpbuf is
+      // DDD: JRS fixme: this comment is no longer correct; wq_jmpbuf is
       // never used, and there is no such setjmp or longjmp pair.
       // I guess we could leave wq_jmpbuf_valid in place though, since
       // it does allow for an assertion in ML_(wqthread_continue_NORETURN).

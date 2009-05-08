@@ -256,7 +256,7 @@ static void run_a_thread_NORETURN ( Word tidW )
       tst->status = VgTs_Empty;
       // GrP fixme race here! new thread may claim this V thread stack 
       // before we get out here!
-      // fixme use bsdthread_terminate for safe cleanup?
+      // GrP fixme use bsdthread_terminate for safe cleanup?
       mach_msg(&msg, MACH_SEND_MSG|MACH_MSG_OPTION_NONE, 
                sizeof(msg), 0, 0, MACH_MSG_TIMEOUT_NONE, 0);
       
@@ -1466,8 +1466,8 @@ PRE(sys_workq_ops)
    switch (ARG1) {
    case VKI_WQOPS_QUEUE_ADD:
    case VKI_WQOPS_QUEUE_REMOVE:
-      // fixme need anything here?
-      // fixme may block?
+      // GrP fixme need anything here?
+      // GrP fixme may block?
       break;
 
    case VKI_WQOPS_THREAD_RETURN: {
@@ -1483,7 +1483,7 @@ PRE(sys_workq_ops)
       //    to a strange address.
       ThreadState *tst = VG_(get_ThreadState)(tid);
       tst->os_state.wq_jmpbuf_valid = True;
-      *flags |= SfMayBlock;  // fixme true?
+      *flags |= SfMayBlock;  // GrP fixme true?
       break;
    }
 
@@ -1893,12 +1893,12 @@ PRE(sys_chmod_extended)
 
 PRE(sys_accessx)
 {
-    // fixme difficult
+    // GrP fixme difficult
 }
 
 POST(sys_accessx)
 {
-    // fixme
+    // GrP fixme
 }
 
 PRE(sys_chflags)
@@ -1907,7 +1907,7 @@ PRE(sys_chflags)
    PRE_REG_READ2(int, "chflags", const char *,path, unsigned int,flags);
    PRE_MEM_RASCIIZ("chflags(path)", ARG1);
 
-   // fixme sanity-check flags value?
+   // GrP fixme sanity-check flags value?
 }
 
 PRE(sys_fchflags)
@@ -1915,7 +1915,7 @@ PRE(sys_fchflags)
    PRINT("sys_fchflags ( %ld, %lu )", ARG1, ARG2);
    PRE_REG_READ2(int, "fchflags", int,fd, unsigned int,flags);
 
-   // fixme sanity-check flags value?
+   // GrP fixme sanity-check flags value?
 }
 
 POST(sys_stat64)
@@ -2997,7 +2997,7 @@ PRE(sys_auditon)
    case VKI_A_GETFSIZE:
    case VKI_A_GETCOND:
       // kernel writes data..data+length
-      // fixme be precise about what gets written
+      // GrP fixme be precise about what gets written
       PRE_MEM_WRITE("auditon(data)", ARG2, ARG3);
       break;
 
@@ -3006,7 +3006,7 @@ PRE(sys_auditon)
    case VKI_A_GETPINFO:
    case VKI_A_GETPINFO_ADDR:
       // kernel reads and writes data..data+length
-      // fixme be precise about what gets read and written
+      // GrP fixme be precise about what gets read and written
       PRE_MEM_READ("auditon(data)", ARG2, ARG3);
       PRE_MEM_WRITE("auditon(data)", ARG2, ARG3);
       break;
@@ -3048,7 +3048,7 @@ POST(sys_auditon)
    case VKI_A_GETFSIZE:
    case VKI_A_GETCOND:
       // kernel writes data..data+length
-      // fixme be precise about what gets written
+      // GrP fixme be precise about what gets written
       POST_MEM_WRITE(ARG2, ARG3);
       break;
 
@@ -3057,7 +3057,7 @@ POST(sys_auditon)
    case VKI_A_GETPINFO:
    case VKI_A_GETPINFO_ADDR:
       // kernel reads and writes data..data+length
-      // fixme be precise about what gets read and written
+      // GrP fixme be precise about what gets read and written
       POST_MEM_WRITE(ARG2, ARG3);
       break;
 
@@ -3149,7 +3149,7 @@ PRE(sys_sysctl)
       VG_(printf)("]");
    }
 
-   // fixme intercept KERN_PROCARGS and KERN_PROC_PID for our pid
+   // GrP fixme intercept KERN_PROCARGS and KERN_PROC_PID for our pid
    // (executable path and arguments and environment
 
    {
@@ -3701,7 +3701,7 @@ PRE(host_request_notification)
             name_for_port(req->notify_port.name));
    }
 
-    // fixme only do this on success
+    // GrP fixme only do this on success
    assign_port_name(req->notify_port.name, "host_notify-%p");
 }
 
@@ -4087,7 +4087,7 @@ PRE(mach_port_request_notification)
 
 POST(mach_port_request_notification)
 {
-   // fixme port tracker? not sure
+   // GrP fixme port tracker? not sure
 }
 
 
@@ -4114,14 +4114,14 @@ PRE(mach_port_insert_right)
    AFTER = POST_FN(mach_port_insert_right);
 
    if (MACH_REMOTE == mach_task_self()) {
-      // fixme import_complex_message handles everything?
+      // GrP fixme import_complex_message handles everything?
       // what about export_complex_message for MOVE variants?
    } else {
       VG_(printf)("UNKNOWN mach_port_insert_right into remote task!\n");
-      // fixme also may remove rights from this task?
+      // GrP fixme also may remove rights from this task?
    }
 
-   // fixme port tracker?
+   // GrP fixme port tracker?
 }
 
 POST(mach_port_insert_right)
@@ -4200,7 +4200,7 @@ PRE(mach_port_insert_member)
 
    AFTER = POST_FN(mach_port_insert_member);
 
-   // fixme port tracker?
+   // GrP fixme port tracker?
 }
 
 POST(mach_port_insert_member)
@@ -5106,7 +5106,7 @@ PRE(vm_purgable_control)
          name_for_port(MACH_REMOTE), 
          req->address, req->control, req->state);
 
-   // fixme verify address?
+   // GrP fixme verify address?
 
    AFTER = POST_FN(vm_purgable_control);
 }
@@ -5149,7 +5149,7 @@ PRE(mach_vm_purgable_control)
          name_for_port(MACH_REMOTE), 
          (unsigned long long)req->address, req->control, req->state);
 
-   // fixme verify address?
+   // GrP fixme verify address?
 
    AFTER = POST_FN(mach_vm_purgable_control);
 }
@@ -5382,7 +5382,7 @@ POST(mach_vm_inherit)
    
    if (!reply->RetCode) {
       // no V-visible side effects
-      // fixme except maybe fork/exec
+      // GrP fixme except maybe fork/exec
    } else {
       PRINT("mig return %d", reply->RetCode);
    }
@@ -5547,7 +5547,7 @@ POST(mach_vm_region_recurse)
        PRINT("got region at 0x%llx, size %llu, depth %u, count %u", 
              reply->address, reply->size, 
              reply->nesting_depth, reply->infoCnt);
-       // fixme mark info contents beyond infoCnt as bogus
+       // GrP fixme mark info contents beyond infoCnt as bogus
    } else {
       PRINT("mig return %d", reply->RetCode);
    }
@@ -5715,8 +5715,8 @@ POST(sys_bsdthread_create)
    semaphore_destroy(mach_task_self(), tst->os_state.child_go);
    semaphore_destroy(mach_task_self(), tst->os_state.child_done);
 
-   // fixme semaphore destroy needed when thread creation fails
-   // fixme probably other cleanup too
+   // GrP fixme semaphore destroy needed when thread creation fails
+   // GrP fixme probably other cleanup too
 
    // DDD: I'm not at all sure this is the right spot for this.  It probably
    // should be in pthread_hijack instead, just before the call to
@@ -5737,7 +5737,7 @@ PRE(sys_bsdthread_terminate)
                  mach_port_t,"kport", mach_port_t,"joinsem");
 
    // Free memory and signal semaphore.
-   // fixme errors?
+   // GrP fixme errors?
    if (ARG4) semaphore_signal((semaphore_t)ARG4);
    if (ARG1  &&  ARG2) {
        ML_(notify_aspacem_and_tool_of_munmap)(ARG1, ARG2);
@@ -5866,7 +5866,7 @@ PRE(thread_info)
 
 POST(thread_info)
 {
-   // fixme mark unused parts of thread_info_out as uninitialized?
+   // GrP fixme mark unused parts of thread_info_out as uninitialized?
 }
 
 

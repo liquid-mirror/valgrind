@@ -133,7 +133,7 @@ L_$0_1:	/* Even though we can't take a signal until the
 	   or was interrupted and the kernel was restarting it. */
 L_$0_2:
 .if $0 == UNIX
-	int	$$0x80			/* UNIX (fixme should be sysenter?) */
+	int	$$0x80		/* UNIX (GrP fixme should be sysenter?) */
 .elseif $0 == MACH
 	int	$$0x81
 .elseif $0 == MDEP
