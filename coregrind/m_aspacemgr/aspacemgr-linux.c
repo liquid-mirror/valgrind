@@ -3329,15 +3329,33 @@ parse_procselfmaps (
 extern void ML_(notify_aspacem_and_tool_of_mmap)
    ( Addr a, SizeT len, UInt prot, UInt flags, Int fd, Off64T offset );
 extern void ML_(notify_aspacem_and_tool_of_munmap) ( Addr a, SizeT len );
-static const HChar *sync_mapping_when;
-static const HChar *sync_mapping_where;
+
+typedef 
+   struct {
+      Bool   is_added;  // Added or removed seg?
+      Addr   start;
+      SizeT  end;
+      UInt   prot;      // Not used for removed segs.
+      Off64T offset;    // Not used for removed segs.
+   }
+   ChangedSeg;
+
+// I haven't seen more than 1 segment be added or removed in a single calls to
+// VG_(sync_mappings).  So 20 seems generous.  However, if it needs to be made
+// larger, we know that it'll never need to be larger than 'segnames_used', so
+// an array of that size could be dynamically allocated in VG_(sync_mappings).
+// --njn
+#define CHANGED_SEGS_SIZE    20
+static ChangedSeg changed_segs[CHANGED_SEGS_SIZE];
+static Int        changed_segs_used;
+
 static void add_mapping_callback(Addr addr, SizeT len, UInt prot, 
                                  ULong dev, ULong ino, Off64T offset, 
                                  const UChar *filename)
 {
    // derived from sync_check_mapping_callback()
 
-   Int  iLo, iHi, i;
+   Int iLo, iHi, i;
 
    if (len == 0) return;
 
@@ -3355,44 +3373,47 @@ static void add_mapping_callback(Addr addr, SizeT len, UInt prot,
       UInt seg_prot;
 
       if (nsegments[i].kind == SkAnonV  ||  nsegments[i].kind == SkFileV) {
-          /* Ignore V regions */
-          continue;
+         /* Ignore V regions */
+         continue;
       } 
       else if (nsegments[i].kind == SkFree || nsegments[i].kind == SkResvn) {
           /* Add mapping for SkResvn regions */
-          if (VG_(clo_trace_syscalls)) 
-              VG_(debugLog)(0,"aspacem","\nadded region %p..%p at %s (%s)", 
-                            (void*)addr, (void*)(addr+len), 
-                            sync_mapping_where,
-                            sync_mapping_when);
-          ML_(notify_aspacem_and_tool_of_mmap)
-              (addr, len, prot, VKI_MAP_PRIVATE, 0, offset);
-          return;
-      } 
-      else if (nsegments[i].kind == SkAnonC  ||  nsegments[i].kind == SkFileC
-               ||  nsegments[i].kind == SkShmC) {
-          /* Check permissions on client regions */
-          // fixme
-          seg_prot = 0;
-          if (nsegments[i].hasR) seg_prot |= VKI_PROT_READ;
-          if (nsegments[i].hasW) seg_prot |= VKI_PROT_WRITE;
-#         if defined(VGA_x86)
-          // fixme sloppyXcheck 
-          // darwin: kernel X ignored and spuriously changes? (vm_copy)
-          seg_prot |= (prot & VKI_PROT_EXEC);
-#         else
-          if (nsegments[i].hasX) seg_prot |= VKI_PROT_EXEC;
-#         endif
-          if (seg_prot != prot) {
-              if (VG_(clo_trace_syscalls)) 
-                  VG_(debugLog)(0,"aspacem","\nregion %p..%p permission "
-                                  "mismatch (kernel %x, V %x)", 
-                                  (void*)nsegments[i].start,
-                                  (void*)(nsegments[i].end+1), prot, seg_prot);
-          }
-      }
-      else {
-          aspacem_assert(0);
+         ChangedSeg* cs = &changed_segs[changed_segs_used];
+         aspacem_assert(changed_segs_used < CHANGED_SEGS_SIZE);
+         cs->is_added = True;
+         cs->start    = addr;
+         cs->end      = addr + len - 1;
+         cs->prot     = prot;
+         cs->offset   = offset;
+         changed_segs_used++;
+         return;
+
+      } else if (nsegments[i].kind == SkAnonC ||
+                 nsegments[i].kind == SkFileC ||
+                 nsegments[i].kind == SkShmC)
+      {
+         /* Check permissions on client regions */
+         // GrP fixme
+         seg_prot = 0;
+         if (nsegments[i].hasR) seg_prot |= VKI_PROT_READ;
+         if (nsegments[i].hasW) seg_prot |= VKI_PROT_WRITE;
+#        if defined(VGA_x86)
+         // GrP fixme sloppyXcheck 
+         // darwin: kernel X ignored and spuriously changes? (vm_copy)
+         seg_prot |= (prot & VKI_PROT_EXEC);
+#        else
+         if (nsegments[i].hasX) seg_prot |= VKI_PROT_EXEC;
+#        endif
+         if (seg_prot != prot) {
+             if (VG_(clo_trace_syscalls)) 
+                 VG_(debugLog)(0,"aspacem","\nregion %p..%p permission "
+                                 "mismatch (kernel %x, V %x)", 
+                                 (void*)nsegments[i].start,
+                                 (void*)(nsegments[i].end+1), prot, seg_prot);
+         }
+
+      } else {
+         aspacem_assert(0);
       }
    }
 }
@@ -3412,20 +3433,18 @@ static void remove_mapping_callback(Addr addr, SizeT len)
    iLo = find_nsegment_idx( addr );
    iHi = find_nsegment_idx( addr + len - 1 );
 
-   /* NSegments iLo .. iHi inclusive should agree with the presented
-      data. */
+   /* NSegments iLo .. iHi inclusive should agree with the presented data. */
    for (i = iLo; i <= iHi; i++) {
       if (nsegments[i].kind != SkFree  &&  nsegments[i].kind != SkResvn) {
          // V has a mapping, kernel doesn't
-         if (VG_(clo_trace_syscalls)) 
-            VG_(debugLog)(0,"aspacem","\nremoved region 0x%010llx..0x%010llx"
-                          " at %s (%s)", 
-                          (ULong)nsegments[i].start,
-                          (ULong)(nsegments[i].end+1), 
-                          sync_mapping_where,
-                          sync_mapping_when);
-         ML_(notify_aspacem_and_tool_of_munmap)
-            (nsegments[i].start, 1+(nsegments[i].end-nsegments[i].start));
+         ChangedSeg* cs = &changed_segs[changed_segs_used];
+         aspacem_assert(changed_segs_used < CHANGED_SEGS_SIZE);
+         cs->is_added = False;
+         cs->start    = nsegments[i].start;
+         cs->end      = nsegments[i].end;
+         cs->prot     = 0;
+         cs->offset   = 0;
+         changed_segs_used++;
          return;
       }
    }
@@ -3434,17 +3453,43 @@ static void remove_mapping_callback(Addr addr, SizeT len)
 
 void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num)
 {
+   Int i;
    static UInt stats_synccalls = 1;
-   sync_mapping_when = when ?: "?";
-   sync_mapping_where = where ?: "?";
-   parse_procselfmaps(&add_mapping_callback, &remove_mapping_callback);
+   aspacem_assert(when && where);
+
    if (0)
       VG_(debugLog)(0,"aspacem",
          "[%u,%u] VG_(sync_mappings)(%s, %s, %d)\n",
          stats_synccalls++, stats_machcalls, when, where, num
       );
-}
 
+   changed_segs_used = 0;
+
+   // Get the list of segs that need to be added/removed.
+   parse_procselfmaps(&add_mapping_callback, &remove_mapping_callback);
+
+   // Now add/remove them.
+   for (i = 0; i < changed_segs_used; i++) {
+      ChangedSeg* cs = &changed_segs[i];
+      Char* action;
+      if (cs->is_added) {
+         ML_(notify_aspacem_and_tool_of_mmap)(
+               cs->start, cs->end - cs->start + 1,
+               cs->prot, VKI_MAP_PRIVATE, 0, cs->offset);
+         action = "added";
+
+      } else {
+         ML_(notify_aspacem_and_tool_of_munmap)(
+               cs->start, cs->end - cs->start + 1);
+         action = "removed";
+      }
+      if (VG_(clo_trace_syscalls)) {
+          VG_(debugLog)(0, "aspacem",
+                        "\n%s region 0x%010lx..0x%010lx at %s (%s)", 
+                        action, cs->start, cs->end + 1, where, when);
+      }
+   }
+}
 
 #endif
 
