@@ -73,10 +73,6 @@ typedef char name_t[BOOTSTRAP_MAX_NAME_LEN];
 typedef uint64_t mig_addr_t;
 
 
-// DDD: fixme from aspacemgr-linux.c
-extern void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num);
-
-
 // Saved ports
 static mach_port_t vg_host_port = 0;
 static mach_port_t vg_task_port = 0;
@@ -6263,43 +6259,6 @@ static int is_task_port(mach_port_t port)
    mach_msg: base handlers
    ------------------------------------------------------------------ */
 
-POST(mach_msg)
-{
-   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
-   mach_msg_option_t option = (mach_msg_option_t)ARG2;
-
-   if (option & MACH_RCV_MSG) {
-      if (RES != 0) {
-         // error during send or receive
-         // GrP fixme need to clean up port rights?
-      } else {
-         mach_msg_trailer_t *mt = 
-             (mach_msg_trailer_t *)((Addr)mh + round_msg(mh->msgh_size));
-           
-         // Assume the entire received message and trailer is initialized
-         // GrP fixme would being more specific catch any bugs?
-         POST_MEM_WRITE((Addr)mh, 
-                        round_msg(mh->msgh_size) + mt->msgh_trailer_size);
-         
-         if (mh->msgh_bits & MACH_MSGH_BITS_COMPLEX) {
-             // Update memory map for out-of-line message data
-             import_complex_message(tid, mh);
-         }
-      }
-   }
-   
-   // Call handler chosen by PRE(mach_msg)
-   if (AFTER) {
-      (*AFTER)(tid, arrghs, status);
-   }
-}
-
-
-POST(mach_msg_unhandled)
-{
-   VG_(sync_mappings)("after", "mach_msg_receive", 0);
-}
-
 PRE(mach_msg)
 {
    mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
@@ -6352,7 +6311,6 @@ PRE(mach_msg)
       PRE_MEM_WRITE("mach_msg(receive buffer)", (Addr)mh, rcv_size);
    }
 
-
    // Call a PRE handler. The PRE handler may set an AFTER handler.
 
    if (!(option & MACH_SEND_MSG)) {
@@ -6397,6 +6355,43 @@ PRE(mach_msg)
       */
       return;
    }
+}
+
+POST(mach_msg)
+{
+   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
+   mach_msg_option_t option = (mach_msg_option_t)ARG2;
+
+   if (option & MACH_RCV_MSG) {
+      if (RES != 0) {
+         // error during send or receive
+         // GrP fixme need to clean up port rights?
+      } else {
+         mach_msg_trailer_t *mt = 
+             (mach_msg_trailer_t *)((Addr)mh + round_msg(mh->msgh_size));
+           
+         // Assume the entire received message and trailer is initialized
+         // GrP fixme would being more specific catch any bugs?
+         POST_MEM_WRITE((Addr)mh, 
+                        round_msg(mh->msgh_size) + mt->msgh_trailer_size);
+         
+         if (mh->msgh_bits & MACH_MSGH_BITS_COMPLEX) {
+             // Update memory map for out-of-line message data
+             import_complex_message(tid, mh);
+         }
+      }
+   }
+   
+   // Call handler chosen by PRE(mach_msg)
+   if (AFTER) {
+      (*AFTER)(tid, arrghs, status);
+   }
+}
+
+
+POST(mach_msg_unhandled)
+{
+   VG_(sync_mappings)("after", "mach_msg_unhandled", 0);
 }
 
 
