@@ -78,6 +78,26 @@ static __inline__
 UWord address_lsb(const Addr a)
 { return (a >> ADDR_IGNORED_BITS) & ADDR_LSB_MASK; }
 
+/**
+ * Compute the first address for which address_lsb() is equal to
+ * address_lsb(a).
+ */
+static __inline__
+Addr first_address_with_same_lsb(const Addr a)
+{
+   return ((a | ADDR_IGNORED_MASK) ^ ADDR_IGNORED_MASK);
+}
+
+/**
+ * Compute the first address for which address_lsb() is greater than
+ * address_lsb(a).
+ */
+static __inline__
+Addr first_address_with_higher_lsb(const Addr a)
+{
+   return ((a | ADDR_IGNORED_MASK) + 1U);
+}
+
 /** Compute most significant bits of an address of type Addr. */
 static __inline__
 UWord address_msb(const Addr a)
