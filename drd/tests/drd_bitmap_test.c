@@ -25,6 +25,7 @@ void  VG_(assert_fail)(Bool isCore, const Char* assertion, const Char* file,
           function ? (char*)function : "",
           function ? ": " : "",
           assertion);
+  fflush(stdout);
   fflush(stderr);
   abort();
 }
@@ -79,13 +80,23 @@ int bm_equal_print_diffs(struct bitmap* bm1, struct bitmap* bm2)
   equal = DRD_(bm_equal)(bm1, bm2);
   if (s_verbose && ! equal)
   {
+    unsigned i;
+
     VG_(printf)("Bitmaps are different.\n");
-    VG_(printf)("Bitmap 1:\n");
-    DRD_(bm_print)(bm1);
-    VG_(printf)("\n");
-    VG_(printf)("Bitmap 2:\n");
-    DRD_(bm_print)(bm2);
-    VG_(printf)("\n");
+    for (i = 0; i < 0x10000; i++)
+    {
+      if (DRD_(bm_has_1)(bm1, i, eLoad) != DRD_(bm_has_1)(bm2, i, eLoad)
+          || DRD_(bm_has_1)(bm1, i, eStore) != DRD_(bm_has_1)(bm2, i, eStore))
+      {
+        printf("0x%x %c %c %c %c\n",
+               i,
+               DRD_(bm_has_1)(bm1, i, eLoad)  ? 'R' : ' ',
+               DRD_(bm_has_1)(bm1, i, eStore) ? 'W' : ' ',
+               DRD_(bm_has_1)(bm2, i, eLoad)  ? 'R' : ' ',
+               DRD_(bm_has_1)(bm2, i, eStore) ? 'W' : ' '
+               );
+      }
+    }
     fflush(stdout);
   }
 
@@ -108,15 +119,11 @@ void bm_test1(void)
                           s_test1_args[i].access_type);
   }
 
-  if (s_verbose)
-  {
-    VG_(printf)("Bitmap contents:\n");
-    DRD_(bm_print)(bm);
-  }
-
   for (i = 0; i < sizeof(s_test1_args)/sizeof(s_test1_args[0]); i++)
   {
-    for (j = 0; j < s_test1_args[i].size; j++)
+    for (j = 0;
+         first_address_with_higher_lsb(j) <= s_test1_args[i].size;
+         j = first_address_with_higher_lsb(j))
     {
       tl_assert(DRD_(bm_has_1)(bm,
                                s_test1_args[i].address + j,
@@ -124,14 +131,9 @@ void bm_test1(void)
     }
   }
 
-  if (s_verbose)
-    VG_(printf)("Merge result:\n");
   bm2 = DRD_(bm_new)();
   DRD_(bm_merge2)(bm2, bm);
   DRD_(bm_merge2)(bm2, bm);
-  if (s_verbose)
-    DRD_(bm_print)(bm2);
-  //assert(bm_equal(bm, bm2));
   assert(bm_equal_print_diffs(bm2, bm));
 
   if (s_verbose)
