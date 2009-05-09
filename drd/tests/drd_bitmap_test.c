@@ -8,6 +8,14 @@
 #include "drd/pub_drd_bitmap.h"
 
 
+#ifndef MIN
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+#endif
+#ifndef MAX
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#endif
+
+
 /* Replacements for core functionality. */
 
 void* VG_(malloc)(HChar* cc, SizeT nbytes)
@@ -177,44 +185,46 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
   const Addr ub = make_address(2, 0) + 2 * BITS_PER_UWORD;
 
   assert(outer_loop_step >= 1);
+  assert((outer_loop_step % ADDR_GRANULARITY) == 0);
   assert(inner_loop_step >= 1);
+  assert((inner_loop_step % ADDR_GRANULARITY) == 0);
 
   bm1 = DRD_(bm_new)();
   bm2 = DRD_(bm_new)();
   for (i = lb; i < ub; i += outer_loop_step)
   {
-    for (j = i + 1; j < ub; j += inner_loop_step)
+    for (j = i + ADDR_GRANULARITY; j < ub; j += inner_loop_step)
     {
       DRD_(bm_access_range_load)(bm1, i, j);
       DRD_(bm_clear_load)(bm1, i, j);
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_1)(bm1, i);
-      DRD_(bm_clear_load)(bm1, i, i+1);
+      DRD_(bm_clear_load)(bm1, i, i + MAX(1, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_2)(bm1, i);
-      DRD_(bm_clear_load)(bm1, i, i+2);
+      DRD_(bm_clear_load)(bm1, i, i + MAX(2, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_4)(bm1, i);
-      DRD_(bm_clear_load)(bm1, i, i+4);
+      DRD_(bm_clear_load)(bm1, i, i + MAX(4, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_8)(bm1, i);
-      DRD_(bm_clear_load)(bm1, i, i+8);
+      DRD_(bm_clear_load)(bm1, i, i + MAX(8, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
 
       DRD_(bm_access_range_store)(bm1, i, j);
       DRD_(bm_clear_store)(bm1, i, j);
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_1)(bm1, i);
-      DRD_(bm_clear_store)(bm1, i, i + 1);
+      DRD_(bm_clear_store)(bm1, i, i + MAX(1, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_2)(bm1, i);
-      DRD_(bm_clear_store)(bm1, i, i + 2);
+      DRD_(bm_clear_store)(bm1, i, i + MAX(2, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_4)(bm1, i);
-      DRD_(bm_clear_store)(bm1, i, i + 4);
+      DRD_(bm_clear_store)(bm1, i, i + MAX(4, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_store_8)(bm1, i);
-      DRD_(bm_clear_store)(bm1, i, i + 8);
+      DRD_(bm_clear_store)(bm1, i, i + MAX(8, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
 
       DRD_(bm_access_range_load)(bm1, i, j);
@@ -223,19 +233,19 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_1)(bm1, i);
       DRD_(bm_access_store_1)(bm1, i);
-      DRD_(bm_clear)(bm1, i, i+1);
+      DRD_(bm_clear)(bm1, i, i + MAX(1, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_2)(bm1, i);
       DRD_(bm_access_store_2)(bm1, i);
-      DRD_(bm_clear)(bm1, i, i+2);
+      DRD_(bm_clear)(bm1, i, i + MAX(2, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_4)(bm1, i);
       DRD_(bm_access_store_4)(bm1, i);
-      DRD_(bm_clear)(bm1, i, i+4);
+      DRD_(bm_clear)(bm1, i, i + MAX(4, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
       DRD_(bm_access_load_8)(bm1, i);
       DRD_(bm_access_store_8)(bm1, i);
-      DRD_(bm_clear)(bm1, i, i+8);
+      DRD_(bm_clear)(bm1, i, i + MAX(8, ADDR_GRANULARITY));
       assert(bm_equal_print_diffs(bm1, bm2));
     }
   }
@@ -293,8 +303,8 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
 
 int main(int argc, char** argv)
 {
-  int outer_loop_step = 1;
-  int inner_loop_step = 1;
+  int outer_loop_step = ADDR_GRANULARITY;
+  int inner_loop_step = ADDR_GRANULARITY;
   int optchar;
 
   while ((optchar = getopt(argc, argv, "s:t:q")) != EOF)

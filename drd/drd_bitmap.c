@@ -519,7 +519,7 @@ void DRD_(bm_clear)(struct bitmap* const bm, Addr a1, Addr a2)
 #endif
 
    a1 = first_address_with_same_lsb(a1);
-   a2 = first_address_with_higher_lsb(a2 - 1);
+   a2 = first_address_with_same_lsb(a2);
 
    for (b = a1; b < a2; b = b_next)
    {
@@ -603,7 +603,7 @@ void DRD_(bm_clear_load)(struct bitmap* const bm, Addr a1, Addr a2)
 #endif
 
    a1 = first_address_with_same_lsb(a1);
-   a2 = first_address_with_higher_lsb(a2 - 1);
+   a2 = first_address_with_same_lsb(a2);
 
    for (b = a1; b < a2; b = b_next)
    {
@@ -691,7 +691,7 @@ void DRD_(bm_clear_store)(struct bitmap* const bm, Addr a1, Addr a2)
 #endif
 
    a1 = first_address_with_same_lsb(a1);
-   a2 = first_address_with_higher_lsb(a2 - 1);
+   a2 = first_address_with_same_lsb(a2);
 
    for (b = a1; b < a2; b = b_next)
    {
