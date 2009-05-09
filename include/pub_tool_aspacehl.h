@@ -1,12 +1,13 @@
+
 /*--------------------------------------------------------------------*/
-/*--- User-mode execve().                               priv_ume.h ---*/
+/*--- Services layered on top of m_aspacemgr.  pub_tool_aspacehl.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2005 Julian Seward 
+   Copyright (C) 2009-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -27,24 +28,17 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PRIV_UME_H
-#define __PRIV_UME_H
+#ifndef __PUB_TOOL_ASPACEHL_H
+#define __PUB_TOOL_ASPACEHL_H
 
-extern int VG_(do_exec_inner)(const HChar *exe, ExeInfo *info);
+// Extract from aspacem a vector of the current segment start
+// addresses.  The vector is dynamically allocated and should be freed
+// by the caller when done.  REQUIRES m_mallocfree to be running.
+// Writes the number of addresses required into *n_acquired.
+extern Addr* VG_(get_segment_starts) ( /*OUT*/Int* n_acquired );
 
-#if defined(HAVE_ELF)
-extern Bool VG_(match_ELF) ( Char *hdr, Int len );
-extern Int  VG_(load_ELF)  ( Int fd, const HChar *name, ExeInfo *info );
-#endif
-
-#if defined(HAVE_SCRIPT)
-extern Bool VG_(match_script) ( Char *hdr, Int len );
-extern Int  VG_(load_script)  ( Int fd, const HChar *name, ExeInfo *info );
-#endif
-
-#endif /* __PRIV_UME_H */
+#endif   // __PUB_TOOL_ASPACEHL_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-

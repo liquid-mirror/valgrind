@@ -1,12 +1,13 @@
+
 /*--------------------------------------------------------------------*/
-/*--- User-mode execve().                               priv_ume.h ---*/
+/*--- Services layered on top of m_aspacemgr.         m_aspacehl.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2005 Julian Seward 
+   Copyright (C) 2006-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -27,24 +28,44 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PRIV_UME_H
-#define __PRIV_UME_H
+#include "pub_core_basics.h"
+#include "pub_core_aspacemgr.h"
+#include "pub_core_mallocfree.h"
 
-extern int VG_(do_exec_inner)(const HChar *exe, ExeInfo *info);
+#include "pub_core_aspacehl.h"
 
-#if defined(HAVE_ELF)
-extern Bool VG_(match_ELF) ( Char *hdr, Int len );
-extern Int  VG_(load_ELF)  ( Int fd, const HChar *name, ExeInfo *info );
-#endif
+// Extract from aspacem a vector of the current segment start
+// addresses.  The vector is dynamically allocated and should be freed
+// by the caller when done.  REQUIRES m_mallocfree to be running.
+// Writes the number of addresses required into *n_acquired.
+Addr* VG_(get_segment_starts) ( /*OUT*/Int* n_acquired )
+{
+   Addr* starts;
+   Int   n_starts, r = 0;
 
-#if defined(HAVE_SCRIPT)
-extern Bool VG_(match_script) ( Char *hdr, Int len );
-extern Int  VG_(load_script)  ( Int fd, const HChar *name, ExeInfo *info );
-#endif
+   n_starts = 1;
+   while (True) {
+      starts = VG_(malloc)( "main.gss.1", n_starts * sizeof(Addr) );
+      if (starts == NULL)
+         break;
+      r = VG_(am_get_segment_starts)( starts, n_starts );
+      if (r >= 0)
+         break;
+      VG_(free)(starts);
+      n_starts *= 2;
+   }
 
-#endif /* __PRIV_UME_H */
+   if (starts == NULL) {
+     *n_acquired = 0;
+     return NULL;
+   }
+
+   *n_acquired = r;
+   return starts;
+}
+
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-

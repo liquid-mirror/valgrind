@@ -92,7 +92,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	memalign2.stderr.exp memalign2.vgtest \
 	memcmptest.stderr.exp memcmptest.stderr.exp2 \
 	memcmptest.stdout.exp memcmptest.vgtest \
-	mempool.stderr.exp mempool.stderr.exp64 mempool.vgtest \
+	mempool.stderr.exp mempool.vgtest \
 	metadata.stderr.exp metadata.stdout.exp metadata.vgtest \
 	mismatches.stderr.exp mismatches.vgtest \
 	mmaptest.stderr.exp mmaptest.vgtest \
@@ -128,7 +128,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	pipe.stderr.exp pipe.vgtest \
 	pointer-trace.vgtest \
 	pointer-trace.stderr.exp \
-	post-syscall.stderr.exp post-syscall.stdout.exp post-syscall.vgtest \
+	post-syscall.stderr.exp post-syscall.vgtest \
 	realloc1.stderr.exp realloc1.vgtest \
 	realloc2.stderr.exp realloc2.vgtest \
 	realloc3.stderr.exp realloc3.vgtest \
@@ -136,7 +136,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	sh-mem-random.stderr.exp sh-mem-random.stdout.exp64 \
 	sh-mem-random.stdout.exp sh-mem-random.vgtest \
 	sigaltstack.stderr.exp sigaltstack.vgtest \
-	sigkill.stderr.exp sigkill.stderr.exp2 sigkill.stderr.exp3 sigkill.vgtest \
+	sigkill.stderr.exp sigkill.vgtest \
 	signal2.stderr.exp signal2.stdout.exp signal2.vgtest \
 	sigprocmask.stderr.exp sigprocmask.stderr.exp2 sigprocmask.vgtest \
 	stack_changes.stderr.exp stack_changes.stdout.exp \
