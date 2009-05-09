@@ -71,7 +71,7 @@ extern void VG_(percentify)(ULong n, ULong m, UInt d, Int n_buf, char buf[]);
    ------------------------------------------------------------------ */
 
 /* No, really.  I _am_ that strange. */
-#define OINK(nnn) VG_(message)(Vg_DebugMsg, "OINK %d",nnn)
+#define OINK(nnn) VG_(message)(Vg_DebugMsg, "OINK %d\n",nnn)
 
 /* Print a message prefixed by "??<pid>?? "; '?' depends on the VgMsgKind.
    Should be used for all user output. */
@@ -84,14 +84,14 @@ typedef
    }
    VgMsgKind;
 
-/* Send a single-part message.  Appends a newline. The format
-   specification may contain any ISO C format specifier or %t.
-   No attempt is made to let the compiler verify consistency of the
-   format string and the argument list. */
+/* Send a single-part message.  The format specification may contain
+   any ISO C format specifier or %t.  No attempt is made to let the
+   compiler verify consistency of the format string and the argument
+   list. */
 extern UInt VG_(message_no_f_c)( VgMsgKind kind, const HChar* format, ... );
-/* Send a single-part message.  Appends a newline. The format
-   specification may contain any ISO C format specifier. The gcc compiler
-   will verify consistency of the format string and the argument list. */
+/* Send a single-part message.  The format specification may contain
+   any ISO C format specifier. The gcc compiler will verify
+   consistency of the format string and the argument list. */
 extern UInt VG_(message)( VgMsgKind kind, const HChar* format, ... )
   PRINTF_CHECK(2, 3);
 
@@ -103,6 +103,9 @@ extern UInt VG_(vmessage)( VgMsgKind kind, const HChar* format, va_list vargs )
 #define VG_DMSG( format, args... )  VG_(message)(Vg_DebugMsg, format, ##args)
 #define VG_EMSG( format, args... )  VG_(message)(Vg_DebugExtraMsg, \
                                                               format, ##args)
+
+/* Flush any output cached by previous calls to VG_(message) et al. */
+extern void VG_(message_flush) ( void );
 
 #endif   // __PUB_TOOL_LIBCPRINT_H
 
