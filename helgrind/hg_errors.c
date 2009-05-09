@@ -549,15 +549,15 @@ static void announce_one_thread ( Thread* thr )
    if (!thr->announced) {
       if (thr->errmsg_index == 1) {
          tl_assert(thr->created_at == NULL);
-         VG_(message)(Vg_UserMsg, "Thread #%d is the program's root thread",
+         VG_(message)(Vg_UserMsg, "Thread #%d is the program's root thread\n",
                                   thr->errmsg_index);
       } else {
          tl_assert(thr->created_at != NULL);
-         VG_(message)(Vg_UserMsg, "Thread #%d was created",
+         VG_(message)(Vg_UserMsg, "Thread #%d was created\n",
                                   thr->errmsg_index);
          VG_(pp_ExeContext)( thr->created_at );
       }
-      VG_(message)(Vg_UserMsg, "");
+      VG_(message)(Vg_UserMsg, "\n");
       thr->announced = True;
    }
 }
@@ -574,7 +574,7 @@ void HG_(pp_Error) ( Error* err )
       tl_assert( HG_(is_sane_Thread)( xe->XE.Misc.thr ) );
       announce_one_thread( xe->XE.Misc.thr );
       VG_(message)(Vg_UserMsg,
-                  "Thread #%d: %s",
+                  "Thread #%d: %s\n",
                   (Int)xe->XE.Misc.thr->errmsg_index,
                   xe->XE.Misc.errstr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
@@ -586,18 +586,18 @@ void HG_(pp_Error) ( Error* err )
       tl_assert( HG_(is_sane_Thread)( xe->XE.LockOrder.thr ) );
       announce_one_thread( xe->XE.LockOrder.thr );
       VG_(message)(Vg_UserMsg,
-                  "Thread #%d: lock order \"%p before %p\" violated",
+                  "Thread #%d: lock order \"%p before %p\" violated\n",
                   (Int)xe->XE.LockOrder.thr->errmsg_index,
                   (void*)xe->XE.LockOrder.before_ga,
                   (void*)xe->XE.LockOrder.after_ga);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
          VG_(message)(Vg_UserMsg,
-            "  Required order was established by acquisition of lock at %p",
+            "  Required order was established by acquisition of lock at %p\n",
             (void*)xe->XE.LockOrder.before_ga);
          VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
          VG_(message)(Vg_UserMsg,
-            "  followed by a later acquisition of lock at %p", 
+            "  followed by a later acquisition of lock at %p\n", 
             (void*)xe->XE.LockOrder.after_ga);
          VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
       }
@@ -609,11 +609,11 @@ void HG_(pp_Error) ( Error* err )
       tl_assert( HG_(is_sane_Thread)( xe->XE.PthAPIerror.thr ) );
       announce_one_thread( xe->XE.PthAPIerror.thr );
       VG_(message)(Vg_UserMsg,
-                  "Thread #%d's call to %s failed",
+                  "Thread #%d's call to %s failed\n",
                   (Int)xe->XE.PthAPIerror.thr->errmsg_index,
                   xe->XE.PthAPIerror.fnname);
       VG_(message)(Vg_UserMsg,
-                  "   with error code %ld (%s)",
+                  "   with error code %ld (%s)\n",
                   xe->XE.PthAPIerror.err,
                   xe->XE.PthAPIerror.errstr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
@@ -625,7 +625,7 @@ void HG_(pp_Error) ( Error* err )
       tl_assert( HG_(is_sane_Thread)( xe->XE.UnlockBogus.thr ) );
       announce_one_thread( xe->XE.UnlockBogus.thr );
       VG_(message)(Vg_UserMsg,
-                   "Thread #%d unlocked an invalid lock at %p ",
+                   "Thread #%d unlocked an invalid lock at %p \n",
                    (Int)xe->XE.UnlockBogus.thr->errmsg_index,
                    (void*)xe->XE.UnlockBogus.lock_ga);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
@@ -641,14 +641,14 @@ void HG_(pp_Error) ( Error* err )
       announce_one_thread( xe->XE.UnlockForeign.owner );
       VG_(message)(Vg_UserMsg,
                    "Thread #%d unlocked lock at %p "
-                   "currently held by thread #%d",
+                   "currently held by thread #%d\n",
                    (Int)xe->XE.UnlockForeign.thr->errmsg_index,
                    (void*)xe->XE.UnlockForeign.lock->guestaddr,
                    (Int)xe->XE.UnlockForeign.owner->errmsg_index );
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.UnlockForeign.lock->appeared_at) {
          VG_(message)(Vg_UserMsg,
-                      "  Lock at %p was first observed",
+                      "  Lock at %p was first observed\n",
                       (void*)xe->XE.UnlockForeign.lock->guestaddr);
          VG_(pp_ExeContext)( xe->XE.UnlockForeign.lock->appeared_at );
       }
@@ -661,13 +661,13 @@ void HG_(pp_Error) ( Error* err )
       tl_assert( HG_(is_sane_Thread)( xe->XE.UnlockUnlocked.thr ) );
       announce_one_thread( xe->XE.UnlockUnlocked.thr );
       VG_(message)(Vg_UserMsg,
-                   "Thread #%d unlocked a not-locked lock at %p ",
+                   "Thread #%d unlocked a not-locked lock at %p \n",
                    (Int)xe->XE.UnlockUnlocked.thr->errmsg_index,
                    (void*)xe->XE.UnlockUnlocked.lock->guestaddr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.UnlockUnlocked.lock->appeared_at) {
          VG_(message)(Vg_UserMsg,
-                      "  Lock at %p was first observed",
+                      "  Lock at %p was first observed\n",
                       (void*)xe->XE.UnlockUnlocked.lock->guestaddr);
          VG_(pp_ExeContext)( xe->XE.UnlockUnlocked.lock->appeared_at );
       }
@@ -681,13 +681,13 @@ void HG_(pp_Error) ( Error* err )
       announce_one_thread( xe->XE.FreeMemLock.thr );
       VG_(message)(Vg_UserMsg,
                    "Thread #%d deallocated location %p "
-                   "containing a locked lock",
+                   "containing a locked lock\n",
                    (Int)xe->XE.FreeMemLock.thr->errmsg_index,
                    (void*)xe->XE.FreeMemLock.lock->guestaddr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.FreeMemLock.lock->appeared_at) {
          VG_(message)(Vg_UserMsg,
-                      "  Lock at %p was first observed",
+                      "  Lock at %p was first observed\n",
                       (void*)xe->XE.FreeMemLock.lock->guestaddr);
          VG_(pp_ExeContext)( xe->XE.FreeMemLock.lock->appeared_at );
       }
@@ -706,14 +706,14 @@ void HG_(pp_Error) ( Error* err )
       if (xe->XE.Race.mb_confaccthr)
          announce_one_thread( xe->XE.Race.mb_confaccthr );
       VG_(message)(Vg_UserMsg,
-         "Possible data race during %s of size %d at %#lx by thread #%d",
+         "Possible data race during %s of size %d at %#lx by thread #%d\n",
          what, szB, err_ga, (Int)xe->XE.Race.thr->errmsg_index
       );
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       if (xe->XE.Race.mb_confacc) {
          if (xe->XE.Race.mb_confaccthr) {
             VG_(message)(Vg_UserMsg,
-               " This conflicts with a previous %s of size %d by thread #%d",
+               " This conflicts with a previous %s of size %d by thread #%d\n",
                xe->XE.Race.mb_confaccIsW ? "write" : "read",
                xe->XE.Race.mb_confaccSzB,
                xe->XE.Race.mb_confaccthr->errmsg_index
@@ -721,7 +721,7 @@ void HG_(pp_Error) ( Error* err )
          } else {
             // FIXME: can this ever happen?
             VG_(message)(Vg_UserMsg,
-               " This conflicts with a previous %s of size %d",
+               " This conflicts with a previous %s of size %d\n",
                xe->XE.Race.mb_confaccIsW ? "write" : "read",
                xe->XE.Race.mb_confaccSzB
             );
@@ -732,9 +732,9 @@ void HG_(pp_Error) ( Error* err )
 
       /* If we have a better description of the address, show it. */
       if (xe->XE.Race.descr1[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", &xe->XE.Race.descr1[0]);
+         VG_(message)(Vg_UserMsg, " %s\n", &xe->XE.Race.descr1[0]);
       if (xe->XE.Race.descr2[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", &xe->XE.Race.descr2[0]);
+         VG_(message)(Vg_UserMsg, " %s\n", &xe->XE.Race.descr2[0]);
 
       break; /* case XE_Race */
    } /* case XE_Race */

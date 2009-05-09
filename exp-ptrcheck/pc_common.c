@@ -269,14 +269,14 @@ void pc_pp_Error ( Error* err )
    //----------------------------------------------------------
    case XE_SorG:
       tl_assert(xe);
-      VG_(message)(Vg_UserMsg, "Invalid %s of size %ld", 
+      VG_(message)(Vg_UserMsg, "Invalid %s of size %ld\n", 
                                xe->XE.SorG.sszB < 0 ? "write" : "read",
                                Word__abs(xe->XE.SorG.sszB) );
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      VG_(message)(Vg_UserMsg, " Address %#lx expected vs actual:",
+      VG_(message)(Vg_UserMsg, " Address %#lx expected vs actual:\n",
                                xe->XE.SorG.addr);
-      VG_(message)(Vg_UserMsg, " Expected: %s", &xe->XE.SorG.expect[0] );
-      VG_(message)(Vg_UserMsg, " Actual:   %s", &xe->XE.SorG.actual[0] );
+      VG_(message)(Vg_UserMsg, " Expected: %s\n", &xe->XE.SorG.expect[0] );
+      VG_(message)(Vg_UserMsg, " Actual:   %s\n", &xe->XE.SorG.actual[0] );
       break;
 
    //----------------------------------------------------------
@@ -289,12 +289,13 @@ void pc_pp_Error ( Error* err )
 
       if (NONPTR == vseg) {
          // Access via a non-pointer
-         VG_(message)(Vg_UserMsg, "Invalid %s of size %ld",
+         VG_(message)(Vg_UserMsg, "Invalid %s of size %ld\n",
                                    readwrite(xe->XE.Heap.sszB),
                                    Word__abs(xe->XE.Heap.sszB));
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
          VG_(message)(Vg_UserMsg,
-                      " Address %#lx is not derived from any known block", a);
+                      " Address %#lx is not derived from "
+                      "any known block\n", a);
 
       } else {
          // Access via a pointer, but outside its range.
@@ -308,27 +309,27 @@ void pc_pp_Error ( Error* err )
                        ? "Doubly-invalid" : "Invalid" );
          legit = ( Seg__is_freed(vseg) ? "once-" : "" );
 
-         VG_(message)(Vg_UserMsg, "%s %s of size %ld", how_invalid,
+         VG_(message)(Vg_UserMsg, "%s %s of size %ld\n", how_invalid,
                                   readwrite(xe->XE.Heap.sszB),
                                   Word__abs(xe->XE.Heap.sszB));
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          VG_(message)(Vg_UserMsg,
-                      " Address %#lx is %lu bytes %s the accessing pointer's",
+                      " Address %#lx is %lu bytes %s the accessing pointer's\n",
                       a, miss_size, place);
          VG_(message)(Vg_UserMsg,
-                      " %slegitimate range, a block of size %lu %s",
+                      " %slegitimate range, a block of size %lu %s\n",
                       legit, Seg__size(vseg),
                       Seg__is_freed(vseg) ? "free'd" : "alloc'd" );
          VG_(pp_ExeContext)(Seg__where(vseg));
       }
       if (xe->XE.Heap.descr1[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", xe->XE.Heap.descr1);
+         VG_(message)(Vg_UserMsg, " %s\n", xe->XE.Heap.descr1);
       if (xe->XE.Heap.descr2[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", xe->XE.Heap.descr2);
+         VG_(message)(Vg_UserMsg, " %s\n", xe->XE.Heap.descr2);
       if (xe->XE.Heap.datasym[0] != 0)
          VG_(message)(Vg_UserMsg, " Address 0x%llx is %llu bytes "
-                      "inside data symbol \"%s\"",
+                      "inside data symbol \"%s\"\n",
                       (ULong)xe->XE.Heap.addr,
                       (ULong)xe->XE.Heap.datasymoff,
                       xe->XE.Heap.datasym);
@@ -344,17 +345,18 @@ void pc_pp_Error ( Error* err )
       tl_assert(BOTTOM != seg1);
       tl_assert(BOTTOM != seg2 && UNKNOWN != seg2);
 
-      VG_(message)(Vg_UserMsg, "Invalid arguments to %s", xe->XE.Arith.opname);
+      VG_(message)(Vg_UserMsg, "Invalid arguments to %s\n",
+                               xe->XE.Arith.opname);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
       if (seg1 != seg2) {
          if (NONPTR == seg1) {
-            VG_(message)(Vg_UserMsg, " First arg not a pointer");
+            VG_(message)(Vg_UserMsg, " First arg not a pointer\n");
          } else if (UNKNOWN == seg1) {
-            VG_(message)(Vg_UserMsg, " First arg may be a pointer");
+            VG_(message)(Vg_UserMsg, " First arg may be a pointer\n");
          } else {
             VG_(message)(Vg_UserMsg, " First arg derived from address %#lx of "
-                                     "%lu-byte block alloc'd",
+                                     "%lu-byte block alloc'd\n",
                                      Seg__addr(seg1), Seg__size(seg1) );
             VG_(pp_ExeContext)(Seg__where(seg1));
          }
@@ -363,10 +365,10 @@ void pc_pp_Error ( Error* err )
          which = "Both args";
       }
       if (NONPTR == seg2) {
-         VG_(message)(Vg_UserMsg, " %s not a pointer", which);
+         VG_(message)(Vg_UserMsg, " %s not a pointer\n", which);
       } else {
          VG_(message)(Vg_UserMsg, " %s derived from address %#lx of "
-                                  "%lu-byte block alloc'd",
+                                  "%lu-byte block alloc'd\n",
                       which, Seg__addr(seg2), Seg__size(seg2) );
          VG_(pp_ExeContext)(Seg__where(seg2));
       }
@@ -392,36 +394,38 @@ void pc_pp_Error ( Error* err )
          // freed block
          tl_assert(is_known_segment(seglo));
          tl_assert(Seg__is_freed(seglo)); // XXX what if it's now recycled?
-         VG_(message)(Vg_UserMsg, "%s%s contains unaddressable byte(s)",
+         VG_(message)(Vg_UserMsg, "%s%s contains unaddressable byte(s)\n",
                                   what, s);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          VG_(message)(Vg_UserMsg, " Address %#lx is %ld bytes inside a "
-                                  "%ld-byte block free'd",
+                                  "%ld-byte block free'd\n",
                                   lo, lo-Seg__addr(seglo),
                                   Seg__size(seglo) );
          VG_(pp_ExeContext)(Seg__where(seglo));
 
       } else {
          // mismatch
-         VG_(message)(Vg_UserMsg, "%s%s is non-contiguous", what, s);
+         VG_(message)(Vg_UserMsg, "%s%s is non-contiguous\n", what, s);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          if (UNKNOWN == seglo) {
-            VG_(message)(Vg_UserMsg, " First byte is not inside a known block");
+            VG_(message)(Vg_UserMsg,
+                         " First byte is not inside a known block\n");
          } else {
             VG_(message)(Vg_UserMsg, " First byte (%#lx) is %ld bytes inside a "
-                                     "%ld-byte block alloc'd",
+                                     "%ld-byte block alloc'd\n",
                                      lo, lo-Seg__addr(seglo), 
                                      Seg__size(seglo) );
             VG_(pp_ExeContext)(Seg__where(seglo));
          }
 
          if (UNKNOWN == seghi) {
-            VG_(message)(Vg_UserMsg, " Last byte is not inside a known block");
+            VG_(message)(Vg_UserMsg,
+                         " Last byte is not inside a known block\n");
          } else {
             VG_(message)(Vg_UserMsg, " Last byte (%#lx) is %ld bytes inside a "
-                                     "%ld-byte block alloc'd",
+                                     "%ld-byte block alloc'd\n",
                                      hi, hi-Seg__addr(seghi),
                                      Seg__size(seghi) );
             VG_(pp_ExeContext)(Seg__where(seghi));

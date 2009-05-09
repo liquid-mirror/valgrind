@@ -97,7 +97,7 @@ static void sg_init(Segment* const sg,
                     created);
       DRD_(vc_snprint)(msg + VG_(strlen)(msg), sizeof(msg) - VG_(strlen)(msg),
                        &sg->vc);
-      VG_(message)(Vg_UserMsg, "%s", msg);
+      VG_(message)(Vg_UserMsg, "%s\n", msg);
    }
 }
 
@@ -138,7 +138,7 @@ static void DRD_(sg_delete)(Segment* const sg)
                     "Discarding the segment with vector clock ");
       DRD_(vc_snprint)(msg + VG_(strlen)(msg), sizeof(msg) - VG_(strlen)(msg),
                        &sg->vc);
-      VG_(message)(Vg_UserMsg, "%s", msg);
+      VG_(message)(Vg_UserMsg, "%s\n", msg);
    }
 #endif
 
@@ -183,7 +183,7 @@ void DRD_(sg_put)(Segment* const sg)
                     sg->refcnt, sg->refcnt - 1);
       DRD_(vc_snprint)(msg + VG_(strlen)(msg), sizeof(msg) - VG_(strlen)(msg),
                        &sg->vc);
-      VG_(message)(Vg_UserMsg, "%s", msg);
+      VG_(message)(Vg_UserMsg, "%s\n", msg);
    }
 
    tl_assert(sg->refcnt >= 1);
@@ -213,7 +213,7 @@ void DRD_(sg_merge)(const Segment* const sg1, Segment* const sg2)
                     " and ");
       DRD_(vc_snprint)(msg + VG_(strlen)(msg), sizeof(msg) - VG_(strlen)(msg),
                        &sg2->vc);
-      VG_(message)(Vg_UserMsg, "%s", msg);
+      VG_(message)(Vg_UserMsg, "%s\n", msg);
    }
 
    s_segment_merge_count++;

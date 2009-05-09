@@ -268,20 +268,20 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          if (maybe_gcc) {
             VG_(message)(Vg_UserMsg, 
                "%sAddress 0x%llx is just below the stack ptr.  "
-               "To suppress, use: --workaround-gcc296-bugs=yes%s",
+               "To suppress, use: --workaround-gcc296-bugs=yes%s\n",
                xpre, (ULong)a, xpost
             );
 	 } else {
             VG_(message)(Vg_UserMsg, 
                "%sAddress 0x%llx "
-               "is not stack'd, malloc'd or (recently) free'd%s",
+               "is not stack'd, malloc'd or (recently) free'd%s\n",
                xpre, (ULong)a, xpost);
          }
          break;
 
       case Addr_Stack: 
          VG_(message)(Vg_UserMsg, 
-                      "%sAddress 0x%llx is on thread %d's stack%s", 
+                      "%sAddress 0x%llx is on thread %d's stack%s\n", 
                       xpre, (ULong)a, ai->Addr.Stack.tid, xpost);
          break;
 
@@ -302,7 +302,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
             relative = "inside";
          }
          VG_(message)(Vg_UserMsg, 
-            "%sAddress 0x%lx is %'lu bytes %s a %s of size %'lu %s%s",
+            "%sAddress 0x%lx is %'lu bytes %s a %s of size %'lu %s%s\n",
             xpre,
             a, delta, relative, ai->Addr.Block.block_desc,
             block_szB,
@@ -317,7 +317,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
       case Addr_DataSym:
          VG_(message_no_f_c)(Vg_UserMsg,
                              "%sAddress 0x%llx is %llu bytes "
-                             "inside data symbol \"%t\"%s",
+                             "inside data symbol \"%t\"%s\n",
                              xpre,
                              (ULong)a,
                              (ULong)ai->Addr.DataSym.offset,
@@ -327,16 +327,16 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
 
       case Addr_Variable:
          if (ai->Addr.Variable.descr1[0] != '\0')
-            VG_(message)(Vg_UserMsg, "%s%s%s",
+            VG_(message)(Vg_UserMsg, "%s%s%s\n",
                          xpre, ai->Addr.Variable.descr1, xpost);
          if (ai->Addr.Variable.descr2[0] != '\0')
-            VG_(message)(Vg_UserMsg, "%s%s%s",
+            VG_(message)(Vg_UserMsg, "%s%s%s\n",
                          xpre, ai->Addr.Variable.descr2, xpost);
          break;
 
       case Addr_SectKind:
          VG_(message_no_f_c)(Vg_UserMsg,
-                             "%sAddress 0x%llx is in the %t segment of %t%s",
+                             "%sAddress 0x%llx is in the %t segment of %t%s\n",
                              xpre,
                              (ULong)a,
                              VG_(pp_SectKind)(ai->Addr.SectKind.kind),
@@ -381,9 +381,9 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
    va_list vargs;
 
    if (VG_(clo_xml))
-      VG_(message)(Vg_UserMsg, "  <kind>%s</kind>", xml_name);
+      VG_(message)(Vg_UserMsg, "  <kind>%s</kind>\n", xml_name);
    // Stick xpre and xpost on the front and back of the format string.
-   VG_(snprintf)(buf, 256, "%s%s%s", xpre, format, xpost);
+   VG_(snprintf)(buf, 256, "%s%s%s\n", xpre, format, xpost);
    va_start(vargs, format);
    VG_(vmessage) ( Vg_UserMsg, buf, vargs );
    va_end(vargs);
@@ -406,14 +406,14 @@ static void mc_pp_origin ( ExeContext* ec, UInt okind )
    tl_assert(src); /* guards against invalid 'okind' */
 
    if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "  <origin>");
+      VG_(message)(Vg_UserMsg, "  <origin>\n");
    }
 
-   VG_(message)(Vg_UserMsg, "%sUninitialised value was created%s%s",
+   VG_(message)(Vg_UserMsg, "%sUninitialised value was created%s%s\n",
                             xpre, src, xpost);
    VG_(pp_ExeContext)( ec );
    if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "  </origin>");
+      VG_(message)(Vg_UserMsg, "  </origin>\n");
    }
 }
 
@@ -568,16 +568,16 @@ void MC_(pp_Error) ( Error* err )
          LossRecord* lr              = extra->Err.Leak.lr;
 
          if (VG_(clo_xml)) {
-            VG_(message_no_f_c)(Vg_UserMsg, "  <kind>%t</kind>",
+            VG_(message_no_f_c)(Vg_UserMsg, "  <kind>%t</kind>\n",
                                 xml_leak_kind(lr->key.state));
          } else {
-            VG_(message)(Vg_UserMsg, "");
+            VG_(message)(Vg_UserMsg, "\n");
          }
 
          if (lr->indirect_szB > 0) {
             VG_(message)(Vg_UserMsg, 
                "%s%'lu (%'lu direct, %'lu indirect) bytes in %'u blocks"
-               " are %s in loss record %'u of %'u%s",
+               " are %s in loss record %'u of %'u%s\n",
                xpre,
                lr->szB + lr->indirect_szB, lr->szB, lr->indirect_szB,
                lr->num_blocks,
@@ -586,24 +586,24 @@ void MC_(pp_Error) ( Error* err )
             );
             if (VG_(clo_xml)) {
                // Nb: don't put commas in these XML numbers 
-               VG_(message)(Vg_UserMsg, "  <leakedbytes>%lu</leakedbytes>", 
+               VG_(message)(Vg_UserMsg, "  <leakedbytes>%lu</leakedbytes>\n", 
                                         lr->szB + lr->indirect_szB);
-               VG_(message)(Vg_UserMsg, "  <leakedblocks>%u</leakedblocks>", 
+               VG_(message)(Vg_UserMsg, "  <leakedblocks>%u</leakedblocks>\n", 
                                         lr->num_blocks);
             }
          } else {
             VG_(message)(
                Vg_UserMsg, 
-               "%s%'lu bytes in %'u blocks are %s in loss record %'u of %'u%s",
+               "%s%'lu bytes in %'u blocks are %s in loss record %'u of %'u%s\n",
                xpre,
                lr->szB, lr->num_blocks,
                str_leak_lossmode(lr->key.state), n_this_record, n_total_records,
                xpost
             );
             if (VG_(clo_xml)) {
-               VG_(message)(Vg_UserMsg, "  <leakedbytes>%ld</leakedbytes>",
+               VG_(message)(Vg_UserMsg, "  <leakedbytes>%ld</leakedbytes>\n",
                                         lr->szB);
-               VG_(message)(Vg_UserMsg, "  <leakedblocks>%d</leakedblocks>", 
+               VG_(message)(Vg_UserMsg, "  <leakedblocks>%d</leakedblocks>\n",
                                         lr->num_blocks);
             }
          }

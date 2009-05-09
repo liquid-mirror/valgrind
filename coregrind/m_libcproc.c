@@ -406,7 +406,8 @@ Int VG_(gettid)(void)
          res.res = VG_(strtoll10)(pid, &s);
          if (*s != '\0') {
             VG_(message)(Vg_DebugMsg, 
-               "Warning: invalid file name linked to by /proc/self: %s", pid);
+               "Warning: invalid file name linked to by /proc/self: %s\n",
+               pid);
          }
       }
    }

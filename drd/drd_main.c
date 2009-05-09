@@ -452,7 +452,7 @@ void drd_pre_thread_create(const ThreadId creator, const ThreadId created)
    if (DRD_(thread_get_trace_fork_join)())
    {
       VG_(message)(Vg_DebugMsg,
-                   "drd_pre_thread_create creator = %d/%d, created = %d",
+                   "drd_pre_thread_create creator = %d/%d, created = %d\n",
                    creator, drd_creator, created);
    }
 }
@@ -471,7 +471,7 @@ void drd_post_thread_create(const ThreadId vg_created)
    if (DRD_(thread_get_trace_fork_join)())
    {
       VG_(message)(Vg_DebugMsg,
-                   "drd_post_thread_create created = %d/%d",
+                   "drd_post_thread_create created = %d/%d\n",
                    vg_created, drd_created);
    }
    if (! DRD_(get_check_stack_accesses)())
@@ -494,7 +494,7 @@ static void drd_thread_finished(ThreadId vg_tid)
    if (DRD_(thread_get_trace_fork_join)())
    {
       VG_(message)(Vg_DebugMsg,
-                   "drd_thread_finished tid = %d/%d%s",
+                   "drd_thread_finished tid = %d/%d%s\n",
                    vg_tid,
                    drd_tid,
                    DRD_(thread_get_joinable)(drd_tid)
@@ -509,7 +509,7 @@ static void drd_thread_finished(ThreadId vg_tid)
             - DRD_(thread_get_stack_min_min)(drd_tid));
       VG_(message)(Vg_UserMsg,
                    "thread %d/%d%s finished and used %ld bytes out of %ld"
-                   " on its stack. Margin: %ld bytes.",
+                   " on its stack. Margin: %ld bytes.\n",
                    vg_tid,
                    drd_tid,
                    DRD_(thread_get_joinable)(drd_tid)
@@ -567,38 +567,38 @@ static void DRD_(fini)(Int exitcode)
 
       VG_(message)(Vg_UserMsg,
                    "   thread: %lld context switches"
-                   " / %lld updates of the conflict set",
+                   " / %lld updates of the conflict set\n",
                    DRD_(thread_get_context_switch_count)(),
                    update_conflict_set_count);
       VG_(message)(Vg_UserMsg,
-                   "           (%lld new sg + %lld combine vc + %lld csw).",
+                   "           (%lld new sg + %lld combine vc + %lld csw).\n",
                    dsnsc,
                    dscvc,
                    update_conflict_set_count - dsnsc - dscvc);
       VG_(message)(Vg_UserMsg,
                    " segments: created %lld segments, max %lld alive,"
-                   " %lld discard points.",
+                   " %lld discard points.\n",
                    DRD_(sg_get_segments_created_count)(),
                    DRD_(sg_get_max_segments_alive_count)(),
                    DRD_(thread_get_discard_ordered_segments_count)());
       VG_(message)(Vg_UserMsg,
-                   "           %lld merges.",
+                   "           %lld merges.\n",
                    DRD_(sg_get_segment_merge_count)());
       VG_(message)(Vg_UserMsg,
-                   "           (%lld m, %lld rw, %lld s, %lld b)",
+                   "           (%lld m, %lld rw, %lld s, %lld b)\n",
                    DRD_(get_mutex_segment_creation_count)(),
                    DRD_(get_rwlock_segment_creation_count)(),
                    DRD_(get_semaphore_segment_creation_count)(),
                    DRD_(get_barrier_segment_creation_count)());
       VG_(message)(Vg_UserMsg,
-                   "  bitmaps: %lld level 1 / %lld level 2 bitmap refs",
+                   "  bitmaps: %lld level 1 / %lld level 2 bitmap refs\n",
                    DRD_(bm_get_bitmap_creation_count)(),
                    DRD_(bm_get_bitmap2_node_creation_count)());
       VG_(message)(Vg_UserMsg,
-                   "           and %lld level 2 bitmaps were allocated.",
+                   "           and %lld level 2 bitmaps were allocated.\n",
                    DRD_(bm_get_bitmap2_creation_count)());
       VG_(message)(Vg_UserMsg,
-                   "    mutex: %lld non-recursive lock/unlock events.",
+                   "    mutex: %lld non-recursive lock/unlock events.\n",
                    DRD_(get_mutex_lock_count)());
       DRD_(print_malloc_stats)();
    }

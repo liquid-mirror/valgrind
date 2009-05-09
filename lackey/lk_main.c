@@ -368,10 +368,10 @@ static void instrument_detail(IRSB* sb, Op op, IRType type)
 static void print_details ( void )
 {
    Int typeIx;
-   VG_UMSG("   Type        Loads       Stores       AluOps");
-   VG_UMSG("   -------------------------------------------");
+   VG_UMSG("   Type        Loads       Stores       AluOps\n");
+   VG_UMSG("   -------------------------------------------\n");
    for (typeIx = 0; typeIx < N_TYPES; typeIx++) {
-      VG_UMSG("   %4s %'12llu %'12llu %'12llu",
+      VG_UMSG("   %4s %'12llu %'12llu %'12llu\n",
               nameOfTypeIndex( typeIx ),
               detailCounts[OpLoad ][typeIx],
               detailCounts[OpStore][typeIx],
@@ -862,44 +862,44 @@ static void lk_fini(Int exitcode)
       ULong total_Jccs = n_Jccs + n_IJccs;
       ULong taken_Jccs = (n_Jccs - n_Jccs_untaken) + n_IJccs_untaken;
 
-      VG_UMSG("Counted %'llu calls to %s()", n_func_calls, clo_fnname);
+      VG_UMSG("Counted %'llu calls to %s()\n", n_func_calls, clo_fnname);
 
-      VG_UMSG("");
-      VG_UMSG("Jccs:");
-      VG_UMSG("  total:         %'llu", total_Jccs);
+      VG_UMSG("\n");
+      VG_UMSG("Jccs:\n");
+      VG_UMSG("  total:         %'llu\n", total_Jccs);
       VG_(percentify)(taken_Jccs, (total_Jccs ? total_Jccs : 1),
          percentify_decs, percentify_size, percentify_buf);
-      VG_UMSG("  taken:         %'llu (%s)",
+      VG_UMSG("  taken:         %'llu (%s)\n",
          taken_Jccs, percentify_buf);
       
-      VG_UMSG("");
-      VG_UMSG("Executed:");
-      VG_UMSG("  SBs entered:   %'llu", n_SBs_entered);
-      VG_UMSG("  SBs completed: %'llu", n_SBs_completed);
-      VG_UMSG("  guest instrs:  %'llu", n_guest_instrs);
-      VG_UMSG("  IRStmts:       %'llu", n_IRStmts);
+      VG_UMSG("\n");
+      VG_UMSG("Executed:\n");
+      VG_UMSG("  SBs entered:   %'llu\n", n_SBs_entered);
+      VG_UMSG("  SBs completed: %'llu\n", n_SBs_completed);
+      VG_UMSG("  guest instrs:  %'llu\n", n_guest_instrs);
+      VG_UMSG("  IRStmts:       %'llu\n", n_IRStmts);
       
-      VG_UMSG("");
-      VG_UMSG("Ratios:");
+      VG_UMSG("\n");
+      VG_UMSG("Ratios:\n");
       tl_assert(n_SBs_entered); // Paranoia time.
-      VG_UMSG("  guest instrs : SB entered  = %'llu : 10",
+      VG_UMSG("  guest instrs : SB entered  = %'llu : 10\n",
          10 * n_guest_instrs / n_SBs_entered);
-      VG_UMSG("       IRStmts : SB entered  = %'llu : 10",
+      VG_UMSG("       IRStmts : SB entered  = %'llu : 10\n",
          10 * n_IRStmts / n_SBs_entered);
       tl_assert(n_guest_instrs); // Paranoia time.
-      VG_UMSG("       IRStmts : guest instr = %'llu : 10",
+      VG_UMSG("       IRStmts : guest instr = %'llu : 10\n",
          10 * n_IRStmts / n_guest_instrs);
    }
 
    if (clo_detailed_counts) {
-      VG_UMSG("");
-      VG_UMSG("IR-level counts by type:");
+      VG_UMSG("\n");
+      VG_UMSG("IR-level counts by type:\n");
       print_details();
    }
 
    if (clo_basic_counts) {
-      VG_UMSG("");
-      VG_UMSG("Exit code:       %d", exitcode);
+      VG_UMSG("\n");
+      VG_UMSG("Exit code:       %d\n", exitcode);
    }
 }
 

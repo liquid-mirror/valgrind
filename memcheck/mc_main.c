@@ -946,7 +946,7 @@ static void gcSecVBitTable(void)
    if (VG_(clo_verbosity) > 1) {
       Char percbuf[6];
       VG_(percentify)(n_survivors, n_nodes, 1, 6, percbuf);
-      VG_(message)(Vg_DebugMsg, "memcheck GC: %d nodes, %d survivors (%s)",
+      VG_(message)(Vg_DebugMsg, "memcheck GC: %d nodes, %d survivors (%s)\n",
                    n_nodes, n_survivors, percbuf);
    }
 
@@ -954,7 +954,7 @@ static void gcSecVBitTable(void)
    if (n_survivors > (secVBitLimit * MAX_SURVIVOR_PROPORTION)) {
       secVBitLimit *= TABLE_GROWTH_FACTOR;
       if (VG_(clo_verbosity) > 1)
-         VG_(message)(Vg_DebugMsg, "memcheck GC: increase table size to %d",
+         VG_(message)(Vg_DebugMsg, "memcheck GC: increase table size to %d\n",
                       secVBitLimit);
    }
 }
@@ -1358,7 +1358,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
          if (vabits16 == VA_BITS16_UNDEFINED) s = "undefined";
          if (vabits16 == VA_BITS16_DEFINED  ) s = "defined";
          VG_(message)(Vg_UserMsg, "Warning: set address range perms: "
-                                  "large range [0x%lx, 0x%lx) (%s)",
+                                  "large range [0x%lx, 0x%lx) (%s)\n",
                                   a, a + lenT, s);
       }
    }
@@ -4670,7 +4670,7 @@ static Bool mc_process_cmd_line_options(Char* arg)
    */
    if (0 == VG_(strcmp)(arg, "--undef-value-errors=no")) {
       if (MC_(clo_mc_level) == 3) {
-         VG_(message)(Vg_DebugMsg, "%s", bad_level_msg);
+         VG_(message)(Vg_DebugMsg, "%s\n", bad_level_msg);
          return False;
       } else {
          MC_(clo_mc_level) = 1;
@@ -4689,7 +4689,7 @@ static Bool mc_process_cmd_line_options(Char* arg)
    }
    if (0 == VG_(strcmp)(arg, "--track-origins=yes")) {
       if (MC_(clo_mc_level) == 1) {
-         VG_(message)(Vg_DebugMsg, "%s", bad_level_msg);
+         VG_(message)(Vg_DebugMsg, "%s\n", bad_level_msg);
          return False;
       } else {
          MC_(clo_mc_level) = 3;
@@ -4734,16 +4734,16 @@ static Bool mc_process_cmd_line_options(Char* arg)
          Addr limit = 0x4000000; /* 64M - entirely arbitrary limit */
          if (e <= s) {
             VG_(message)(Vg_DebugMsg, 
-               "ERROR: --ignore-ranges: end <= start in range:");
+               "ERROR: --ignore-ranges: end <= start in range:\n");
             VG_(message)(Vg_DebugMsg, 
-               "       0x%lx-0x%lx", s, e);
+               "       0x%lx-0x%lx\n", s, e);
             return False;
          }
          if (e - s > limit) {
             VG_(message)(Vg_DebugMsg, 
-               "ERROR: --ignore-ranges: suspiciously large range:");
+               "ERROR: --ignore-ranges: suspiciously large range:\n");
             VG_(message)(Vg_DebugMsg, 
-               "       0x%lx-0x%lx (size %ld)", s, e, (UWord)(e-s));
+               "       0x%lx-0x%lx (size %ld)\n", s, e, (UWord)(e-s));
             return False;
 	 }
       }
@@ -4864,7 +4864,7 @@ Int alloc_client_block ( void )
 static void show_client_block_stats ( void )
 {
    VG_(message)(Vg_DebugMsg, 
-      "general CBs: %llu allocs, %llu discards, %llu maxinuse, %llu search",
+      "general CBs: %llu allocs, %llu discards, %llu maxinuse, %llu search\n",
       cgb_allocs, cgb_discards, cgb_used_MAX, cgb_search 
    );
 }
@@ -5102,9 +5102,11 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 
 
       default:
-         VG_(message)(Vg_UserMsg, 
-                      "Warning: unknown memcheck client request code %llx",
-                      (ULong)arg[0]);
+         VG_(message)(
+            Vg_UserMsg, 
+            "Warning: unknown memcheck client request code %llx\n",
+            (ULong)arg[0]
+         );
          return False;
    }
    return True;
@@ -5542,7 +5544,7 @@ static void mc_post_clo_init ( void )
 static void print_SM_info(char* type, int n_SMs)
 {
    VG_(message)(Vg_DebugMsg,
-      " memcheck: SMs: %s = %d (%ldk, %ldM)",
+      " memcheck: SMs: %s = %d (%ldk, %ldM)\n",
       type,
       n_SMs,
       n_SMs * sizeof(SecMap) / 1024UL,
@@ -5556,10 +5558,10 @@ static void mc_fini ( Int exitcode )
    if (VG_(clo_verbosity) == 1 && !VG_(clo_xml)) {
       if (MC_(clo_leak_check) == LC_Off)
          VG_(message)(Vg_UserMsg, 
-             "For a detailed leak analysis,  rerun with: --leak-check=yes");
+            "For a detailed leak analysis,  rerun with: --leak-check=yes\n");
 
       VG_(message)(Vg_UserMsg, 
-                   "For counts of detected errors, rerun with: -v");
+                   "For counts of detected errors, rerun with: -v\n");
    }
 
 
@@ -5567,7 +5569,7 @@ static void mc_fini ( Int exitcode )
        && MC_(clo_mc_level) == 2) {
       VG_(message)(Vg_UserMsg,
                    "Use --track-origins=yes to see where "
-                   "uninitialised values come from");
+                   "uninitialised values come from\n");
    }
 
    if (MC_(clo_leak_check) != LC_Off)
@@ -5579,21 +5581,21 @@ static void mc_fini ( Int exitcode )
       SizeT max_secVBit_szB, max_SMs_szB, max_shmem_szB;
       
       VG_(message)(Vg_DebugMsg,
-         " memcheck: sanity checks: %d cheap, %d expensive",
+         " memcheck: sanity checks: %d cheap, %d expensive\n",
          n_sanity_cheap, n_sanity_expensive );
       VG_(message)(Vg_DebugMsg,
-         " memcheck: auxmaps: %lld auxmap entries (%lldk, %lldM) in use",
+         " memcheck: auxmaps: %lld auxmap entries (%lldk, %lldM) in use\n",
          n_auxmap_L2_nodes, 
          n_auxmap_L2_nodes * 64, 
          n_auxmap_L2_nodes / 16 );
       VG_(message)(Vg_DebugMsg,
-         " memcheck: auxmaps_L1: %lld searches, %lld cmps, ratio %lld:10",
+         " memcheck: auxmaps_L1: %lld searches, %lld cmps, ratio %lld:10\n",
          n_auxmap_L1_searches, n_auxmap_L1_cmps,
          (10ULL * n_auxmap_L1_cmps) 
             / (n_auxmap_L1_searches ? n_auxmap_L1_searches : 1) 
       );   
       VG_(message)(Vg_DebugMsg,
-         " memcheck: auxmaps_L2: %lld searches, %lld nodes",
+         " memcheck: auxmaps_L2: %lld searches, %lld nodes\n",
          n_auxmap_L2_searches, n_auxmap_L2_nodes
       );   
 
@@ -5614,47 +5616,47 @@ static void mc_fini ( Int exitcode )
       max_shmem_szB   = sizeof(primary_map) + max_SMs_szB + max_secVBit_szB;
 
       VG_(message)(Vg_DebugMsg,
-         " memcheck: max sec V bit nodes:    %d (%ldk, %ldM)",
+         " memcheck: max sec V bit nodes:    %d (%ldk, %ldM)\n",
          max_secVBit_nodes, max_secVBit_szB / 1024,
                             max_secVBit_szB / (1024 * 1024));
       VG_(message)(Vg_DebugMsg,
-         " memcheck: set_sec_vbits8 calls: %llu (new: %llu, updates: %llu)",
+         " memcheck: set_sec_vbits8 calls: %llu (new: %llu, updates: %llu)\n",
          sec_vbits_new_nodes + sec_vbits_updates,
          sec_vbits_new_nodes, sec_vbits_updates );
       VG_(message)(Vg_DebugMsg,
-         " memcheck: max shadow mem size:   %ldk, %ldM",
+         " memcheck: max shadow mem size:   %ldk, %ldM\n",
          max_shmem_szB / 1024, max_shmem_szB / (1024 * 1024));
 
       if (MC_(clo_mc_level) >= 3) {
          VG_(message)(Vg_DebugMsg,
-                      " ocacheL1: %'12lu refs   %'12lu misses (%'lu lossage)",
+                      " ocacheL1: %'12lu refs   %'12lu misses (%'lu lossage)\n",
                       stats_ocacheL1_find, 
                       stats_ocacheL1_misses,
                       stats_ocacheL1_lossage );
          VG_(message)(Vg_DebugMsg,
-                      " ocacheL1: %'12lu at 0   %'12lu at 1",
+                      " ocacheL1: %'12lu at 0   %'12lu at 1\n",
                       stats_ocacheL1_find - stats_ocacheL1_misses 
                          - stats_ocacheL1_found_at_1 
                          - stats_ocacheL1_found_at_N,
                       stats_ocacheL1_found_at_1 );
          VG_(message)(Vg_DebugMsg,
-                      " ocacheL1: %'12lu at 2+  %'12lu move-fwds",
+                      " ocacheL1: %'12lu at 2+  %'12lu move-fwds\n",
                       stats_ocacheL1_found_at_N,
                       stats_ocacheL1_movefwds );
          VG_(message)(Vg_DebugMsg,
-                      " ocacheL1: %'12lu sizeB  %'12u useful",
+                      " ocacheL1: %'12lu sizeB  %'12u useful\n",
                       (UWord)sizeof(OCache),
                       4 * OC_W32S_PER_LINE * OC_LINES_PER_SET * OC_N_SETS );
          VG_(message)(Vg_DebugMsg,
-                      " ocacheL2: %'12lu refs   %'12lu misses",
+                      " ocacheL2: %'12lu refs   %'12lu misses\n",
                       stats__ocacheL2_refs, 
                       stats__ocacheL2_misses );
          VG_(message)(Vg_DebugMsg,
-                      " ocacheL2:    %'9lu max nodes %'9lu curr nodes",
+                      " ocacheL2:    %'9lu max nodes %'9lu curr nodes\n",
                       stats__ocacheL2_n_nodes_max,
                       stats__ocacheL2_n_nodes );
          VG_(message)(Vg_DebugMsg,
-                      " niacache: %'12lu refs   %'12lu misses",
+                      " niacache: %'12lu refs   %'12lu misses\n",
                       stats__nia_cache_queries, stats__nia_cache_misses);
       } else {
          tl_assert(ocacheL1 == NULL);
@@ -5664,7 +5666,7 @@ static void mc_fini ( Int exitcode )
 
    if (0) {
       VG_(message)(Vg_DebugMsg, 
-        "------ Valgrind's client block stats follow ---------------" );
+        "------ Valgrind's client block stats follow ---------------\n" );
       show_client_block_stats();
    }
 }

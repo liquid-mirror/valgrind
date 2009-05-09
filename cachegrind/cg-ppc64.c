@@ -55,7 +55,7 @@ void VG_(configure_caches)(cache_t* I1c, cache_t* D1c, cache_t* L2c,
    //
    if (!all_caches_clo_defined) {
       VG_DMSG("Warning: Cannot auto-detect cache config on PPC64, using one "
-              "or more defaults ");
+              "or more defaults \n");
    }
 }
 

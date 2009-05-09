@@ -307,7 +307,7 @@ static void discard_DebugInfo ( DebugInfo* di )
          if (curr->have_dinfo
              && (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir)))
             VG_(message)(Vg_DebugMsg, 
-                         "Discarding syms at %#lx-%#lx in %s due to %s()",
+                         "Discarding syms at %#lx-%#lx in %s due to %s()\n",
                          di->text_avma, 
                          di->text_avma + di->text_size,
                          curr->filename ? curr->filename : (UChar*)"???",
@@ -892,10 +892,10 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
    struct vg_stat stat_buf;
 
    if (VG_(clo_verbosity) > 0) {
-      VG_(message)(Vg_UserMsg, "");
+      VG_(message)(Vg_UserMsg, "\n");
       VG_(message)(Vg_UserMsg,
          "LOAD_PDB_DEBUGINFO(fd=%d, avma=%#lx, total_size=%lu, "
-         "uu_reloc=%#lx)", 
+         "uu_reloc=%#lx)\n", 
          fd_obj, avma_obj, total_size, unknown_purpose__reloc
       );
    }
@@ -921,7 +921,7 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
    vg_assert(exename[sizeof(exename)-1] == 0);
 
    if (VG_(clo_verbosity) > 0) {
-      VG_(message)(Vg_UserMsg, "LOAD_PDB_DEBUGINFO: objname: %s", exename);
+      VG_(message)(Vg_UserMsg, "LOAD_PDB_DEBUGINFO: objname: %s\n", exename);
    }
 
    /* Try to find a matching PDB file from which to read debuginfo.
@@ -949,24 +949,25 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
    /* See if we can find it, and check it's in-dateness. */
    sres = VG_(stat)(pdbname, &stat_buf);
    if (sres.isError) {
-      VG_(message)(Vg_UserMsg, "Warning: Missing or un-stat-able %s",
+      VG_(message)(Vg_UserMsg, "Warning: Missing or un-stat-able %s\n",
                                pdbname);
    if (VG_(clo_verbosity) > 0)
-      VG_(message)(Vg_UserMsg, "LOAD_PDB_DEBUGINFO: missing: %s", pdbname);
+      VG_(message)(Vg_UserMsg, "LOAD_PDB_DEBUGINFO: missing: %s\n", pdbname);
       goto out;
    }
    pdb_mtime = stat_buf.st_mtime;
    if (pdb_mtime < obj_mtime ) {
       /* PDB file is older than PE file - ignore it or we will either
          (a) print wrong stack traces or more likely (b) crash. */
-      VG_(message)(Vg_UserMsg, "Warning: Ignoring %s since it is older than %s",
-                               pdbname, exename);
+      VG_(message)(Vg_UserMsg,
+                   "Warning: Ignoring %s since it is older than %s\n",
+                   pdbname, exename);
       goto out;
    }
 
    sres = VG_(open)(pdbname, VKI_O_RDONLY, 0);
    if (sres.isError) {
-      VG_(message)(Vg_UserMsg, "Warning: Can't open %s", pdbname);
+      VG_(message)(Vg_UserMsg, "Warning: Can't open %s\n", pdbname);
       goto out;
    }
 
@@ -981,7 +982,7 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
    }
 
    if (VG_(clo_verbosity) > 0)
-      VG_(message)(Vg_UserMsg, "LOAD_PDB_DEBUGINFO: pdbname: %s", pdbname);
+      VG_(message)(Vg_UserMsg, "LOAD_PDB_DEBUGINFO: pdbname: %s\n", pdbname);
 
    /* play safe; always invalidate the CFI cache.  I don't know if
       this is necessary, but anyway .. */

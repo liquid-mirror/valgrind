@@ -90,7 +90,7 @@ void DRD_(trace_mem_access)(const Addr addr, const SizeT size,
       DRD_(vc_snprint)(vc, sizeof(vc),
                        DRD_(thread_get_vc)(DRD_(thread_get_running_tid)()));
       VG_(message)(Vg_UserMsg,
-                   "%s 0x%lx size %ld (vg %d / drd %d / vc %s)",
+                   "%s 0x%lx size %ld (vg %d / drd %d / vc %s)\n",
                    access_type == eLoad
                    ? "load "
                    : access_type == eStore

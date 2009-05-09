@@ -686,23 +686,23 @@ void bad_before ( ThreadId              tid,
                   /*OUT*/UWord*         flags )
 {
    VG_(message)
-      (Vg_DebugMsg,"WARNING: unhandled syscall: %llu", (ULong)args->sysno);
+      (Vg_DebugMsg,"WARNING: unhandled syscall: %llu\n", (ULong)args->sysno);
 #  if defined(VGO_aix5)
    VG_(message)
-      (Vg_DebugMsg,"           name of syscall: \"%s\"",
+      (Vg_DebugMsg,"           name of syscall: \"%s\"\n",
                     VG_(aix5_sysno_to_sysname)(args->sysno));
 #  endif
    if (VG_(clo_verbosity) > 1) {
       VG_(get_and_pp_StackTrace)(tid, VG_(clo_backtrace_size));
    }
    VG_(message)
-      (Vg_DebugMsg,"You may be able to write your own handler.");
+      (Vg_DebugMsg,"You may be able to write your own handler.\n");
    VG_(message)
-      (Vg_DebugMsg,"Read the file README_MISSING_SYSCALL_OR_IOCTL.");
+      (Vg_DebugMsg,"Read the file README_MISSING_SYSCALL_OR_IOCTL.\n");
    VG_(message)
-      (Vg_DebugMsg,"Nevertheless we consider this a bug.  Please report");
+      (Vg_DebugMsg,"Nevertheless we consider this a bug.  Please report\n");
    VG_(message)
-      (Vg_DebugMsg,"it at http://valgrind.org/support/bug_reports.html.");
+      (Vg_DebugMsg,"it at http://valgrind.org/support/bug_reports.html.\n");
 
    SET_STATUS_Failure(VKI_ENOSYS);
 }

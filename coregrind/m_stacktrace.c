@@ -519,9 +519,9 @@ static void printIpDesc(UInt n, Addr ip)
    VG_(describe_IP)(ip, buf, BUF_LEN);
 
    if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "    %s", buf);
+      VG_(message)(Vg_UserMsg, "    %s\n", buf);
    } else {
-      VG_(message)(Vg_UserMsg, "   %s %s", ( n == 0 ? "at" : "by" ), buf);
+      VG_(message)(Vg_UserMsg, "   %s %s\n", ( n == 0 ? "at" : "by" ), buf);
    }
 }
 
@@ -531,12 +531,12 @@ void VG_(pp_StackTrace) ( StackTrace ips, UInt n_ips )
    vg_assert( n_ips > 0 );
 
    if (VG_(clo_xml))
-      VG_(message)(Vg_UserMsg, "  <stack>");
+      VG_(message)(Vg_UserMsg, "  <stack>\n");
 
    VG_(apply_StackTrace)( printIpDesc, ips, n_ips );
 
    if (VG_(clo_xml))
-      VG_(message)(Vg_UserMsg, "  </stack>");
+      VG_(message)(Vg_UserMsg, "  </stack>\n");
 }
 
 /* Get and immediately print a StackTrace. */

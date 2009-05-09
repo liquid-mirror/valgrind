@@ -142,7 +142,7 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
 
    if (VG_STREQ(format, "")) {
       // Empty name, bad.
-      VG_(message)(Vg_UserMsg, "%s: filename is empty", option_name);
+      VG_(message)(Vg_UserMsg, "%s: filename is empty\n", option_name);
       goto bad;
    }
 
@@ -196,7 +196,7 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
                qualname = &format[i];
                while (True) {
                   if (0 == format[i]) {
-                     VG_(message)(Vg_UserMsg, "%s: malformed %%q specifier",
+                     VG_(message)(Vg_UserMsg, "%s: malformed %%q specifier\n",
                         option_name);
                      goto bad;
                   } else if ('}' == format[i]) {
@@ -206,7 +206,7 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
                      qual = VG_(getenv)(qualname);
                      if (NULL == qual) {
                         VG_(message)(Vg_UserMsg,
-                           "%s: environment variable %s is not set",
+                           "%s: environment variable %s is not set\n",
                            option_name, qualname);
                         format[i] = '}';  // Put the '}' back.
                         goto bad;
@@ -221,14 +221,14 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
                j += VG_(sprintf)(&out[j], "%s", qual);
             } else {
                VG_(message)(Vg_UserMsg,
-                  "%s: expected '{' after '%%q'", option_name);
+                  "%s: expected '{' after '%%q'\n", option_name);
                goto bad;
             }
          } 
          else {
             // Something else, abort.
             VG_(message)(Vg_UserMsg,
-               "%s: expected 'p' or 'q' or '%%' after '%%'", option_name);
+               "%s: expected 'p' or 'q' or '%%' after '%%'\n", option_name);
             goto bad;
          }
       }

@@ -1156,7 +1156,7 @@ PRE(sys_tkill)
    *flags |= SfPollAfter;
 
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tkill: sending signal %ld to pid %ld",
+      VG_(message)(Vg_DebugMsg, "tkill: sending signal %ld to pid %ld\n",
 		   ARG2, ARG1);
 
    /* If we're sending SIGKILL, check to see if the target is one of
@@ -1180,7 +1180,7 @@ PRE(sys_tkill)
 POST(sys_tkill)
 {
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tkill: sent signal %ld to pid %ld",
+      VG_(message)(Vg_DebugMsg, "tkill: sent signal %ld to pid %ld\n",
                    ARG2, ARG1);
 }
 
@@ -1197,7 +1197,8 @@ PRE(sys_tgkill)
    *flags |= SfPollAfter;
 
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sending signal %ld to pid %ld/%ld",
+      VG_(message)(Vg_DebugMsg,
+                   "tgkill: sending signal %ld to pid %ld/%ld\n",
 		   ARG3, ARG1, ARG2);
 
    /* If we're sending SIGKILL, check to see if the target is one of
@@ -1221,7 +1222,8 @@ PRE(sys_tgkill)
 POST(sys_tgkill)
 {
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sent signal %ld to pid %ld/%ld",
+      VG_(message)(Vg_DebugMsg,
+                   "tgkill: sent signal %ld to pid %ld/%ld\n",
                    ARG3, ARG1, ARG2);
 }
 
@@ -4379,14 +4381,14 @@ PRE(sys_ioctl)
 	    moans--;
 	    VG_(message)(Vg_UserMsg, 
 			 "Warning: noted but unhandled ioctl 0x%lx"
-			 " with no size/direction hints",
+			 " with no size/direction hints\n",
 			 ARG2); 
 	    VG_(message)(Vg_UserMsg, 
 			 "   This could cause spurious value errors"
-			 " to appear.");
+			 " to appear.\n");
 	    VG_(message)(Vg_UserMsg, 
 			 "   See README_MISSING_SYSCALL_OR_IOCTL for "
-			 "guidance on writing a proper wrapper." );
+			 "guidance on writing a proper wrapper.\n" );
 	 }
       } else {
 	 if ((dir & _VKI_IOC_WRITE) && size > 0)
@@ -5235,7 +5237,8 @@ ML_(linux_POST_sys_getsockopt) ( ThreadId tid,
             else if (a->sa_family == VKI_AF_INET6)
                sl = sizeof(struct vki_sockaddr_in6);
             else {
-               VG_(message)(Vg_UserMsg, "Warning: getsockopt: unhandled address type %d", a->sa_family);
+               VG_(message)(Vg_UserMsg, "Warning: getsockopt: unhandled "
+                                        "address type %d\n", a->sa_family);
             }
             a = (struct vki_sockaddr*)((char*)a + sl);
          }

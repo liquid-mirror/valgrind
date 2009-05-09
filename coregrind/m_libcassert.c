@@ -240,17 +240,17 @@ void VG_(unimplemented) ( Char* msg )
 {
    if (VG_(clo_xml))
       VG_UMSG("</valgrindoutput>\n");
-   VG_UMSG("");
-   VG_UMSG("Valgrind detected that your program requires");
-   VG_UMSG("the following unimplemented functionality:");
-   VG_UMSG("   %s", msg);
-   VG_UMSG("This may be because the functionality is hard to implement,");
-   VG_UMSG("or because no reasonable program would behave this way,");
-   VG_UMSG("or because nobody has yet needed it.  In any case, let us know at");
-   VG_UMSG("%s and/or try to work around the problem, if you can.", VG_BUGS_TO);
-   VG_UMSG("");
-   VG_UMSG("Valgrind has to exit now.  Sorry.  Bye!");
-   VG_UMSG("");
+   VG_UMSG("\n");
+   VG_UMSG("Valgrind detected that your program requires\n");
+   VG_UMSG("the following unimplemented functionality:\n");
+   VG_UMSG("   %s\n", msg);
+   VG_UMSG("This may be because the functionality is hard to implement,\n");
+   VG_UMSG("or because no reasonable program would behave this way,\n");
+   VG_UMSG("or because nobody has yet needed it.  In any case, let us know at\n");
+   VG_UMSG("%s and/or try to work around the problem, if you can.\n", VG_BUGS_TO);
+   VG_UMSG("\n");
+   VG_UMSG("Valgrind has to exit now.  Sorry.  Bye!\n");
+   VG_UMSG("\n");
    VG_(show_sched_status)();
    VG_(exit)(1);
 }

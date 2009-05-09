@@ -130,11 +130,14 @@ static void pc_post_clo_init ( void )
 #  elif defined(VGA_ppc32) || defined(VGA_ppc64)
    if (VG_(clo_verbosity) >= 1 && sg_clo_enable_sg_checks) {
       VG_(message)(Vg_UserMsg, 
-         "WARNING: exp-ptrcheck on ppc32/ppc64 platforms: stack and global array");
+         "WARNING: exp-ptrcheck on ppc32/ppc64 platforms: "
+         "stack and global array\n");
       VG_(message)(Vg_UserMsg, 
-         "WARNING: checking is not currently supported.  Only heap checking is");
+         "WARNING: checking is not currently supported.  "
+         "Only heap checking is\n");
       VG_(message)(Vg_UserMsg, 
-         "WARNING: supported.  Disabling s/g checks (like --enable-sg-checks=no).");
+         "WARNING: supported.  Disabling s/g checks "
+         "(like --enable-sg-checks=no).\n");
    }
    sg_clo_enable_sg_checks = False;
 #  else

@@ -42,9 +42,9 @@
 
 static void micro_ops_warn(Int actual_size, Int used_size, Int line_size)
 {
-   VG_DMSG("warning: Pentium 4 with %d KB micro-op instruction trace cache", 
+   VG_DMSG("warning: Pentium 4 with %d KB micro-op instruction trace cache\n",
            actual_size);
-   VG_DMSG("         Simulating a %d KB I-cache with %d B lines", 
+   VG_DMSG("         Simulating a %d KB I-cache with %d B lines\n",
            used_size, line_size);
 }
 
@@ -65,7 +65,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
    Bool  L2_found = False;
 
    if (level < 2) {
-      VG_DMSG("warning: CPUID level < 2 for Intel processor (%d)", level);
+      VG_DMSG("warning: CPUID level < 2 for Intel processor (%d)\n", level);
       return -1;
    }
 
@@ -81,7 +81,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
    info[0] = 0x0;           /* reset AL */
 
    if (0 != trials) {
-      VG_DMSG("warning: non-zero CPUID trials for Intel processor (%d)",
+      VG_DMSG("warning: non-zero CPUID trials for Intel processor (%d)\n",
               trials);
       return -1;
    }
@@ -119,7 +119,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
 
       case 0x22: case 0x23: case 0x25: case 0x29:
       case 0x46: case 0x47: case 0x4a: case 0x4b: case 0x4c: case 0x4d:
-          VG_DMSG("warning: L3 cache detected but ignored");
+          VG_DMSG("warning: L3 cache detected but ignored\n");
           break;
 
       /* These are sectored, whatever that means */
@@ -142,7 +142,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
       case 0x49:
 	  if ((family == 15) && (model == 6))
 	      /* On Xeon MP (family F, model 6), this is for L3 */
-	      VG_DMSG("warning: L3 cache detected but ignored");
+	      VG_DMSG("warning: L3 cache detected but ignored\n");
 	  else
 	      *L2c = (cache_t) { 4096, 16, 64 }; L2_found = True;
 	  break;
@@ -196,14 +196,14 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
          break;
 
       default:
-         VG_DMSG("warning: Unknown Intel cache config value (0x%x), ignoring",
+         VG_DMSG("warning: Unknown Intel cache config value (0x%x), ignoring\n",
                  info[i]);
          break;
       }
    }
 
    if (!L2_found)
-      VG_DMSG("warning: L2 cache not installed, ignore L2 results.");
+      VG_DMSG("warning: L2 cache not installed, ignore L2 results.\n");
 
    return 0;
 }
@@ -242,7 +242,7 @@ Int AMD_cache_info(cache_t* I1c, cache_t* D1c, cache_t* L2c)
    VG_(cpuid)(0x80000000, &ext_level, &dummy, &dummy, &dummy);
 
    if (0 == (ext_level & 0x80000000) || ext_level < 0x80000006) {
-      VG_DMSG("warning: ext_level < 0x80000006 for AMD processor (0x%x)", 
+      VG_DMSG("warning: ext_level < 0x80000006 for AMD processor (0x%x)\n",
               ext_level);
       return -1;
    }
@@ -254,7 +254,7 @@ Int AMD_cache_info(cache_t* I1c, cache_t* D1c, cache_t* L2c)
 
    /* Check for Duron bug */
    if (model == 0x630) {
-      VG_DMSG("warning: Buggy Duron stepping A0. Assuming L2 size=65536 bytes");
+      VG_DMSG("warning: Buggy Duron stepping A0. Assuming L2 size=65536 bytes\n");
       L2i = (64 << 16) | (L2i & 0xffff);
    }
 
@@ -280,7 +280,7 @@ Int get_caches_from_CPUID(cache_t* I1c, cache_t* D1c, cache_t* L2c)
    Char vendor_id[13];
 
    if (!VG_(has_cpuid)()) {
-      VG_DMSG("CPUID instruction not supported");
+      VG_DMSG("CPUID instruction not supported\n");
       return -1;
    }
 
@@ -289,7 +289,7 @@ Int get_caches_from_CPUID(cache_t* I1c, cache_t* D1c, cache_t* L2c)
    vendor_id[12] = '\0';
 
    if (0 == level) {
-      VG_DMSG("CPUID level is 0, early Pentium?");
+      VG_DMSG("CPUID level is 0, early Pentium?\n");
       return -1;
    }
 
@@ -314,7 +314,7 @@ Int get_caches_from_CPUID(cache_t* I1c, cache_t* D1c, cache_t* L2c)
       ret = 0;
 
    } else {
-      VG_DMSG("CPU vendor ID not recognised (%s)", vendor_id);
+      VG_DMSG("CPU vendor ID not recognised (%s)\n", vendor_id);
       return -1;
    }
 
@@ -343,7 +343,7 @@ void VG_(configure_caches)(cache_t* I1c, cache_t* D1c, cache_t* L2c,
    // Warn if CPUID failed and config not completely specified from cmd line.
    if (res != 0 && !all_caches_clo_defined) {
       VG_DMSG("Warning: Couldn't auto-detect cache config, using one "
-              "or more defaults ");
+              "or more defaults \n");
    }
 }
 
