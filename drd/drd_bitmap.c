@@ -114,14 +114,16 @@ void DRD_(bm_access_range)(struct bitmap* const bm,
       return DRD_(bm_access_range_store)(bm, a1, a2);
 }
 
-void DRD_(bm_access_range_load)(struct bitmap* const bm,
-                                const Addr a1, const Addr a2)
+void DRD_(bm_access_range_load)(struct bitmap* const bm, Addr a1, Addr a2)
 {
    Addr b, b_next;
 
    tl_assert(bm);
    tl_assert(a1 < a2);
    tl_assert(a2 < first_address_with_higher_msb(a2));
+
+   a1 = first_address_with_same_lsb(a1);
+   a2 = first_address_with_same_lsb(a2);
 
    for (b = a1; b < a2; b = b_next)
    {
@@ -209,14 +211,16 @@ void DRD_(bm_access_load_8)(struct bitmap* const bm, const Addr a1)
       DRD_(bm_access_range)(bm, a1, a1 + 8, eLoad);
 }
 
-void DRD_(bm_access_range_store)(struct bitmap* const bm,
-                                 const Addr a1, const Addr a2)
+void DRD_(bm_access_range_store)(struct bitmap* const bm, Addr a1, Addr a2)
 {
    Addr b, b_next;
 
    tl_assert(bm);
    tl_assert(a1 < a2);
    tl_assert(a2 < first_address_with_higher_msb(a2));
+
+   a1 = first_address_with_same_lsb(a1);
+   a2 = first_address_with_same_lsb(a2);
 
    for (b = a1; b < a2; b = b_next)
    {
@@ -500,7 +504,7 @@ Bool DRD_(bm_has_1)(struct bitmap* const bm,
    return False;
 }
 
-void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, Addr a2)
+void DRD_(bm_clear)(struct bitmap* const bm, Addr a1, Addr a2)
 {
    Addr b, b_next;
 
@@ -513,6 +517,9 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, Addr a2)
       VG_(message)(Vg_DebugMsg, "bm_clear(bm = %p, a1 = 0x%lx, a2 = 0x%lx,"
                    " delta = 0x%lx)", bm, a1, a2, a2 - a1);
 #endif
+
+   a1 = first_address_with_same_lsb(a1);
+   a2 = first_address_with_higher_lsb(a2 - 1);
 
    for (b = a1; b < a2; b = b_next)
    {
@@ -581,7 +588,7 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, Addr a2)
  * Clear all references to loads in bitmap bm starting at address a1 and
  * up to but not including address a2.
  */
-void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, Addr a2)
+void DRD_(bm_clear_load)(struct bitmap* const bm, Addr a1, Addr a2)
 {
    Addr b, b_next;
 
@@ -594,6 +601,9 @@ void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, Addr a2)
       VG_(message)(Vg_DebugMsg, "bm_clear_load(bm = %p, a1 = 0x%lx, a2 = 0x%lx,"
                    " delta = 0x%lx)", bm, a1, a2, a2 - a1);
 #endif
+
+   a1 = first_address_with_same_lsb(a1);
+   a2 = first_address_with_higher_lsb(a2 - 1);
 
    for (b = a1; b < a2; b = b_next)
    {
@@ -666,7 +676,7 @@ void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, Addr a2)
  * Clear all references to stores in bitmap bm starting at address a1 and
  * up to but not including address a2.
  */
-void DRD_(bm_clear_store)(struct bitmap* const bm, const Addr a1, Addr a2)
+void DRD_(bm_clear_store)(struct bitmap* const bm, Addr a1, Addr a2)
 {
    Addr b, b_next;
 
@@ -679,6 +689,9 @@ void DRD_(bm_clear_store)(struct bitmap* const bm, const Addr a1, Addr a2)
       VG_(message)(Vg_DebugMsg, "bm_clear_store(bm = %p, a1 = 0x%lx, a2 = 0x%lx,"
                    " delta = 0x%lx)", bm, a1, a2, a2 - a1);
 #endif
+
+   a1 = first_address_with_same_lsb(a1);
+   a2 = first_address_with_higher_lsb(a2 - 1);
 
    for (b = a1; b < a2; b = b_next)
    {
