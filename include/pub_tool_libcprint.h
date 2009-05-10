@@ -124,10 +124,9 @@ extern UInt VG_(vmessage)( VgMsgKind kind, const HChar* format, va_list vargs )
   PRINTF_CHECK(2, 0);
 
 // Short-cuts for VG_(message)().
-#define VG_UMSG( format, args... )  VG_(message)(Vg_UserMsg,  format, ##args)
-#define VG_DMSG( format, args... )  VG_(message)(Vg_DebugMsg, format, ##args)
-#define VG_EMSG( format, args... )  VG_(message)(Vg_DebugExtraMsg, \
-                                                              format, ##args)
+extern UInt VG_(UMSG)( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+extern UInt VG_(DMSG)( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+extern UInt VG_(EMSG)( const HChar* format, ... ) PRINTF_CHECK(1, 2);
 
 /* Flush any output cached by previous calls to VG_(message) et al. */
 extern void VG_(message_flush) ( void );

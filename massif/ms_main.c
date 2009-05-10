@@ -217,7 +217,7 @@ Number of snapshots: 50
 // Used for printing things when clo_verbosity > 1.
 #define VERB(verb, format, args...) \
    if (VG_(clo_verbosity) > verb) { \
-      VG_DMSG("Massif: " format, ##args); \
+      VG_(DMSG)("Massif: " format, ##args); \
    }
 
 //------------------------------------------------------------//
@@ -950,15 +950,15 @@ static XPt* get_XCon( ThreadId tid, Bool is_custom_alloc )
    if (0 != xpt->n_children) {
       static Int n_moans = 0;
       if (n_moans < 3) {
-         VG_UMSG(
+         VG_(UMSG)(
             "Warning: Malformed stack trace detected.  In Massif's output,\n");
-         VG_UMSG(
+         VG_(UMSG)(
             "         the size of an entry's child entries may not sum up\n");
-         VG_UMSG(
+         VG_(UMSG)(
             "         to the entry's size as they normally do.\n");
          n_moans++;
          if (3 == n_moans)
-            VG_UMSG(
+            VG_(UMSG)(
             "         (And Massif now won't warn about this again.)\n");
       }
    }
@@ -2144,8 +2144,8 @@ static void write_snapshots_to_file(void)
    if (sres.isError) {
       // If the file can't be opened for whatever reason (conflict
       // between multiple cachegrinded processes?), give up now.
-      VG_UMSG("error: can't open output file '%s'\n", massif_out_file );
-      VG_UMSG("       ... so profiling results will be missing.\n");
+      VG_(UMSG)("error: can't open output file '%s'\n", massif_out_file );
+      VG_(UMSG)("       ... so profiling results will be missing.\n");
       VG_(free)(massif_out_file);
       return;
    } else {
@@ -2234,7 +2234,7 @@ static void ms_post_clo_init(void)
 
    // Check options.
    if (clo_threshold < 0 || clo_threshold > 100) {
-      VG_UMSG("--threshold must be between 0.0 and 100.0\n");
+      VG_(UMSG)("--threshold must be between 0.0 and 100.0\n");
       VG_(err_bad_option)("--threshold");
    }
 

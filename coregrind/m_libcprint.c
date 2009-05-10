@@ -501,6 +501,37 @@ UInt VG_(message) ( VgMsgKind kind, const HChar* format, ... )
    return count;
 }
 
+/* VG_(message) variants with hardwired first argument. */
+UInt VG_(UMSG) ( const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs,format);
+   count = VG_(vmessage) ( Vg_UserMsg, format, vargs );
+   va_end(vargs);
+   return count;
+}
+
+UInt VG_(DMSG) ( const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs,format);
+   count = VG_(vmessage) ( Vg_DebugMsg, format, vargs );
+   va_end(vargs);
+   return count;
+}
+
+UInt VG_(EMSG) ( const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs,format);
+   count = VG_(vmessage) ( Vg_DebugExtraMsg, format, vargs );
+   va_end(vargs);
+   return count;
+}
+
 /* Flush any output that has accumulated in vmessage_buf as a 
    result of previous calls to VG_(message) et al. */
 void VG_(message_flush) ( void )

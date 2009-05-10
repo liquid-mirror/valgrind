@@ -194,7 +194,7 @@ void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file,
    }
 
    if (VG_(clo_xml))
-      VG_UMSG("</valgrindoutput>\n");
+      VG_(UMSG)("</valgrindoutput>\n");
 
    // Treat vg_assert2(0, "foo") specially, as a panicky abort
    if (VG_STREQ(expr, "0")) {
@@ -215,7 +215,7 @@ static void panic ( Char* name, Char* report, Char* str,
                     Addr ip, Addr sp, Addr fp, Addr lr )
 {
    if (VG_(clo_xml))
-      VG_UMSG("</valgrindoutput>\n");
+      VG_(UMSG)("</valgrindoutput>\n");
    VG_(printf)("\n%s: the 'impossible' happened:\n   %s\n", name, str);
    report_and_quit(report, ip, sp, fp, lr);
 }
@@ -239,18 +239,20 @@ void VG_(tool_panic) ( Char* str )
 void VG_(unimplemented) ( Char* msg )
 {
    if (VG_(clo_xml))
-      VG_UMSG("</valgrindoutput>\n");
-   VG_UMSG("\n");
-   VG_UMSG("Valgrind detected that your program requires\n");
-   VG_UMSG("the following unimplemented functionality:\n");
-   VG_UMSG("   %s\n", msg);
-   VG_UMSG("This may be because the functionality is hard to implement,\n");
-   VG_UMSG("or because no reasonable program would behave this way,\n");
-   VG_UMSG("or because nobody has yet needed it.  In any case, let us know at\n");
-   VG_UMSG("%s and/or try to work around the problem, if you can.\n", VG_BUGS_TO);
-   VG_UMSG("\n");
-   VG_UMSG("Valgrind has to exit now.  Sorry.  Bye!\n");
-   VG_UMSG("\n");
+      VG_(UMSG)("</valgrindoutput>\n");
+   VG_(UMSG)("\n");
+   VG_(UMSG)("Valgrind detected that your program requires\n");
+   VG_(UMSG)("the following unimplemented functionality:\n");
+   VG_(UMSG)("   %s\n", msg);
+   VG_(UMSG)("This may be because the functionality is hard to implement,\n");
+   VG_(UMSG)("or because no reasonable program would behave this way,\n");
+   VG_(UMSG)("or because nobody has yet needed it.  "
+             "In any case, let us know at\n");
+   VG_(UMSG)("%s and/or try to work around the problem, if you can.\n",
+             VG_BUGS_TO);
+   VG_(UMSG)("\n");
+   VG_(UMSG)("Valgrind has to exit now.  Sorry.  Bye!\n");
+   VG_(UMSG)("\n");
    VG_(show_sched_status)();
    VG_(exit)(1);
 }
