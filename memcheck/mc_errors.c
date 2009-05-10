@@ -258,6 +258,36 @@ struct _MC_Error {
 /*--- Printing errors                                      ---*/
 /*------------------------------------------------------------*/
 
+/* Do a printf-style op (with a trailing \n) on either the XML or
+   normal output channel, depending on the setting of VG_(clo_xml).
+*/
+static void emit_WRK ( HChar* format, va_list vargs )
+{
+   if (VG_(clo_xml)) {
+      VG_(vprintf_xml)(format, vargs);
+   } else {
+      VG_(vmessage)(Vg_UserMsg, format, vargs);
+   }
+}
+
+static void emit ( HChar* format, ... ) PRINTF_CHECK(1, 2);
+static void emit ( HChar* format, ... )
+{
+   va_list vargs;
+   va_start(vargs, format);
+   emit_WRK(format, vargs);
+   va_end(vargs);
+}
+
+static void emit_no_f_c ( HChar* format, ... )
+{
+   va_list vargs;
+   va_start(vargs, format);
+   emit_WRK(format, vargs);
+   va_end(vargs);
+}
+
+
 static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
 {
    HChar* xpre  = VG_(clo_xml) ? "  <auxwhat>" : " ";
@@ -266,23 +296,19 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
    switch (ai->tag) {
       case Addr_Unknown:
          if (maybe_gcc) {
-            VG_(message)(Vg_UserMsg, 
-               "%sAddress 0x%llx is just below the stack ptr.  "
-               "To suppress, use: --workaround-gcc296-bugs=yes%s\n",
-               xpre, (ULong)a, xpost
-            );
+            emit( "%sAddress 0x%llx is just below the stack ptr.  "
+                  "To suppress, use: --workaround-gcc296-bugs=yes%s\n",
+                  xpre, (ULong)a, xpost );
 	 } else {
-            VG_(message)(Vg_UserMsg, 
-               "%sAddress 0x%llx "
-               "is not stack'd, malloc'd or (recently) free'd%s\n",
-               xpre, (ULong)a, xpost);
+            emit( "%sAddress 0x%llx "
+                  "is not stack'd, malloc'd or (recently) free'd%s\n",
+                  xpre, (ULong)a, xpost );
          }
          break;
 
       case Addr_Stack: 
-         VG_(message)(Vg_UserMsg, 
-                      "%sAddress 0x%llx is on thread %d's stack%s\n", 
-                      xpre, (ULong)a, ai->Addr.Stack.tid, xpost);
+         emit( "%sAddress 0x%llx is on thread %d's stack%s\n", 
+               xpre, (ULong)a, ai->Addr.Stack.tid, xpost );
          break;
 
       case Addr_Block: {
@@ -301,7 +327,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
             delta    = rwoffset;
             relative = "inside";
          }
-         VG_(message)(Vg_UserMsg, 
+         emit(
             "%sAddress 0x%lx is %'lu bytes %s a %s of size %'lu %s%s\n",
             xpre,
             a, delta, relative, ai->Addr.Block.block_desc,
@@ -309,39 +335,36 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
             ai->Addr.Block.block_kind==Block_Mallocd ? "alloc'd" 
             : ai->Addr.Block.block_kind==Block_Freed ? "free'd" 
                                                      : "client-defined",
-            xpost);
+            xpost
+         );
          VG_(pp_ExeContext)(ai->Addr.Block.lastchange);
          break;
       }
 
       case Addr_DataSym:
-         VG_(message_no_f_c)(Vg_UserMsg,
-                             "%sAddress 0x%llx is %llu bytes "
-                             "inside data symbol \"%t\"%s\n",
-                             xpre,
-                             (ULong)a,
-                             (ULong)ai->Addr.DataSym.offset,
-                             ai->Addr.DataSym.name,
-                             xpost);
+         emit_no_f_c( "%sAddress 0x%llx is %llu bytes "
+                      "inside data symbol \"%t\"%s\n",
+                      xpre,
+                      (ULong)a,
+                      (ULong)ai->Addr.DataSym.offset,
+                      ai->Addr.DataSym.name,
+                      xpost );
          break;
 
       case Addr_Variable:
          if (ai->Addr.Variable.descr1[0] != '\0')
-            VG_(message)(Vg_UserMsg, "%s%s%s\n",
-                         xpre, ai->Addr.Variable.descr1, xpost);
+            emit( "%s%s%s\n", xpre, ai->Addr.Variable.descr1, xpost);
          if (ai->Addr.Variable.descr2[0] != '\0')
-            VG_(message)(Vg_UserMsg, "%s%s%s\n",
-                         xpre, ai->Addr.Variable.descr2, xpost);
+            emit( "%s%s%s\n", xpre, ai->Addr.Variable.descr2, xpost);
          break;
 
       case Addr_SectKind:
-         VG_(message_no_f_c)(Vg_UserMsg,
-                             "%sAddress 0x%llx is in the %t segment of %t%s\n",
-                             xpre,
-                             (ULong)a,
-                             VG_(pp_SectKind)(ai->Addr.SectKind.kind),
-                             ai->Addr.SectKind.objname,
-                             xpost);
+         emit_no_f_c( "%sAddress 0x%llx is in the %t segment of %t%s\n",
+                      xpre,
+                      (ULong)a,
+                      VG_(pp_SectKind)(ai->Addr.SectKind.kind),
+                      ai->Addr.SectKind.objname,
+                      xpost );
          break;
 
       default:
@@ -381,11 +404,15 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
    va_list vargs;
 
    if (VG_(clo_xml))
-      VG_(message)(Vg_UserMsg, "  <kind>%s</kind>\n", xml_name);
+      VG_(printf_xml)("  <kind>%s</kind>\n", xml_name);
    // Stick xpre and xpost on the front and back of the format string.
    VG_(snprintf)(buf, 256, "%s%s%s\n", xpre, format, xpost);
    va_start(vargs, format);
-   VG_(vmessage) ( Vg_UserMsg, buf, vargs );
+   if (VG_(clo_xml)) {
+      VG_(vprintf_xml) ( buf, vargs );
+   } else {
+      VG_(vmessage) ( Vg_UserMsg, buf, vargs );
+   }
    va_end(vargs);
    VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 }
@@ -405,15 +432,16 @@ static void mc_pp_origin ( ExeContext* ec, UInt okind )
    }
    tl_assert(src); /* guards against invalid 'okind' */
 
-   if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "  <origin>\n");
-   }
-
-   VG_(message)(Vg_UserMsg, "%sUninitialised value was created%s%s\n",
-                            xpre, src, xpost);
-   VG_(pp_ExeContext)( ec );
-   if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "  </origin>\n");
+    if (VG_(clo_xml)) {
+      VG_(printf_xml)("  <origin>\n");
+      VG_(printf_xml)("%sUninitialised value was created%s%s",
+                      xpre, src, xpost);
+      VG_(pp_ExeContext)( ec );
+      VG_(printf_xml)("  </origin>\n");
+   } else {
+      VG_(message)(Vg_UserMsg, "Uninitialised value was created%s\n",
+                               src);
+      VG_(pp_ExeContext)( ec );
    }
 }
 

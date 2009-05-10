@@ -623,8 +623,12 @@ void VG_(maybe_record_error) ( ThreadId tid,
    errors  = p;
    if (p->supp == NULL) {
       n_errs_found++;
-      if (!is_first_shown_context)
-         VG_(UMSG)("\n");
+      if (!is_first_shown_context) {
+         if (VG_(clo_xml))
+            VG_(printf_xml)("\n");
+         else
+            VG_(UMSG)("\n");
+      }
       pp_Error(p);
       is_first_shown_context = False;
       n_errs_shown++;

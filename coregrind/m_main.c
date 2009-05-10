@@ -613,23 +613,23 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
       any need for user input during the run. */
    if (VG_(clo_xml)) {
       /* Disable suppression generation (requires user input) */
-      VG_(clo_gen_suppressions) = 0;
+      //VG_(clo_gen_suppressions) = 0;
       /* Disable attaching to GDB (requires user input) */
-      VG_(clo_db_attach) = False;
+      //VG_(clo_db_attach) = False;
       /* Set a known verbosity level */
-      VG_(clo_verbosity) = 1;
+      //VG_(clo_verbosity) = 1;
       /* Disable error limits (this might be a bad idea!) */
       VG_(clo_error_limit) = False;
       /* Disable emulation warnings */
-      VG_(clo_show_emwarns) = False;
+      //VG_(clo_show_emwarns) = False;
       /* Disable waiting for GDB to debug Valgrind */
-      VG_(clo_wait_for_gdb) = False;
+      //VG_(clo_wait_for_gdb) = False;
       /* No file-descriptor leak checking yet */
-      VG_(clo_track_fds) = False;
+      //VG_(clo_track_fds) = False;
       /* Disable timestamped output */
-      VG_(clo_time_stamp) = False;
+      //VG_(clo_time_stamp) = False;
       /* Disable heap profiling, since that prints lots of stuff. */
-      VG_(clo_profile_heap) = False;
+      //VG_(clo_profile_heap) = False;
       /* Also, we want to set options for the leak checker, but that
          will have to be done in Memcheck's flag-handling code, not
          here. */
@@ -1038,6 +1038,8 @@ static void print_preamble ( Bool logging_to_fd,
    // Empty line after the preamble
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "\n");
+   if (VG_(clo_xml))
+      VG_(printf_xml)("\n");
 
    if (VG_(clo_verbosity) > 1) {
       SysRes fd;
@@ -2267,9 +2269,9 @@ void shutdown_actions_NORETURN( ThreadId tid,
    VG_TDICT_CALL(tool_fini, 0/*exitcode*/);
 
    if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "\n");
-      VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
-      VG_(message)(Vg_UserMsg, "\n");
+      VG_(printf_xml)("\n");
+      VG_(printf_xml)("</valgrindoutput>\n");
+      VG_(printf_xml)("\n");
    }
 
    VG_(sanity_check_general)( True /*include expensive checks*/ );
