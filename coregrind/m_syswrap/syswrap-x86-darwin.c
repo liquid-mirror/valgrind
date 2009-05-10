@@ -315,17 +315,17 @@ void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg,
       tst->client_stack_szB = stacksize;
 
       // pthread structure
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (stack+stacksize, pthread_structsize, 
-           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            stack+stacksize, pthread_structsize, 
+            VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
       // stack contents
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (stack, stacksize, 
-           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            stack, stacksize, 
+            VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
       // guard page
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
-           0, VKI_MAP_PRIVATE, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
+            0, VKI_MAP_PRIVATE, -1, 0);
    } else {
       // client allocated stack
       find_stack_segment(tst->tid, sp);
@@ -462,19 +462,19 @@ void wqthread_hijack(Addr self, Addr kport, Addr stackaddr, Addr workitem,
       // GrP fixme scheduler lock?!
       
       // pthread structure
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (stack+stacksize, pthread_structsize, 
-           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            stack+stacksize, pthread_structsize, 
+            VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
       // stack contents
       // GrP fixme uninitialized!
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (stack, stacksize, 
-           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            stack, stacksize, 
+            VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
       // guard page
       // GrP fixme ban_mem_stack!
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
-           0, VKI_MAP_PRIVATE, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
+            0, VKI_MAP_PRIVATE, -1, 0);
 
       VG_(am_do_sync_check)("after", "wqthread_hijack", 0);
 

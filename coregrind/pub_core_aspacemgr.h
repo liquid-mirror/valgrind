@@ -406,6 +406,22 @@ extern VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp );
 
 extern Int VG_(am_get_VgStack_unused_szB)( VgStack* stack ); 
 
+// DDD: this is ugly
+#if defined(VGO_darwin)
+typedef 
+   struct {
+      Bool   is_added;  // Added or removed seg?
+      Addr   start;
+      SizeT  end;
+      UInt   prot;      // Not used for removed segs.
+      Off64T offset;    // Not used for removed segs.
+   }
+   ChangedSeg;
+
+extern void VG_(get_changed_segments)(
+      const HChar* when, const HChar* where, /*OUT*/ChangedSeg* css,
+      Int css_size, /*OUT*/Int* css_used);
+#endif
 
 #endif   // __PUB_CORE_ASPACEMGR_H
 

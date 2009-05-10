@@ -3,7 +3,7 @@
 /*--- The address space manager: segment initialisation and        ---*/
 /*--- tracking, stack operations                                   ---*/
 /*---                                                              ---*/
-/*--- Implementation for Linux                 m_aspacemgr-linux.c ---*/
+/*--- Implementation for Linux (and Darwin!)   m_aspacemgr-linux.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -3273,13 +3273,12 @@ static unsigned int mach2vki(unsigned int vm_prot)
 
 static UInt stats_machcalls = 0;
 
-static void 
-parse_procselfmaps (
-                    void (*record_mapping)( Addr addr, SizeT len, UInt prot,
-                                            ULong dev, ULong ino, Off64T foff,
-                                            const UChar* filename ),
-                    void (*record_gap)( Addr addr, SizeT len )
-                   )
+static void parse_procselfmaps (
+      void (*record_mapping)( Addr addr, SizeT len, UInt prot,
+                              ULong dev, ULong ino, Off64T offset, 
+                              const UChar* filename ),
+      void (*record_gap)( Addr addr, SizeT len )
+   )
 {
    vm_address_t iter;
    unsigned int depth;
@@ -3324,30 +3323,9 @@ parse_procselfmaps (
       (*record_gap)(last, (Addr)-1 - last);
 }
 
-
-// GrP hack
-extern void ML_(notify_aspacem_and_tool_of_mmap)
-   ( Addr a, SizeT len, UInt prot, UInt flags, Int fd, Off64T offset );
-extern void ML_(notify_aspacem_and_tool_of_munmap) ( Addr a, SizeT len );
-
-typedef 
-   struct {
-      Bool   is_added;  // Added or removed seg?
-      Addr   start;
-      SizeT  end;
-      UInt   prot;      // Not used for removed segs.
-      Off64T offset;    // Not used for removed segs.
-   }
-   ChangedSeg;
-
-// I haven't seen more than 1 segment be added or removed in a single calls to
-// VG_(sync_mappings).  So 20 seems generous.  However, if it needs to be made
-// larger, we know that it'll never need to be larger than 'segnames_used', so
-// an array of that size could be dynamically allocated in VG_(sync_mappings).
-// --njn
-#define CHANGED_SEGS_SIZE    20
-static ChangedSeg changed_segs[CHANGED_SEGS_SIZE];
-static Int        changed_segs_used;
+ChangedSeg* css_local;
+Int         css_size_local;
+Int         css_used_local;
 
 static void add_mapping_callback(Addr addr, SizeT len, UInt prot, 
                                  ULong dev, ULong ino, Off64T offset, 
@@ -3378,14 +3356,14 @@ static void add_mapping_callback(Addr addr, SizeT len, UInt prot,
       } 
       else if (nsegments[i].kind == SkFree || nsegments[i].kind == SkResvn) {
           /* Add mapping for SkResvn regions */
-         ChangedSeg* cs = &changed_segs[changed_segs_used];
-         aspacem_assert(changed_segs_used < CHANGED_SEGS_SIZE);
+         ChangedSeg* cs = &css_local[css_used_local];
+         aspacem_assert(css_used_local < css_size_local);
          cs->is_added = True;
          cs->start    = addr;
          cs->end      = addr + len - 1;
          cs->prot     = prot;
          cs->offset   = offset;
-         changed_segs_used++;
+         css_used_local++;
          return;
 
       } else if (nsegments[i].kind == SkAnonC ||
@@ -3437,58 +3415,42 @@ static void remove_mapping_callback(Addr addr, SizeT len)
    for (i = iLo; i <= iHi; i++) {
       if (nsegments[i].kind != SkFree  &&  nsegments[i].kind != SkResvn) {
          // V has a mapping, kernel doesn't
-         ChangedSeg* cs = &changed_segs[changed_segs_used];
-         aspacem_assert(changed_segs_used < CHANGED_SEGS_SIZE);
+         ChangedSeg* cs = &css_local[css_used_local];
+         aspacem_assert(css_used_local < css_size_local);
+         cs->is_added = True;
          cs->is_added = False;
          cs->start    = nsegments[i].start;
          cs->end      = nsegments[i].end;
          cs->prot     = 0;
          cs->offset   = 0;
-         changed_segs_used++;
+         css_used_local++;
          return;
       }
    }
 }
 
 
-void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num)
+void VG_(get_changed_segments)(
+      const HChar* when, const HChar* where, /*OUT*/ChangedSeg* css,
+      Int css_size, /*OUT*/Int* css_used)
 {
-   Int i;
    static UInt stats_synccalls = 1;
    aspacem_assert(when && where);
 
    if (0)
       VG_(debugLog)(0,"aspacem",
-         "[%u,%u] VG_(sync_mappings)(%s, %s, %d)\n",
-         stats_synccalls++, stats_machcalls, when, where, num
+         "[%u,%u] VG_(get_changed_segments)(%s, %s)\n",
+         stats_synccalls++, stats_machcalls, when, where
       );
 
-   changed_segs_used = 0;
+   css_local = css;
+   css_size_local = css_size;
+   css_used_local = 0;
 
    // Get the list of segs that need to be added/removed.
    parse_procselfmaps(&add_mapping_callback, &remove_mapping_callback);
 
-   // Now add/remove them.
-   for (i = 0; i < changed_segs_used; i++) {
-      ChangedSeg* cs = &changed_segs[i];
-      Char* action;
-      if (cs->is_added) {
-         ML_(notify_aspacem_and_tool_of_mmap)(
-               cs->start, cs->end - cs->start + 1,
-               cs->prot, VKI_MAP_PRIVATE, 0, cs->offset);
-         action = "added";
-
-      } else {
-         ML_(notify_aspacem_and_tool_of_munmap)(
-               cs->start, cs->end - cs->start + 1);
-         action = "removed";
-      }
-      if (VG_(clo_trace_syscalls)) {
-          VG_(debugLog)(0, "aspacem",
-                        "\n%s region 0x%010lx..0x%010lx at %s (%s)", 
-                        action, cs->start, cs->end + 1, where, when);
-      }
-   }
+   *css_used = css_used_local;
 }
 
 #endif

@@ -586,6 +586,46 @@ void VG_(show_open_ports)(void)
 
 
 /* ---------------------------------------------------------------------
+   sync_mappings
+   ------------------------------------------------------------------ */
+
+static void sync_mappings(const HChar *when, const HChar *where, Int num)
+{
+   // I haven't seen more than 1 segment be added or removed in a single calls
+   // to sync_mappings().  So 20 seems generous.  The upper bound is the
+   // number of segments currently in use.  --njn
+   #define CSS_SIZE     20
+   ChangedSeg css[CSS_SIZE];
+   Int        css_used;
+   Int        i;
+
+   VG_(get_changed_segments)(when, where, css, CSS_SIZE, &css_used);
+
+   // Now add/remove them.
+   for (i = 0; i < css_used; i++) {
+      ChangedSeg* cs = &css[i];
+      Char* action;
+      if (cs->is_added) {
+         ML_(notify_core_and_tool_of_mmap)(
+               cs->start, cs->end - cs->start + 1,
+               cs->prot, VKI_MAP_PRIVATE, 0, cs->offset);
+         // should this call VG_(di_notify_mmap) also?
+         action = "added";
+
+      } else {
+         ML_(notify_core_and_tool_of_munmap)(
+               cs->start, cs->end - cs->start + 1);
+         action = "removed";
+      }
+      if (VG_(clo_trace_syscalls)) {
+          VG_(debugLog)(0, "aspacem",
+                        "\n%s region 0x%010lx..0x%010lx at %s (%s)\n", 
+                        action, cs->start, cs->end + 1, where, when);
+      }
+   }
+}
+
+/* ---------------------------------------------------------------------
    wrappers
    ------------------------------------------------------------------ */
 
@@ -3108,8 +3148,7 @@ PRE(sys_mmap)
 POST(sys_mmap)
 {
    if (RES != -1) {
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (RES, ARG2, ARG3, ARG4, ARG5, ARG6);
+      ML_(notify_core_and_tool_of_mmap)(RES, ARG2, ARG3, ARG4, ARG5, ARG6);
       // Try to load symbols from the region
       VG_(di_notify_mmap)( (Addr)RES, False/*allow_SkFileV*/ );
    }
@@ -3349,9 +3388,9 @@ static void import_complex_message(ThreadId tid, mach_msg_header_t *mh)
             PRINT("got ool mem %p..%#lx; ", desc->out_of_line.address, 
                   (Addr)desc->out_of_line.address+desc->out_of_line.size);
 
-            ML_(notify_aspacem_and_tool_of_mmap)
-               (start, end - start, VKI_PROT_READ|VKI_PROT_WRITE, 
-                VKI_MAP_PRIVATE, -1, 0);
+            ML_(notify_core_and_tool_of_mmap)(
+               start, end - start, VKI_PROT_READ|VKI_PROT_WRITE, 
+               VKI_MAP_PRIVATE, -1, 0);
          }
          // GrP fixme mark only un-rounded part as initialized 
          break;
@@ -3366,9 +3405,9 @@ static void import_complex_message(ThreadId tid, mach_msg_header_t *mh)
             Addr end = VG_PGROUNDUP((Addr)desc->ool_ports.address + desc->ool_ports.count * sizeof(mach_port_t));
             mach_port_t *ports = (mach_port_t *)desc->ool_ports.address;
 
-            ML_(notify_aspacem_and_tool_of_mmap)
-               (start, end - start, VKI_PROT_READ|VKI_PROT_WRITE, 
-                VKI_MAP_PRIVATE, -1, 0);
+            ML_(notify_core_and_tool_of_mmap)(
+               start, end - start, VKI_PROT_READ|VKI_PROT_WRITE, 
+               VKI_MAP_PRIVATE, -1, 0);
 
             PRINT(":");
             for (i = 0; i < desc->ool_ports.count; i++) {
@@ -3500,7 +3539,7 @@ static size_t export_complex_message(ThreadId tid, mach_msg_header_t *mh)
             Addr end = VG_PGROUNDUP((Addr)desc->out_of_line.address + size);
             PRINT("kill ool mem %p..%#lx; ", desc->out_of_line.address, 
                   (Addr)desc->out_of_line.address + size);
-            ML_(notify_aspacem_and_tool_of_munmap)(start, end - start);
+            ML_(notify_core_and_tool_of_munmap)(start, end - start);
          }
          break;
 
@@ -3516,7 +3555,7 @@ static size_t export_complex_message(ThreadId tid, mach_msg_header_t *mh)
             Addr end = VG_PGROUNDUP((Addr)desc->ool_ports.address + size);
             PRINT("kill ool port array %p..%#lx; ", desc->ool_ports.address, 
                   (Addr)desc->ool_ports.address + size);
-            ML_(notify_aspacem_and_tool_of_munmap)(start, end - start);
+            ML_(notify_core_and_tool_of_munmap)(start, end - start);
          }
          break;
       default:
@@ -4529,9 +4568,9 @@ POST(vm_allocate)
          PRINT("allocated at %#x", reply->address);
          // requesting 0 bytes returns address 0 with no error
          if (MACH_ARG(vm_allocate.size)) {
-            ML_(notify_aspacem_and_tool_of_mmap)
-                (reply->address, MACH_ARG(vm_allocate.size), 
-                 VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_ANON, -1, 0);
+            ML_(notify_core_and_tool_of_mmap)(
+                  reply->address, MACH_ARG(vm_allocate.size), 
+                  VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_ANON, -1, 0);
          }
       } else {
          PRINT("allocated at %#x in remote task %s", reply->address, 
@@ -4590,7 +4629,7 @@ POST(vm_deallocate)
             Addr end = VG_PGROUNDUP(MACH_ARG(vm_deallocate.address) + 
                                     MACH_ARG(vm_deallocate.size));
             // Must have cleared SfMayBlock in PRE to prevent race
-            ML_(notify_aspacem_and_tool_of_munmap)(start, end - start);
+            ML_(notify_core_and_tool_of_munmap)(start, end - start);
          }
       }
    } else {
@@ -4650,7 +4689,7 @@ POST(vm_protect)
              VG_(printf)("UNKNOWN vm_protect set maximum");
             //VG_(mprotect_max_range)(start, end-start, prot);
          } else {
-            ML_(notify_aspacem_and_tool_of_mprotect)(start, end-start, prot);
+            ML_(notify_core_and_tool_of_mprotect)(start, end-start, prot);
          }
       }
    } else {
@@ -4954,9 +4993,9 @@ POST(vm_map)
       // GrP fixme check src and dest tasks
       PRINT("mapped at %#x", reply->address);
       // GrP fixme max prot
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (reply->address, VG_PGROUNDUP(MACH_ARG(vm_map.size)), 
-          MACH_ARG(vm_map.protection), VKI_MAP_SHARED, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            reply->address, VG_PGROUNDUP(MACH_ARG(vm_map.size)), 
+            MACH_ARG(vm_map.protection), VKI_MAP_SHARED, -1, 0);
       // GrP fixme VKI_MAP_PRIVATE if !copy?
    } else {
       PRINT("mig return %d", reply->RetCode);
@@ -5031,9 +5070,9 @@ POST(vm_remap)
       UInt prot = reply->cur_protection & reply->max_protection;
       // GrP fixme max prot
       PRINT("mapped at %#x", reply->target_address);
-      ML_(notify_aspacem_and_tool_of_mmap)
-          (reply->target_address, VG_PGROUNDUP(MACH_ARG(vm_remap.size)), 
-          prot, VKI_MAP_SHARED, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            reply->target_address, VG_PGROUNDUP(MACH_ARG(vm_remap.size)), 
+            prot, VKI_MAP_SHARED, -1, 0);
       // GrP fixme VKI_MAP_FIXED if !copy?
       // GrP fixme copy initialized bits from source to dest if source_task is also mach_task_self
    } else {
@@ -5217,9 +5256,9 @@ POST(mach_vm_allocate)
          PRINT("allocated at 0x%llx", reply->address);
          // requesting 0 bytes returns address 0 with no error
          if (MACH_ARG(mach_vm_allocate.size)) {
-            ML_(notify_aspacem_and_tool_of_mmap)
-                (reply->address, MACH_ARG(mach_vm_allocate.size), 
-                 VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_ANON, -1, 0);
+            ML_(notify_core_and_tool_of_mmap)(
+                  reply->address, MACH_ARG(mach_vm_allocate.size), 
+                  VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_ANON, -1, 0);
          }
       } else {
          PRINT("allocated at 0x%llx in remote task %s", reply->address, 
@@ -5278,7 +5317,7 @@ POST(mach_vm_deallocate)
             Addr end = VG_PGROUNDUP(MACH_ARG(mach_vm_deallocate.address) + 
                                     MACH_ARG(mach_vm_deallocate.size));
             // Must have cleared SfMayBlock in PRE to prevent race
-            ML_(notify_aspacem_and_tool_of_munmap)(start, end - start);
+            ML_(notify_core_and_tool_of_munmap)(start, end - start);
          }
       }
    } else {
@@ -5337,7 +5376,7 @@ POST(mach_vm_protect)
             // DDD: #warning GrP fixme mprotect max
             //VG_(mprotect_max_range)(start, end-start, prot);
          } else {
-            ML_(notify_aspacem_and_tool_of_mprotect)(start, end-start, prot);
+            ML_(notify_core_and_tool_of_mprotect)(start, end-start, prot);
          }
       }
    } else {
@@ -5495,9 +5534,9 @@ POST(mach_vm_map)
       // GrP fixme check src and dest tasks
       PRINT("mapped at 0x%llx", reply->address);
       // GrP fixme max prot
-      ML_(notify_aspacem_and_tool_of_mmap)
-         (reply->address, VG_PGROUNDUP(MACH_ARG(mach_vm_map.size)), 
-          MACH_ARG(mach_vm_map.protection), VKI_MAP_SHARED, -1, 0);
+      ML_(notify_core_and_tool_of_mmap)(
+            reply->address, VG_PGROUNDUP(MACH_ARG(mach_vm_map.size)), 
+            MACH_ARG(mach_vm_map.protection), VKI_MAP_SHARED, -1, 0);
       // GrP fixme VKI_MAP_PRIVATE if !copy?
    } else {
       PRINT("mig return %d", reply->RetCode);
@@ -5740,7 +5779,7 @@ PRE(sys_bsdthread_terminate)
    // GrP fixme errors?
    if (ARG4) semaphore_signal((semaphore_t)ARG4);
    if (ARG1  &&  ARG2) {
-       ML_(notify_aspacem_and_tool_of_munmap)(ARG1, ARG2);
+       ML_(notify_core_and_tool_of_munmap)(ARG1, ARG2);
        vm_deallocate(mach_task_self(), (vm_address_t)ARG1, (vm_size_t)ARG2);
    }
 
@@ -5980,7 +6019,7 @@ POST(mach_msg_receive)
    // PRINT("UNHANDLED reply %d", mh->msgh_id);
 
    // Assume the call may have mapped or unmapped memory
-   VG_(sync_mappings)("after", "mach_msg_receive", 0);
+   sync_mappings("after", "mach_msg_receive", 0);
 }
 
 PRE(mach_msg_receive)
@@ -6391,7 +6430,7 @@ POST(mach_msg)
 
 POST(mach_msg_unhandled)
 {
-   VG_(sync_mappings)("after", "mach_msg_unhandled", 0);
+   sync_mappings("after", "mach_msg_unhandled", 0);
 }
 
 
@@ -6690,7 +6729,7 @@ PRE(iokit_user_client_trap)
 
 POST(iokit_user_client_trap)
 {
-   VG_(sync_mappings)("after", "iokit_user_client_trap", ARG2);
+   sync_mappings("after", "iokit_user_client_trap", ARG2);
 }
 
 
