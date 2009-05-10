@@ -50,21 +50,46 @@
    ------------------------------------------------------------------ */
 
 /* Note that they all output to the file descriptor given by the
- * --log-fd/--log-file/--log-socket argument, which defaults to 2 (stderr).
- * Hence no need for VG_(fprintf)().
- */
-extern UInt VG_(printf)   ( const HChar *format, ... ) PRINTF_CHECK(1, 2);
-extern UInt VG_(vprintf)  ( const HChar *format, va_list vargs ) PRINTF_CHECK(1, 0);
-extern UInt VG_(sprintf)  ( Char* buf, const HChar* format, ... ) PRINTF_CHECK(2, 3);
-extern UInt VG_(vsprintf) ( Char* buf, const HChar* format, va_list vargs ) PRINTF_CHECK(2, 0);
+   --log-fd/--log-file/--log-socket argument, which defaults to 2
+   (stderr).  Hence no need for VG_(fprintf)().
+*/
+extern UInt VG_(printf)   ( const HChar *format, ... )
+                          PRINTF_CHECK(1, 2);
+
+extern UInt VG_(vprintf)  ( const HChar *format, va_list vargs )
+                          PRINTF_CHECK(1, 0);
+
+extern UInt VG_(sprintf)  ( Char* buf, const HChar* format, ... )
+                          PRINTF_CHECK(2, 3);
+
+extern UInt VG_(vsprintf) ( Char* buf, const HChar* format, va_list vargs )
+                          PRINTF_CHECK(2, 0);
+
 extern UInt VG_(snprintf) ( Char* buf, Int size, 
-                                       const HChar *format, ... ) PRINTF_CHECK(3, 4);
+                                       const HChar *format, ... )
+                          PRINTF_CHECK(3, 4);
+
 extern UInt VG_(vsnprintf)( Char* buf, Int size, 
-                                       const HChar *format, va_list vargs ) PRINTF_CHECK(3, 0);
+                                       const HChar *format, va_list vargs )
+                          PRINTF_CHECK(3, 0);
+
+/* These are the same as the non "_xml" versions above, except the
+   output goes on the selected XML output channel instead of the
+   normal one.
+*/
+extern UInt VG_(printf_xml)  ( const HChar *format, ... )
+                             PRINTF_CHECK(1, 2);
+
+extern UInt VG_(vprintf_xml) ( const HChar *format, va_list vargs )
+                             PRINTF_CHECK(1, 0);
+
+extern UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... );
+
 
 // Percentify n/m with d decimal places.  Includes the '%' symbol at the end.
 // Right justifies in 'buf'.
 extern void VG_(percentify)(ULong n, ULong m, UInt d, Int n_buf, char buf[]);
+
 
 /* ---------------------------------------------------------------------
    Messages for the user

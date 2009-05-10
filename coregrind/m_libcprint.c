@@ -40,35 +40,39 @@
 #include "valgrind.h"            // For RUNNING_ON_VALGRIND
 
 
-
 /* ---------------------------------------------------------------------
    Writing to file or a socket
    ------------------------------------------------------------------ */
 
-/* Tell the logging mechanism whether we are logging to a file
-   descriptor or a socket descriptor. */
-Bool VG_(logging_to_socket) = False;
-
+/* The destination sinks for normal and XML output.  These have their
+   initial values here; they are set to final values by
+   m_main.main_process_cmd_line_options().  See comment at the top of
+   that function for the associated logic. */
+OutputSink VG_(log_output_sink) = {  2, False }; /* 2 = stderr */
+OutputSink VG_(xml_output_sink) = { -1, False }; /* disabled */
+ 
 /* Do the low-level send of a message to the logging sink. */
-static void send_bytes_to_logging_sink ( Char* msg, Int nbytes )
+static
+void send_bytes_to_logging_sink ( OutputSink* sink, Char* msg, Int nbytes )
 {
-   if (!VG_(logging_to_socket)) {
-      /* VG_(clo_log_fd) could have been set to -1 in the various
+   if (sink->is_socket) {
+      Int rc = VG_(write_socket)( sink->fd, msg, nbytes );
+      if (rc == -1) {
+         // For example, the listener process died.  Switch back to stderr.
+         sink->is_socket = False;
+         sink->fd = 2;
+         VG_(write)( sink->fd, msg, nbytes );
+      }
+   } else {
+      /* sink->fd could have been set to -1 in the various
          sys-wrappers for sys_fork, if --child-silent-after-fork=yes
          is in effect.  That is a signal that we should not produce
          any more output. */
-      if (VG_(clo_log_fd) >= 0)
-         VG_(write)( VG_(clo_log_fd), msg, nbytes );
-   } else {
-      Int rc = VG_(write_socket)( VG_(clo_log_fd), msg, nbytes );
-      if (rc == -1) {
-         // For example, the listener process died.  Switch back to stderr.
-         VG_(logging_to_socket) = False;
-         VG_(clo_log_fd) = 2;
-         VG_(write)( VG_(clo_log_fd), msg, nbytes );
-      }
+      if (sink->fd >= 0)
+         VG_(write)( sink->fd, msg, nbytes );
    }
 }
+
 
 /* ---------------------------------------------------------------------
    printf() and friends
@@ -78,8 +82,9 @@ static void send_bytes_to_logging_sink ( Char* msg, Int nbytes )
 
 typedef 
    struct {
-      HChar buf[512];
-      Int   buf_used;
+      HChar       buf[512];
+      Int         buf_used;
+      OutputSink* sink;
    } 
    printf_buf_t;
 
@@ -90,7 +95,7 @@ static void add_to__printf_buf ( HChar c, void *p )
    printf_buf_t *b = (printf_buf_t *)p;
    
    if (b->buf_used > sizeof(b->buf) - 2 ) {
-      send_bytes_to_logging_sink( b->buf, b->buf_used );
+      send_bytes_to_logging_sink( b->sink, b->buf, b->buf_used );
       b->buf_used = 0;
    }
    b->buf[b->buf_used++] = c;
@@ -98,55 +103,73 @@ static void add_to__printf_buf ( HChar c, void *p )
    tl_assert(b->buf_used < sizeof(b->buf));
 }
 
-static UInt vprintf_to_buf ( printf_buf_t *prbuf,
+static UInt vprintf_to_buf ( printf_buf_t* b,
                              const HChar *format, va_list vargs )
 {
    UInt ret = 0;
-
-   if (VG_(clo_log_fd) >= 0) {
+   if (b->sink->fd >= 0) {
       ret = VG_(debugLog_vprintf) 
-               ( add_to__printf_buf, prbuf, format, vargs );
+               ( add_to__printf_buf, b, format, vargs );
+   }
+   return ret;
+}
+
+static UInt vprintf_WRK ( OutputSink* sink,
+                          const HChar *format, va_list vargs )
+{
+   printf_buf_t myprintf_buf
+      = { "", 0, sink };
+   UInt ret
+      = vprintf_to_buf(&myprintf_buf, format, vargs);
+   // Write out any chars left in the buffer.
+   if (myprintf_buf.buf_used > 0) {
+      send_bytes_to_logging_sink( myprintf_buf.sink,
+                                  myprintf_buf.buf,
+                                  myprintf_buf.buf_used );
    }
    return ret;
 }
 
 UInt VG_(vprintf) ( const HChar *format, va_list vargs )
 {
-   UInt ret = 0;
-   printf_buf_t myprintf_buf = {"",0};
-
-   ret = vprintf_to_buf(&myprintf_buf, format, vargs);
-   // Write out any chars left in the buffer.
-   if (myprintf_buf.buf_used > 0) {
-      send_bytes_to_logging_sink( myprintf_buf.buf,
-                                  myprintf_buf.buf_used );
-   }
-   return ret;
+   return vprintf_WRK( &VG_(log_output_sink), format, vargs );
 }
 
 UInt VG_(printf) ( const HChar *format, ... )
 {
    UInt ret;
    va_list vargs;
-
    va_start(vargs, format);
    ret = VG_(vprintf)(format, vargs);
    va_end(vargs);
-
    return ret;
 }
 
-//static UInt printf_to_buf ( printf_buf_t* prbuf, const HChar *format, ... )
-//{
-//   UInt ret;
-//   va_list vargs;
-//
-//   va_start(vargs, format);
-//   ret = vprintf_to_buf(prbuf, format, vargs);
-//   va_end(vargs);
-//
-//   return ret;
-//}
+UInt VG_(vprintf_xml) ( const HChar *format, va_list vargs )
+{
+   return vprintf_WRK( &VG_(xml_output_sink), format, vargs );
+}
+
+UInt VG_(printf_xml) ( const HChar *format, ... )
+{
+   UInt ret;
+   va_list vargs;
+   va_start(vargs, format);
+   ret = VG_(vprintf)(format, vargs);
+   va_end(vargs);
+   return ret;
+}
+
+/* An exact clone of VG_(printf_xml), unfortunately. */
+UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... )
+{
+   UInt ret;
+   va_list vargs;
+   va_start(vargs, format);
+   ret = VG_(vprintf)(format, vargs);
+   va_end(vargs);
+   return ret;
+}
 
 
 /* --------- sprintf --------- */
@@ -179,11 +202,9 @@ UInt VG_(sprintf) ( Char* buf, const HChar *format, ... )
 {
    UInt ret;
    va_list vargs;
-
    va_start(vargs,format);
    ret = VG_(vsprintf)(buf, format, vargs);
    va_end(vargs);
-
    return ret;
 }
 
@@ -228,11 +249,9 @@ UInt VG_(snprintf) ( Char* buf, Int size, const HChar *format, ... )
 {
    UInt ret;
    va_list vargs;
-
    va_start(vargs,format);
    ret = VG_(vsnprintf)(buf, size, format, vargs);
    va_end(vargs);
-
    return ret;
 }
 
@@ -342,12 +361,17 @@ typedef
       Int   buf_used;
       Bool  atLeft; /* notionally, is the next char position at the
                        leftmost column? */
+      /* Current message kind - changes from call to call */
       VgMsgKind kind;
+      /* PID; acquired just once and stays constant */
       Int my_pid;
+      /* destination */
+      OutputSink* sink;
    } 
    vmessage_buf_t;
 
-static vmessage_buf_t vmessage_buf = {"", 0, True, Vg_UserMsg, -1};
+static vmessage_buf_t vmessage_buf
+   = { "", 0, True, Vg_UserMsg, -1, &VG_(log_output_sink) };
 
 
 // Adds a single char to the buffer.  We aim to have at least 128
@@ -413,7 +437,7 @@ static void add_to__vmessage_buf ( HChar c, void *p )
    b->buf[b->buf_used]   = 0;
    
    if (b->buf_used >= sizeof(b->buf) - 128) {
-      send_bytes_to_logging_sink( b->buf, b->buf_used );
+      send_bytes_to_logging_sink( b->sink, b->buf, b->buf_used );
       b->buf_used = 0;
    }
 
@@ -448,7 +472,7 @@ UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
       in later messages, so don't bother to flush it right now. */
 
    if (b->atLeft && b->buf_used > 0) {
-      send_bytes_to_logging_sink( b->buf, b->buf_used );
+      send_bytes_to_logging_sink( b->sink, b->buf, b->buf_used );
       b->buf_used = 0;
    }
 
@@ -482,7 +506,7 @@ UInt VG_(message) ( VgMsgKind kind, const HChar* format, ... )
 void VG_(message_flush) ( void )
 {
    vmessage_buf_t* b = &vmessage_buf;
-   send_bytes_to_logging_sink( b->buf, b->buf_used );
+   send_bytes_to_logging_sink( b->sink, b->buf, b->buf_used );
    b->buf_used = 0;
 }
 

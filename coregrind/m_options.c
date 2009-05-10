@@ -56,8 +56,8 @@ HChar* VG_(clo_xml_user_comment) = NULL;
 Bool   VG_(clo_demangle)       = True;
 Bool   VG_(clo_trace_children) = False;
 Bool   VG_(clo_child_silent_after_fork) = False;
-Int    VG_(clo_log_fd)         = 2; /* must be signed, as -1 is possible. */
-Char*  VG_(clo_log_name)       = NULL;
+Char*  VG_(clo_log_fname_expanded) = NULL;
+Char*  VG_(clo_xml_fname_expanded) = NULL;
 Bool   VG_(clo_time_stamp)     = False;
 Int    VG_(clo_input_fd)       = 0; /* stdin */
 Int    VG_(clo_n_suppressions) = 0;
@@ -98,8 +98,8 @@ HChar* VG_(clo_kernel_variant) = NULL;
 
 static void revert_to_stderr ( void )
 {
-   vg_assert( !VG_(logging_to_socket) );
-   VG_(clo_log_fd) = 2; /* stderr */
+   VG_(log_output_sink).fd = 2; /* stderr */
+   VG_(log_output_sink).is_socket = False;
 }
 
 __attribute__((noreturn))

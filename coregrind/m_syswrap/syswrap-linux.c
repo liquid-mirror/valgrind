@@ -339,11 +339,15 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
 
       /* If --child-silent-after-fork=yes was specified, set the
-         logging file descriptor to an 'impossible' value.  This is
+         output file descriptors to 'impossible' values.  This is
          noticed by send_bytes_to_logging_sink in m_libcprint.c, which
-         duly stops writing any further logging output. */
-      if (!VG_(logging_to_socket) && VG_(clo_child_silent_after_fork))
-         VG_(clo_log_fd) = -1;
+         duly stops writing any further output. */
+      if (VG_(clo_child_silent_after_fork)) {
+         if (!VG_(log_output_sink).is_socket)
+            VG_(log_output_sink).fd = -1;
+         if (!VG_(xml_output_sink).is_socket)
+            VG_(xml_output_sink).fd = -1;
+      }
    } 
    else 
    if (!res.isError && res.res > 0) {

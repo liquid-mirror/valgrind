@@ -1125,8 +1125,8 @@ Bool ML_(fd_allowed)(Int fd, const Char *syscallname, ThreadId tid, Bool isNewFd
    if (fd < 0 || fd >= VG_(fd_hard_limit))
       allowed = False;
 
-   /* hijacking the logging fd is never allowed */
-   if (fd == VG_(clo_log_fd))
+   /* hijacking the output fds is never allowed */
+   if (fd == VG_(log_output_sink).fd || fd == VG_(xml_output_sink).fd)
       allowed = False;
 
    /* if creating a new fd (rather than using an existing one), the
@@ -1157,9 +1157,13 @@ Bool ML_(fd_allowed)(Int fd, const Char *syscallname, ThreadId tid, Bool isNewFd
       VG_(message)(Vg_UserMsg, 
          "Warning: invalid file descriptor %d in syscall %s()\n",
          fd, syscallname);
-      if (fd == VG_(clo_log_fd))
+      if (fd == VG_(log_output_sink).fd)
 	 VG_(message)(Vg_UserMsg, 
             "   Use --log-fd=<number> to select an alternative log fd.\n");
+      if (fd == VG_(xml_output_sink).fd)
+	 VG_(message)(Vg_UserMsg, 
+            "   Use --xml-fd=<number> to select an alternative XML "
+            "output fd.\n");
       if (VG_(clo_verbosity) > 1) {
          VG_(get_and_pp_StackTrace)(tid, VG_(clo_backtrace_size));
       }
@@ -2792,11 +2796,15 @@ PRE(sys_fork)
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
 
       /* If --child-silent-after-fork=yes was specified, set the
-         logging file descriptor to an 'impossible' value.  This is
+         output file descriptors to 'impossible' values.  This is
          noticed by send_bytes_to_logging_sink in m_libcprint.c, which
-         duly stops writing any further logging output. */
-      if (!VG_(logging_to_socket) && VG_(clo_child_silent_after_fork))
-         VG_(clo_log_fd) = -1;
+         duly stops writing any further output. */
+      if (VG_(clo_child_silent_after_fork)) {
+         if (!VG_(log_output_sink).is_socket)
+            VG_(log_output_sink).fd = -1;
+         if (!VG_(xml_output_sink).is_socket)
+            VG_(xml_output_sink).fd = -1;
+      }
    } 
    else 
    if (SUCCESS && RES > 0) {
