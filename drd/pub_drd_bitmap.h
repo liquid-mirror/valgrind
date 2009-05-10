@@ -116,7 +116,6 @@ Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs);
 void DRD_(bm_swap)(struct bitmap* const bm1, struct bitmap* const bm2);
 void DRD_(bm_merge2)(struct bitmap* const lhs,
                      struct bitmap* const rhs);
-void bm_xor(struct bitmap* const lhs, struct bitmap* const rhs);
 int DRD_(bm_has_races)(struct bitmap* const bm1,
                        struct bitmap* const bm2);
 void DRD_(bm_report_races)(ThreadId const tid1, ThreadId const tid2,
@@ -130,7 +129,6 @@ ULong DRD_(bm_get_bitmap2_merge_count)(void);
 
 /* Second-level bitmaps. */
 void bm2_clear(struct bitmap2* const bm2);
-void bm2_xor(struct bitmap2* const bm2l, const struct bitmap2* const bm2r);
 void bm2_print(const struct bitmap2* const bm2);
 ULong bm_get_bitmap2_creation_count(void);
 

@@ -210,7 +210,8 @@ void DRD_(bm_access_load_8)(struct bitmap* const bm, const Addr a1)
       DRD_(bm_access_range)(bm, a1, a1 + 8, eLoad);
 }
 
-void DRD_(bm_access_range_store)(struct bitmap* const bm, Addr a1, Addr a2)
+void DRD_(bm_access_range_store)(struct bitmap* const bm,
+                                 const Addr a1, const Addr a2)
 {
    Addr b, b_next;
 
@@ -660,7 +661,8 @@ void DRD_(bm_clear_load)(struct bitmap* const bm, Addr a1, Addr a2)
  * Clear all references to stores in bitmap bm starting at address a1 and
  * up to but not including address a2.
  */
-void DRD_(bm_clear_store)(struct bitmap* const bm, Addr a1, Addr a2)
+void DRD_(bm_clear_store)(struct bitmap* const bm,
+                          const Addr a1, const Addr a2)
 {
    Addr b, b_next;
 
@@ -993,33 +995,6 @@ void DRD_(bm_merge2)(struct bitmap* const lhs,
    }
 }
 
-/** Compute *lhs ^= *rhs. */
-void bm_xor(struct bitmap* const lhs, struct bitmap* const rhs)
-{
-   struct bitmap2* bm2l;
-   struct bitmap2* bm2r;
-
-   /* It's not possible to have two independent iterators over the same OSet, */
-   /* so complain if lhs == rhs.                                              */
-   tl_assert(lhs != rhs);
-
-   VG_(OSetGen_ResetIter)(rhs->oset);
-
-   for ( ; (bm2r = VG_(OSetGen_Next)(rhs->oset)) != 0; )
-   {
-      bm2l = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
-      if (bm2l)
-      {
-         tl_assert(bm2l != bm2r);
-         bm2_xor(bm2l, bm2r);
-      }
-      else
-      {
-         bm2_insert_copy(lhs, bm2r);
-      }
-   }
-}
-
 /**
  * Report whether there are any RW / WR / WW patterns in lhs and rhs.
  * @param lhs First bitmap.
@@ -1156,24 +1131,5 @@ void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
    for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
    {
       bm2l->bm1.bm0_w[k] |= bm2r->bm1.bm0_w[k];
-   }
-}
-
-/** Compute *bm2l ^= *bm2r. */
-void bm2_xor(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
-{
-   unsigned k;
-
-   tl_assert(bm2l);
-   tl_assert(bm2r);
-   tl_assert(bm2l->addr == bm2r->addr);
-
-   for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
-   {
-      bm2l->bm1.bm0_r[k] ^= bm2r->bm1.bm0_r[k];
-   }
-   for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
-   {
-      bm2l->bm1.bm0_w[k] ^= bm2r->bm1.bm0_w[k];
    }
 }
