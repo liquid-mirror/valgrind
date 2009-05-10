@@ -166,7 +166,7 @@ UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... )
    UInt ret;
    va_list vargs;
    va_start(vargs, format);
-   ret = VG_(vprintf)(format, vargs);
+   ret = VG_(vprintf_xml)(format, vargs);
    va_end(vargs);
    return ret;
 }

@@ -911,131 +911,128 @@ static void print_preamble ( Bool logging_to_fd,
                              Char* xml_fname_unexpanded,
                              const HChar* toolname )
 {
+   Int    i;
    HChar* xpre  = VG_(clo_xml) ? "  <line>" : "";
    HChar* xpost = VG_(clo_xml) ? "</line>" : "";
-   Int    i;
+   UInt (*umsg_or_xml)( const HChar*, ... )
+      = VG_(clo_xml) ? VG_(printf_xml) : VG_(UMSG);
 
    vg_assert( VG_(args_for_client) );
    vg_assert( VG_(args_for_valgrind) );
    vg_assert( toolname );
 
    if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "<?xml version=\"1.0\"?>\n");
-      VG_(message)(Vg_UserMsg, "\n");
-      VG_(message)(Vg_UserMsg, "<valgrindoutput>\n");
-      VG_(message)(Vg_UserMsg, "\n");
-      VG_(message)(Vg_UserMsg, "<protocolversion>3</protocolversion>\n");
-      VG_(message)(Vg_UserMsg, "\n");
+      VG_(printf_xml)("<?xml version=\"1.0\"?>\n");
+      VG_(printf_xml)("\n");
+      VG_(printf_xml)("<valgrindoutput>\n");
+      VG_(printf_xml)("\n");
+      VG_(printf_xml)("<protocolversion>3</protocolversion>\n");
+      VG_(printf_xml)("\n");
    }
 
-   if (VG_(clo_verbosity > 0)) {
+   if (VG_(clo_xml) || VG_(clo_verbosity > 0)) {
 
       if (VG_(clo_xml))
-         VG_(message)(Vg_UserMsg, "<preamble>\n");
+         VG_(printf_xml)("<preamble>\n");
 
       /* Tool details */
-      VG_(message)(Vg_UserMsg, "%s%s%s%s, %s.%s\n",
+      umsg_or_xml( "%s%s%s%s, %s.%s\n",
                    xpre,
                    VG_(details).name, 
                    NULL == VG_(details).version ? "" : "-",
                    NULL == VG_(details).version 
                       ? (Char*)"" : VG_(details).version,
                    VG_(details).description,
-                   xpost);
+                   xpost );
 
       if (VG_(strlen)(toolname) >= 4 
           && 0 == VG_(strncmp)(toolname, "exp-", 4)) {
-         VG_(message)(
-            Vg_UserMsg,
+         umsg_or_xml(
             "%sNOTE: This is an Experimental-Class Valgrind Tool.%s\n",
             xpre, xpost
          );
       }
 
-      VG_(message)(Vg_UserMsg, "%s%s%s\n", 
+      umsg_or_xml("%s%s%s\n", 
                                xpre, VG_(details).copyright_author, xpost);
 
       /* Core details */
-      VG_(message)(Vg_UserMsg,
+      umsg_or_xml(
          "%sUsing LibVEX rev %s, a library for dynamic binary translation.%s\n",
          xpre, LibVEX_Version(), xpost );
-      VG_(message)(Vg_UserMsg, 
-         "%sCopyright (C) 2004-2009, and GNU GPL'd, by OpenWorks LLP.%s\n",
+      umsg_or_xml(
+         "%sCopyright (C) 2004-2009, and GNU GPL'd, by OpenWorks Ltd.%s\n",
          xpre, xpost );
-      VG_(message)(Vg_UserMsg,
+      umsg_or_xml(
          "%sUsing valgrind-%s, a dynamic binary instrumentation framework.%s\n",
          xpre, VERSION, xpost);
-      VG_(message)(Vg_UserMsg, 
+      umsg_or_xml(
          "%sCopyright (C) 2000-2009, and GNU GPL'd, by Julian Seward et al.%s\n",
          xpre, xpost );
 
       if (VG_(clo_verbosity) == 1 && !VG_(clo_xml))
-         VG_(message)(Vg_UserMsg, "For more details, rerun with: -v\n");
+         VG_(UMSG)("For more details, rerun with: -v\n");
 
       if (VG_(clo_xml))
-         VG_(message)(Vg_UserMsg, "</preamble>\n");
+         VG_(printf_xml)("</preamble>\n");
    }
 
    if (!VG_(clo_xml) && VG_(clo_verbosity) > 0 && !logging_to_fd) {
-      VG_(message)(Vg_UserMsg, "\n");
-      VG_(message)(Vg_UserMsg, 
-         "My PID = %d, parent PID = %d.  Prog and args are:\n",
-         VG_(getpid)(), VG_(getppid)() );
+      VG_(UMSG)("\n");
+      VG_(UMSG)("My PID = %d, parent PID = %d.  Prog and args are:\n",
+                VG_(getpid)(), VG_(getppid)() );
       if (VG_(args_the_exename))
-         VG_(message)(Vg_UserMsg, "   %s\n", VG_(args_the_exename));
+         VG_(UMSG)("   %s\n", VG_(args_the_exename));
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) 
-         VG_(message)(Vg_UserMsg, 
-                      "   %s\n", 
-                      * (HChar**) VG_(indexXA)( VG_(args_for_client), i ));
+         VG_(UMSG)("   %s\n", 
+                   * (HChar**) VG_(indexXA)( VG_(args_for_client), i ));
    }
    else
    if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "\n");
-      VG_(message)(Vg_UserMsg, "<pid>%d</pid>\n", VG_(getpid)());
-      VG_(message)(Vg_UserMsg, "<ppid>%d</ppid>\n", VG_(getppid)());
-      VG_(message_no_f_c)(Vg_UserMsg, "<tool>%t</tool>\n", toolname);
+      VG_(printf_xml)("\n");
+      VG_(printf_xml)("<pid>%d</pid>\n", VG_(getpid)());
+      VG_(printf_xml)("<ppid>%d</ppid>\n", VG_(getppid)());
+      VG_(printf_xml_no_f_c)("<tool>%t</tool>\n", toolname);
       if (xml_fname_unexpanded)
          print_file_vars(xml_fname_unexpanded);
       if (VG_(clo_xml_user_comment)) {
          /* Note: the user comment itself is XML and is therefore to
             be passed through verbatim (%s) rather than escaped
             (%t). */
-         VG_(message)(Vg_UserMsg, "<usercomment>%s</usercomment>\n",
-                                  VG_(clo_xml_user_comment));
+         VG_(printf_xml)("<usercomment>%s</usercomment>\n",
+                         VG_(clo_xml_user_comment));
       }
-      VG_(message)(Vg_UserMsg, "\n");
-      VG_(message)(Vg_UserMsg, "<args>\n");
+      VG_(printf_xml)("\n");
+      VG_(printf_xml)("<args>\n");
 
-      VG_(message)(Vg_UserMsg, "  <vargv>\n");
+      VG_(printf_xml)("  <vargv>\n");
       if (VG_(name_of_launcher))
-         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>\n",
-                             VG_(name_of_launcher));
+         VG_(printf_xml_no_f_c)("    <exe>%t</exe>\n",
+                                VG_(name_of_launcher));
       else
-         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>\n",
-                             "(launcher name unknown)");
+         VG_(printf_xml_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>\n",
+                                            "(launcher name unknown)");
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_valgrind) ); i++) {
-         VG_(message_no_f_c)(
-            Vg_UserMsg,
+         VG_(printf_xml_no_f_c)(
             "    <arg>%t</arg>\n",
             * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i )
          );
       }
-      VG_(message)(Vg_UserMsg, "  </vargv>\n");
+      VG_(printf_xml)("  </vargv>\n");
 
-      VG_(message)(Vg_UserMsg, "  <argv>\n");
+      VG_(printf_xml)("  <argv>\n");
       if (VG_(args_the_exename))
-         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>\n",
-                             VG_(args_the_exename));
+         VG_(printf_xml_no_f_c)("    <exe>%t</exe>\n",
+                                VG_(args_the_exename));
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
-         VG_(message_no_f_c)(
-            Vg_UserMsg,
+         VG_(printf_xml_no_f_c)(
             "    <arg>%t</arg>\n",
             * (HChar**) VG_(indexXA)( VG_(args_for_client), i )
          );
       }
-      VG_(message)(Vg_UserMsg, "  </argv>\n");
+      VG_(printf_xml)("  </argv>\n");
 
-      VG_(message)(Vg_UserMsg, "</args>\n");
+      VG_(printf_xml)("</args>\n");
    }
 
    // Empty line after the preamble
@@ -2141,13 +2138,12 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    if (VG_(clo_xml)) {
       HChar buf[50];
       VG_(elapsed_wallclock_time)(buf);
-      VG_(message_no_f_c)(Vg_UserMsg,
-                          "<status>\n"
-                          "  <state>RUNNING</state>\n"
-                          "  <time>%t</time>\n"
-                          "</status>\n",
-                          buf);
-      VG_(message)(Vg_UserMsg, "\n");
+      VG_(printf_xml_no_f_c)( "<status>\n"
+                              "  <state>RUNNING</state>\n"
+                              "  <time>%t</time>\n"
+                              "</status>\n",
+                              buf );
+      VG_(printf_xml_no_f_c)( "\n" );
    }
 
    VG_(debugLog)(1, "main", "Running thread 1\n");
@@ -2250,16 +2246,15 @@ void shutdown_actions_NORETURN( ThreadId tid,
       HChar buf[50];
       if (VG_(needs).core_errors || VG_(needs).tool_errors) {
          VG_(show_error_counts_as_XML)();
-         VG_(message)(Vg_UserMsg, "\n");
+         VG_(printf_xml)( "\n" );
       }
       VG_(elapsed_wallclock_time)(buf);
-      VG_(message_no_f_c)(Vg_UserMsg,
-                          "<status>\n"
-                          "  <state>FINISHED</state>\n"
-                          "  <time>%t</time>\n"
-                          "</status>\n",
-                          buf);
-      VG_(message)(Vg_UserMsg, "\n");
+      VG_(printf_xml_no_f_c)( "<status>\n"
+                              "  <state>FINISHED</state>\n"
+                              "  <time>%t</time>\n"
+                              "</status>\n",
+                              buf);
+      VG_(printf_xml)( "\n" );
    }
 
    /* Print out file descriptor summary and stats. */

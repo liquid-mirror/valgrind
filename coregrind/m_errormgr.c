@@ -289,9 +289,9 @@ static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
 static void pp_Error ( Error* err )
 {
    if (VG_(clo_xml)) {
-      VG_(UMSG)("<error>\n");
-      VG_(UMSG)("  <unique>0x%x</unique>\n", err->unique);
-      VG_(UMSG)("  <tid>%d</tid>\n", err->tid);
+      VG_(printf_xml)("<error>\n");
+      VG_(printf_xml)("  <unique>0x%x</unique>\n", err->unique);
+      VG_(printf_xml)("  <tid>%d</tid>\n", err->tid);
    }
 
    if (!VG_(clo_xml)) {
@@ -320,7 +320,7 @@ static void pp_Error ( Error* err )
    }
 
    if (VG_(clo_xml))
-      VG_(UMSG)("</error>\n");
+      VG_(printf_xml)("</error>\n");
 }
 
 /* Figure out if we want to perform a given action for this error, possibly
@@ -696,7 +696,7 @@ static Bool show_used_suppressions ( void )
    Bool  any_supp;
 
    if (VG_(clo_xml))
-      VG_(UMSG)("<suppcounts>\n");
+      VG_(printf_xml)("<suppcounts>\n");
 
    any_supp = False;
    for (su = suppressions; su != NULL; su = su->next) {
@@ -704,19 +704,18 @@ static Bool show_used_suppressions ( void )
          continue;
       any_supp = True;
       if (VG_(clo_xml)) {
-         VG_(message_no_f_c)(Vg_DebugMsg,
-                             "  <pair>\n"
-                             "    <count>%d</count>\n"
-                             "    <name>%t</name>\n"
-                             "  </pair>\n",
-                             su->count, su->sname);
+         VG_(printf_xml_no_f_c)( "  <pair>\n"
+                                 "    <count>%d</count>\n"
+                                 "    <name>%t</name>\n"
+                                 "  </pair>\n",
+                                 su->count, su->sname );
       } else {
          VG_(DMSG)("supp: %6d %s\n", su->count, su->sname);
       }
    }
 
    if (VG_(clo_xml))
-      VG_(UMSG)("</suppcounts>\n");
+      VG_(printf_xml)("</suppcounts>\n");
 
    return any_supp;
 }
@@ -812,18 +811,18 @@ void VG_(show_all_errors) ( void )
 void VG_(show_error_counts_as_XML) ( void )
 {
    Error* err;
-   VG_(UMSG)("<errorcounts>\n");
+   VG_(printf_xml)("<errorcounts>\n");
    for (err = errors; err != NULL; err = err->next) {
       if (err->supp != NULL)
          continue;
       if (err->count <= 0)
          continue;
-      VG_(UMSG)("  <pair>\n");
-      VG_(UMSG)("    <count>%d</count>\n", err->count);
-      VG_(UMSG)("    <unique>0x%x</unique>\n", err->unique);
-      VG_(UMSG)("  </pair>\n");
+      VG_(printf_xml)("  <pair>\n");
+      VG_(printf_xml)("    <count>%d</count>\n", err->count);
+      VG_(printf_xml)("    <unique>0x%x</unique>\n", err->unique);
+      VG_(printf_xml)("  </pair>\n");
    }
-   VG_(UMSG)("</errorcounts>\n");
+   VG_(printf_xml)("</errorcounts>\n");
 }
 
 
