@@ -342,6 +342,7 @@ struct bitmap
 };
 
 
+static void bm2_clear(struct bitmap2* const bm2);
 static __inline__
 struct bitmap2* bm2_insert(struct bitmap* const bm, const UWord a1);
 
@@ -596,7 +597,7 @@ struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
       if (bm2 == 0)
       {
          bm2 = bm2_insert(bm, a1);
-         DRD_(bm2_clear)(bm2);
+         bm2_clear(bm2);
       }
    }
    else
@@ -605,7 +606,7 @@ struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
       if (! bm2)
       {
          bm2 = bm2_insert(bm, a1);
-         DRD_(bm2_clear)(bm2);
+         bm2_clear(bm2);
       }
       bm_update_cache(bm, a1, bm2);
    }
