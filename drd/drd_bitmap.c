@@ -1058,11 +1058,11 @@ void DRD_(bm_print)(struct bitmap* const bm)
         (bm2 = VG_(OSetGen_Next)(bm->oset)) != 0;
         )
    {
-      bm2_print(bm2);
+      DRD_(bm2_print)(bm2);
    }
 }
 
-void bm2_print(const struct bitmap2* const bm2)
+void DRD_(bm2_print)(const struct bitmap2* const bm2)
 {
    const struct bitmap1* bm1;
    Addr a;
@@ -1107,13 +1107,14 @@ ULong DRD_(bm_get_bitmap2_merge_count)(void)
 }
 
 /** Clear the bitmap contents. */
-void bm2_clear(struct bitmap2* const bm2)
+void DRD_(bm2_clear)(struct bitmap2* const bm2)
 {
    tl_assert(bm2);
    VG_(memset)(&bm2->bm1, 0, sizeof(bm2->bm1));
 }
 
 /** Compute *bm2l |= *bm2r. */
+static
 void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
 {
    unsigned k;
