@@ -1157,10 +1157,10 @@ Bool ML_(fd_allowed)(Int fd, const Char *syscallname, ThreadId tid, Bool isNewFd
       VG_(message)(Vg_UserMsg, 
          "Warning: invalid file descriptor %d in syscall %s()\n",
          fd, syscallname);
-      if (fd == VG_(log_output_sink).fd)
+      if (fd == VG_(log_output_sink).fd && VG_(log_output_sink).fd >= 0)
 	 VG_(message)(Vg_UserMsg, 
             "   Use --log-fd=<number> to select an alternative log fd.\n");
-      if (fd == VG_(xml_output_sink).fd)
+      if (fd == VG_(xml_output_sink).fd && VG_(xml_output_sink).fd >= 0)
 	 VG_(message)(Vg_UserMsg, 
             "   Use --xml-fd=<number> to select an alternative XML "
             "output fd.\n");
