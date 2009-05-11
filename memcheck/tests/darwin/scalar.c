@@ -311,7 +311,11 @@ int main(void)
    // __NR_shmat 262
    // __NR_shmctl 263
    // __NR_shmdt 264
+
    // __NR_shmget 265
+   GO(__NR_shmget, "3s 0m");
+   SY(__NR_shmget, x0, x0, x0); FAIL;
+
    // __NR_shm_open 266
    // __NR_shm_unlink 267
 

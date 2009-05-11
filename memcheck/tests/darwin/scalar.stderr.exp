@@ -104,6 +104,18 @@ Syscall param csops(addr) points to unaddressable byte(s)
    ...
  Address 0x........ is not stack'd, malloc'd or (recently) free'd
 -----------------------------------------------------
+265:         __NR_shmget 3s 0m
+-----------------------------------------------------
+
+Syscall param shmget(key) contains uninitialised byte(s)
+   ...
+
+Syscall param shmget(size) contains uninitialised byte(s)
+   ...
+
+Syscall param shmget(shmflg) contains uninitialised byte(s)
+   ...
+-----------------------------------------------------
 268:       __NR_sem_open 2s 1m
 -----------------------------------------------------
 

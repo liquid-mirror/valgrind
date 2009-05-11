@@ -1848,6 +1848,11 @@ POST(sys_flistxattr)
    POST_MEM_WRITE( ARG2, (vki_ssize_t)RES );
 }
 
+PRE(sys_shmget)
+{
+   PRINT("sys_shmget ( %ld, %ld, %ld )",ARG1,ARG2,ARG3);
+   PRE_REG_READ3(long, "shmget", vki_key_t, key, vki_size_t, size, int, shmflg);
+}
 
 PRE(sys_shm_open)
 {
@@ -7220,7 +7225,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_shmat), 
 // _____(__NR_shmctl), 
 // _____(__NR_shmdt), 
-// _____(__NR_shmget), 
+   MACX_(__NR_shmget, sys_shmget), 
    MACXY(__NR_shm_open, sys_shm_open), 
 // _____(__NR_shm_unlink), 
    MACX_(__NR_sem_open, sys_sem_open), 
