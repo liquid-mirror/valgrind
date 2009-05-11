@@ -185,6 +185,8 @@ static void pc_pre_clo_init(void)
                                  pc_get_error_name,
                                  pc_print_extra_suppression_info);
 
+   VG_(needs_xml_output)        ();
+
    VG_(needs_syscall_wrapper)( h_pre_syscall,
                                h_post_syscall );
 
