@@ -200,6 +200,16 @@
 #  define  VG_Z_LIBC_DOT_A   libCZdaZLansicoreZu64ZdoZR // libC.a(ansicore_64.o)
 #endif
 
+/* --- Soname of the pthreads library. --- */
+
+#if defined(VGO_linux) || defined(VGO_aix5)
+#  define  VG_Z_LIBPTHREAD_SONAME  libpthreadZdsoZd0     // libpthread.so.0
+#elif defined(VGO_darwin)
+#  define  VG_Z_LIBPTHREAD_SONAME  libSystemZdZaZddylib  // libSystem.*.dylib
+#else
+#  error "Unknown platform"
+#endif
+
 /* --- Sonames for Linux ELF linkers. --- */
 
 #if defined(VGO_linux)
