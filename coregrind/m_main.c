@@ -926,7 +926,8 @@ static void print_preamble ( Bool logging_to_fd,
       VG_(printf_xml)("\n");
       VG_(printf_xml)("<valgrindoutput>\n");
       VG_(printf_xml)("\n");
-      VG_(printf_xml)("<protocolversion>3</protocolversion>\n");
+      VG_(printf_xml)("<protocolversion>4</protocolversion>\n");
+      VG_(printf_xml)("<protocoltool>%s</protocoltool>\n", toolname);
       VG_(printf_xml)("\n");
    }
 
@@ -2243,6 +2244,8 @@ void shutdown_actions_NORETURN( ThreadId tid,
    //--------------------------------------------------------------
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "\n");
+   if (VG_(clo_xml))
+      VG_(printf_xml)("\n");
 
    if (VG_(clo_xml)) {
       HChar buf[50];
