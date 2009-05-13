@@ -4204,6 +4204,8 @@ static void hg_pre_clo_init ( void )
                                    HG_(get_error_name),
                                    HG_(print_extra_suppression_info));
 
+   VG_(needs_xml_output)          ();
+
    VG_(needs_command_line_options)(hg_process_cmd_line_option,
                                    hg_print_usage,
                                    hg_print_debug_usage);

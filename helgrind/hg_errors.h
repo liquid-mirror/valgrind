@@ -49,7 +49,6 @@ void  HG_(print_extra_suppression_info) ( Error* err );
 void HG_(record_error_Race) ( Thread* thr, 
                               Addr data_addr, Int szB, Bool isWrite,
                               ExeContext* mb_lastlock );
-void HG_(record_error_FreeMemLock)    ( Thread* thr, Lock* lk );
 void HG_(record_error_UnlockUnlocked) ( Thread*, Lock* );
 void HG_(record_error_UnlockForeign)  ( Thread*, Thread*, Lock* );
 void HG_(record_error_UnlockBogus)    ( Thread*, Addr );
