@@ -286,6 +286,11 @@ static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
    }
 }
 
+/* This prints an error, either in text or XML mode.  Note that in XML
+   mode, it does not print the trailing </error> tag.  That is so as
+   to allow callers to print more stuff (specificially, an XML-form
+   suppression for the error, by calling do_actions_on_error) before
+   the closing tag. */
 static void pp_Error ( Error* err )
 {
    if (VG_(clo_xml)) {
@@ -319,8 +324,10 @@ static void pp_Error ( Error* err )
          }
    }
 
-   if (VG_(clo_xml))
-      VG_(printf_xml)("</error>\n");
+   // No .. the caller must do this.  See comment at the start of
+   // this fn.
+   //if (VG_(clo_xml))
+   //   VG_(printf_xml)("</error>\n");
 }
 
 /* Figure out if we want to perform a given action for this error, possibly
@@ -404,11 +411,22 @@ static void printSuppForIp(UInt n, Addr ip)
    static UChar buf[ERRTXT_LEN];
 
    if ( VG_(get_fnname_no_cxx_demangle) (ip, buf,  ERRTXT_LEN) ) {
-      VG_(printf)("   fun:%s\n", buf);
-   } else if ( VG_(get_objname)(ip, buf, ERRTXT_LEN) ) {
-      VG_(printf)("   obj:%s\n", buf);
+      if (VG_(clo_xml))
+         VG_(printf_xml_no_f_c)("    <sframe> <fun>%t</fun> </sframe>\n", buf);
+      else
+         VG_(printf)("   fun:%s\n", buf);
+ 
+  } else if ( VG_(get_objname)(ip, buf, ERRTXT_LEN) ) {
+      if (VG_(clo_xml))
+         VG_(printf_xml_no_f_c)("    <sframe> <obj>%t</obj> </sframe>\n", buf);
+      else
+         VG_(printf)("   obj:%s\n", buf);
+
    } else {
-      VG_(printf)("   obj:*\n");
+      if (VG_(clo_xml))
+         VG_(printf_xml_no_f_c)("    <sframe> <obj>*</obj> </sframe>\n");
+      else
+         VG_(printf)("   obj:*\n");
    }
 }
 
@@ -416,7 +434,7 @@ static void gen_suppression(Error* err)
 {
    ExeContext* ec      = VG_(get_error_where)(err);
 
-      //(example code, see comment on CoreSuppKind above)
+   //(example code, see comment on CoreSuppKind above)
    if (0) {    
    //if (0) ThreadErr == err->ekind) {
    //   VG_(printf)("{\n");
@@ -430,9 +448,15 @@ static void gen_suppression(Error* err)
                    VG_(details).name);
          return;
       }
-      VG_(printf)("{\n");
-      VG_(printf)("   <insert a suppression name here>\n");
-      VG_(printf)("   %s:%s\n", VG_(details).name, name);
+      if (VG_(clo_xml)) {
+         VG_(printf_xml)("  <suppression>\n");
+         VG_(printf_xml)("    <sname>insert_a_suppression_name_here</sname>\n");
+         VG_(printf_xml)("    <skind>%s:%s</skind>\n", VG_(details).name, name);
+      } else {
+         VG_(printf)("{\n");
+         VG_(printf)("   <insert a suppression name here>\n");
+         VG_(printf)("   %s:%s\n", VG_(details).name, name);
+      }
       VG_TDICT_CALL(tool_print_extra_suppression_info, err);
    }
 
@@ -441,7 +465,11 @@ static void gen_suppression(Error* err)
                          VG_(get_ExeContext_StackTrace)(ec),
                          VG_(get_ExeContext_n_ips)(ec));
 
-   VG_(printf)("}\n");
+   if (VG_(clo_xml)) {
+      VG_(printf_xml)("  </suppression>\n");
+   } else {
+      VG_(printf)("}\n");
+   }
 }
 
 static 
@@ -633,6 +661,10 @@ void VG_(maybe_record_error) ( ThreadId tid,
       is_first_shown_context = False;
       n_errs_shown++;
       do_actions_on_error(p, /*allow_db_attach*/True);
+      // Finish up the <error> block started by the call to pp_Error.  See
+      // comments on pp_Error for why pp_Error does not do this itself.
+      if (VG_(clo_xml))
+         VG_(printf_xml)("</error>\n");
    } else {
       n_errs_suppressed++;
       p->supp->count++;
@@ -671,12 +703,20 @@ Bool VG_(unique_error) ( ThreadId tid, ErrorKind ekind, Addr a, Char* s,
          n_errs_found++;
 
       if (print_error) {
-         if (!is_first_shown_context)
-            VG_(UMSG)("\n");
+         if (!is_first_shown_context) {
+            if (VG_(clo_xml))
+               VG_(printf_xml)("\n");
+            else
+               VG_(UMSG)("\n");
+         }
          pp_Error(&err);
          is_first_shown_context = False;
          n_errs_shown++;
          do_actions_on_error(&err, allow_db_attach);
+         // Finish up the <error> block started by the call to pp_Error.  See
+         // comments on pp_Error for why pp_Error does not do this itself.
+         if (VG_(clo_xml))
+            VG_(printf_xml)("</error>\n");
       }
       return False;
 
@@ -783,6 +823,10 @@ void VG_(show_all_errors) ( void )
       VG_(UMSG)("%d errors in context %d of %d:\n",
                 p_min->count, i+1, n_err_contexts);
       pp_Error( p_min );
+      // Finish up the <error> block started by the call to pp_Error.  See
+      // comments on pp_Error for why pp_Error does not do this itself.
+      // Except, we're not printing XML -- we'd have exited above if so.
+      vg_assert(! VG_(clo_xml));
 
       if ((i+1 == VG_(clo_dump_error))) {
          StackTrace ips = VG_(get_ExeContext_StackTrace)(p_min->where);
