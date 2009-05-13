@@ -256,8 +256,8 @@ Bool pc_eq_Error ( VgRes res, Error* e1, Error* e2 )
 //                                                          //
 //////////////////////////////////////////////////////////////
 
-/* Do a printf-style op (with a trailing \n) on either the XML or
-   normal output channel, depending on the setting of VG_(clo_xml).
+/* Do a printf-style operation on either the XML or normal output
+   channel, depending on the setting of VG_(clo_xml).
 */
 static void emit_WRK ( HChar* format, va_list vargs )
 {
@@ -267,7 +267,6 @@ static void emit_WRK ( HChar* format, va_list vargs )
       VG_(vmessage)(Vg_UserMsg, format, vargs);
    }
 }
-
 static void emit ( HChar* format, ... ) PRINTF_CHECK(1, 2);
 static void emit ( HChar* format, ... )
 {
@@ -276,6 +275,7 @@ static void emit ( HChar* format, ... )
    emit_WRK(format, vargs);
    va_end(vargs);
 }
+
 
 static Char* readwrite(SSizeT sszB)
 {
