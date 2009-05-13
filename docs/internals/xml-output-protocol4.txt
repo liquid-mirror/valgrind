@@ -1,0 +1,595 @@
+
+====================================================================
+
+11 May 2009
+
+Protocols 1 through 3 supported Memcheck only.  Protocol 4 provides
+XML output for Memcheck, Helgrind and Ptrcheck.  Technically there are
+three variants of Protocol 4, one for each tool, since they produce
+different errors.  The three variants differ only in the definition of
+the ERROR nonterminal and are otherwise identical.
+
+NOTE that Protocol 4 (for the current svn trunk, which will eventually
+become 3.5.x) is still under development.  The text herein should not
+be regarded as the final definition.
+
+
+Identification of Protocols
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In Protocols 1 through 3, a <protocolversion>INT<protocolversion>
+close to the start of the stream makes it possible for parsers to
+ascertain the version, so they can tell whether or not they can handle
+it.  The presence of support for multiple tools brings a complication,
+though: it is not enough merely to state the protocol version -- the
+tool name must also be stated.  Hence in Protocol 4, the
+<protocolversion>INT<protocolversion> is followed immediately by
+<protocoltool>TEXT</protocoltool>, to identify the tool.
+
+This duplicates the tool name present later in the preamble, but it
+was felt important to place the tool name right at the front along
+with the protocol number, for easy determination of parseability.
+
+
+Protocol 4 changes for Memcheck
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Protocol 4 for Memcheck is identical to Protocol 3, except that
+
+- the SUPPCOUNTS nonterminal now appears after the "Zero or more
+  ERRORs" block, and not before it.
+
+- the abovementioned "Zero or more ERRORs" block now becomes
+  "Zero or more of (either ERROR or ERRORCOUNTS)".
+
+- ERRORs for Memcheck may contain a SUPPRESSION field, which gives
+  the corresponding suppression for it.
+
+The first two changes are required in order to correct a longstanding
+design flaw in the way Memcheck interacts with Valgrind's error
+management mechanism.  See bug #186790
+(https://bugs.kde.org/show_bug.cgi?id=186790).  The third change was
+requested in #191189 (https://bugs.kde.org/show_bug.cgi?id=191189).
+
+The definition of Protocol 4 now follows.  It is structured similarly
+to that of the previous protocols, except that there is a separate
+definition of ERROR for each of Memcheck, Helgrind and Ptrcheck.
+
+
+====================================================================
+
+TOPLEVEL
+--------
+
+The first line output is always this:
+
+   <?xml version="1.0"?>
+
+All remaining output is contained within the tag-pair
+<valgrindoutput>.
+
+Inside that, the first entity is an indication of the protocol
+version.  This is provided so that existing parsers can identify XML
+created by future versions of Valgrind merely by observing that the
+protocol version is one they don't understand.  Hence TOPLEVEL is:
+
+  <?xml version="1.0"?>
+  <valgrindoutput>
+    <protocolversion>INT<protocolversion>
+    <protocoltool>TEXT</protocoltool>
+    PROTOCOL
+  </valgrindoutput>
+
+Valgrind versions 3.0.0 and 3.0.1 emit protocol version 1.  Versions
+3.1.X and 3.2.X [and 3.3.X ??] emit protocol version 2.  3.4.X emits
+protocol version 3.  3.5.X emits version 4.
+
+The TEXT in <protocoltool> is either "memcheck", "helgrind" or
+"ptrcheck" and determines the allowed format of the ERROR nonterminal.
+Note that <protocoltool> is only present when the protocol version is
+4 or above.
+
+
+PROTOCOL for version 4
+----------------------
+
+This is the main top-level construction.  Roughly speaking, it
+contains a preamble, a program-started marker, the errors from the run
+of the program, a program-ended marker, and any further errors
+resulting from post-run analysis (eg, memory leak detection).  Hence
+the following in sequence:
+
+* Various preamble lines which give version info for the various
+  components.  The text in them can be anything; it is not intended
+  for interpretation by the GUI:
+
+     <preamble>
+        <line>Misc version/copyright text</line>  (zero or more of)
+     </preamble>
+
+* The PID of this process and of its parent:
+
+     <pid>INT</pid>
+     <ppid>INT</ppid>
+
+* The name of the tool being used:
+
+     <tool>TEXT</tool>
+
+  This can be anything, and it doesn't have to match the
+  <protocoltool> entry, although that might be wise.
+
+* Zero or more bindings of environment variable names to actual
+  values.  These describe precisely the instantiations of %q format
+  specifiers used in the --xml-file= argument for the run, if any.
+  There is one <logfilequalifier> entry for each %q expanded:
+
+     <logfilequalifier> <var>VAR</var> <value>$VAR</value>
+     </logfilequalifier>
+
+* OPTIONALLY, if --xml-user-comment=STRING was given:
+
+     <usercomment>STRING</usercomment>
+
+  STRING is not escaped in any way, so that it itself may be a piece
+  of XML with arbitrary tags etc.
+
+* The program and args: first those pertaining to Valgrind itself, and
+  then those pertaining to the program to be run under Valgrind (the
+  client):
+
+     <args>
+       <vargv>
+         <exe>TEXT</exe>
+         <arg>TEXT</arg> (zero or more of)
+       </vargv>
+       <argv>
+         <exe>TEXT</exe>
+         <arg>TEXT</arg> (zero or more of)
+       </argv>
+     </args>
+
+* The following, indicating that the program has now started:
+
+     <status> <state>RUNNING</state> 
+              <time>human-readable-time-string</time> 
+     </status>
+
+  The format of this string is not defined, but it is expected to be
+  human-understandable.  In current Valgrind versions it is the
+  elapsed wallclock time since process start.
+
+* Zero or more of (either ERROR or ERRORCOUNTS).
+
+* The following, indicating that the program has now finished, and
+  that the any final wrapup (eg, for Memcheck, leak checking) is happening.
+
+     <status> <state>FINISHED</state> 
+              <time>human-readable-time-string</time> 
+     </status>
+
+* Zero or more of (either ERROR or ERRORCOUNTS).  In Memcheck's case
+  these will be complaints from the leak checker.  For Ptrcheck and
+  Helgrind we don't expect any output here (but the spec does not
+  guarantee that either).
+
+* SUPPCOUNTS, indicating how many times each suppression was used.
+
+
+That's it.  The tool-specific definitions for ERROR are below; however
+let's first continue with some smaller nonterminals used in the
+construction of errors for all the tool types.
+
+
+====================================================================
+
+Nonterminals used in construction of ERRORs
+-------------------------------------------
+
+STACK
+-----
+STACK indicates locations in the program being debugged.  A STACK
+is one or more FRAMEs.  The first is the innermost frame, the
+next its caller, etc.  
+
+   <stack>
+      one or more FRAME
+   </stack>
+
+
+FRAME
+-----
+FRAME records a single program location:
+
+   <frame>
+      <ip>HEX64</ip>
+      optionally <obj>TEXT</obj>
+      optionally <fn>TEXT</fn>
+      optionally <dir>TEXT</dir>
+      optionally <file>TEXT</file>
+      optionally <line>INT</line>
+   </frame>
+
+Only the <ip> field is guaranteed to be present.  It indicates a
+code ("instruction pointer") address.
+
+The optional fields, if present, appear in the order stated:
+
+* obj: gives the name of the ELF object containing the code address
+
+* fn: gives the name of the function containing the code address
+
+* dir: gives the source directory associated with the name specified
+       by <file>.  Note the current implementation often does not
+       put anything useful in this field.
+
+* file: gives the name of the source file containing the code address
+
+* line: gives the line number in the source file
+
+
+ERRORCOUNTS
+-----------
+This specifies, for each error that has been so far presented,
+the number of occurrences of that error.
+
+  <errorcounts>
+     zero or more of
+        <pair> <count>INT</count> <unique>HEX64</unique> </pair>
+  </errorcounts>
+
+Each <pair> gives the current error count <count> for the error with
+unique tag </unique>.  The counts do not have to give a count for each
+error so far presented - partial information is allowable.
+
+As at Valgrind rev 3793, error counts are only emitted at program
+termination.  However, it is perfectly acceptable to periodically emit
+error counts as the program is running.  Doing so would facilitate a
+GUI to dynamically update its error-count display as the program runs.
+
+
+SUPPCOUNTS
+----------
+A SUPPCOUNTS block appears exactly once, after the program terminates.
+It specifies the number of times each error-suppression was used.
+Suppressions not mentioned were used zero times.
+
+  <suppcounts>
+     zero or more of
+        <pair> <count>INT</count> <name>TEXT</name> </pair>
+  </suppcounts>
+
+The <name> is as specified in the suppression name fields in .supp
+files.
+
+
+SUPPRESSION
+-----------
+These are optionally emitted as part of ERRORs, and specify the
+suppression that would be needed to suppress the containing error.
+
+  <suppression>
+    <sname>TEXT</sname>    name of the suppression
+    <skind>TEXT</skind>    kind, eg                 "Memcheck:Param"
+    <skaux>TEXT</skaux>    (optional) aux kind, eg  "write(buf)"
+    SFRAME                 (one or more) frames
+  </suppression>
+
+
+SFRAME
+------
+Either
+
+  <sframe> <obj>TEXT</obj> </sframe>
+
+eg denoting "obj:/usr/X11R6/lib*/libX11.so.6.2", or
+
+  <sframe> <fun>TEXT</fun> </sframe>
+
+eg denoting "fun:*libc_write"
+
+
+====================================================================
+
+ERROR definition -- common fields
+---------------------------------
+
+ERROR defines an error, and is the most complex nonterminal.  For all
+of the tools, the first four fields and the last field are common:
+
+  <error>
+     <unique>HEX64</unique>
+     <tid>INT</tid>
+     <kind>KIND</kind>
+     <what>TEXT</what>      (either 1 or 2 times)
+
+     ... tool-specific fields ...
+
+     optionally: SUPPRESSION
+  </error>
+
+
+* Each error contains a unique, arbitrary 64-bit hex number.  This is
+  used to refer to the error in ERRORCOUNTS nonterminals (see below).
+
+* The <tid> tag indicates the Valgrind thread number.  This value
+  is arbitrary but may be used to determine which threads produced
+  which errors (at least, the first instance of each error).
+
+* The <kind> tag specifies one of a small number of fixed error types,
+  so that GUIs may roughly categorise errors by type if they want.
+  The tags themselves are tool-specific and are defined further
+  below, for each tool.
+
+* The <what> tag gives a human-understandable description of the
+  error.  There may be two consecutive <what>TEXT</what> blocks, in
+  which case the second block gives further details, and should be
+  displayed by GUIs immediately following the first one.
+
+* Finally, optionally, a SUPPRESSION may be provided.  This contains
+  a suppression that would hide the error.
+
+
+====================================================================
+
+ERROR definition for Memcheck
+-----------------------------
+
+The definition is:
+
+  <error>
+     <unique>HEX64</unique>
+     <tid>INT</tid>
+     <kind>KIND</kind>
+     <what>TEXT</what>      (either 1 or 2 times)
+
+     optionally: <leakedbytes>INT</leakedbytes>
+     optionally: <leakedblocks>INT</leakedblocks>
+
+     STACK
+
+     zero, one or two: <auxwhat>TEXT</auxwhat>
+     optionally:       STACK
+     optionally:       ORIGIN
+
+     optionally: SUPPRESSION
+  </error>
+
+
+The first four fields and the last field are specified in "ERROR
+definition -- common fields" above.  The remaining fields are as
+follows:
+
+* For <kind> tags specifying a KIND of the form "Leak_*", the
+  optional <leakedbytes> and <leakedblocks> indicate the number of
+  bytes and blocks leaked by this error.
+
+* The primary STACK for this error, indicating where it occurred.
+
+* Some error types may have auxiliary information attached:
+
+     <auxwhat>TEXT</auxwhat> (zero, one or two) gives an auxiliary
+     human-readable description (usually of invalid addresses)
+
+     STACK gives an auxiliary stack (usually the allocation/free point
+     of a block).  If this STACK is present then the
+     <auxwhat>TEXT</auxwhat> blocks will precede it.
+
+
+KIND for Memcheck
+-----------------
+
+This is a small enumeration indicating roughly the nature of an error.
+The possible values are:
+
+   InvalidFree
+
+      free/delete/delete[] on an invalid pointer
+
+   MismatchedFree
+
+      free/delete/delete[] does not match allocation function
+      (eg doing new[] then free on the result)
+
+   InvalidRead
+
+      read of an invalid address
+
+   InvalidWrite
+
+      write of an invalid address
+
+   InvalidJump
+
+      jump to an invalid address
+
+   Overlap
+
+      args overlap other otherwise bogus in eg memcpy
+
+   InvalidMemPool
+
+      invalid mem pool specified in client request
+
+   UninitCondition
+
+      conditional jump/move depends on undefined value
+
+   UninitValue
+
+      other use of undefined value (primarily memory addresses)
+
+   SyscallParam
+
+      system call params are undefined or point to
+      undefined/unaddressible memory
+
+   ClientCheck
+
+      "error" resulting from a client check request
+
+   Leak_DefinitelyLost
+
+      memory leak; the referenced blocks are definitely lost
+
+   Leak_IndirectlyLost
+
+      memory leak; the referenced blocks are lost because all pointers
+      to them are also in leaked blocks
+
+   Leak_PossiblyLost
+
+      memory leak; only interior pointers to referenced blocks were
+      found
+
+   Leak_StillReachable
+
+      memory leak; pointers to un-freed blocks are still available
+
+
+ORIGIN
+------
+ORIGIN shows the origin of uninitialised data in errors that involve
+uninitialised data.  STACK shows the origin of the uninitialised
+value.  TEXT gives a human-understandable hint as to the meaning of
+the information in STACK.
+
+   <origin>
+      <what>TEXT<what>
+      STACK
+   </origin>
+
+
+====================================================================
+
+ERROR definition for Ptrcheck
+-----------------------------
+
+The definition is:
+
+  <error>
+     <unique>HEX64</unique>
+     <tid>INT</tid>
+     <kind>KIND</kind>
+     <what>TEXT</what>      (either 1 or 2 times)
+
+     STACK
+
+     zero or more of (STACK or <auxwhat>TEXT</auxwhat>)
+
+     optionally: SUPPRESSION
+  </error>
+
+
+The first four fields and the last field are specified in "ERROR
+definition -- common fields" above.  The remaining fields are as
+follows:
+
+* The primary STACK for this error, indicating where it occurred.
+
+* Some error types may have auxiliary information attached, expressed
+  as an arbitrary sequence of (STACK or <auxwhat>TEXT</auxwhat>).
+  These should be presented to the user in the sequence they appear in
+  the file, as they are intended to be read top-to-bottom.
+
+
+KIND for Ptrcheck
+-----------------
+This is a small enumeration indicating roughly the nature of an error.
+The possible values are:
+
+   SorG
+
+      Stack or global array inconsistency (roughly speaking, an
+      overrun of a stack or global array).  The <auxwhat> blocks give
+      further details.
+
+   Heap
+
+      Usage of a pointer derived from a heap block, to access 
+      outside that heap block
+
+   Arith
+
+      Doing arithmetic on pointers in a way that cannot possibly
+      result in another valid pointer.  Eg, adding two pointer values.
+
+   SysParam
+
+      Special case of "Heap", in which the invalidly-addressed memory
+      is presented as an argument to a system call which reads or
+      writes memory.
+
+
+====================================================================
+
+ERROR definition for Helgrind
+-----------------------------
+
+The definition is:
+
+  <error>
+     <unique>HEX64</unique>
+     <tid>INT</tid>
+     <kind>KIND</kind>
+     <what>TEXT</what>      (either 1 or 2 times)
+
+     STACK
+
+     zero or more of (STACK or <auxwhat>TEXT</auxwhat>)
+
+     optionally: SUPPRESSION
+  </error>
+
+
+The first four fields and the last field are specified in "ERROR
+definition -- common fields" above.  The remaining fields are as
+follows:
+
+* The primary STACK for this error, indicating where it occurred.
+
+* Some error types may have auxiliary information attached, expressed
+  as an arbitrary sequence of (STACK or <auxwhat>TEXT</auxwhat>).
+  These should be presented to the user in the sequence they appear in
+  the file, as they are intended to be read top-to-bottom.
+
+
+KIND for Helgrind
+-----------------
+This is a small enumeration indicating roughly the nature of an error.
+The possible values are:
+
+   Race
+
+      Data race.  Helgrind will try to show the stacks for both
+      conflicting accesses if it can; it will always show the stack
+      for at least one of them.
+
+   UnlockUnlocked
+
+      Unlocking a not-locked lock
+
+   UnlockForeign
+
+      Unlocking a lock held by some other thread
+
+   UnlockBogus
+
+      Unlocking an address which is not known to be a lock
+
+   PthAPIerror
+
+      One of the POSIX pthread_ functions that are intercepted
+      by Helgrind, failed with an error code.  Usually indicates
+      something bad happening.
+
+   LockOrder
+
+      An inconsistency in the acquisition order of locks was observed;
+      dangerous, as it can potentially lead to deadlocks
+
+   Misc
+
+      One of various miscellaneous noteworthy conditions was observed
+      (eg, thread exited whilst holding locks, "impossible" behaviour
+      from the underlying threading library, etc)
