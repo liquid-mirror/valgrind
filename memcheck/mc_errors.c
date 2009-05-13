@@ -258,8 +258,8 @@ struct _MC_Error {
 /*--- Printing errors                                      ---*/
 /*------------------------------------------------------------*/
 
-/* Do a printf-style op (with a trailing \n) on either the XML or
-   normal output channel, depending on the setting of VG_(clo_xml).
+/* Do a printf-style operation on either the XML or normal output
+   channel, depending on the setting of VG_(clo_xml).
 */
 static void emit_WRK ( HChar* format, va_list vargs )
 {
@@ -269,7 +269,6 @@ static void emit_WRK ( HChar* format, va_list vargs )
       VG_(vmessage)(Vg_UserMsg, format, vargs);
    }
 }
-
 static void emit ( HChar* format, ... ) PRINTF_CHECK(1, 2);
 static void emit ( HChar* format, ... )
 {
@@ -278,7 +277,6 @@ static void emit ( HChar* format, ... )
    emit_WRK(format, vargs);
    va_end(vargs);
 }
-
 static void emit_no_f_c ( HChar* format, ... )
 {
    va_list vargs;
@@ -419,9 +417,7 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
 
 static void mc_pp_origin ( ExeContext* ec, UInt okind )
 {
-   HChar* src   = NULL;
-   HChar* xpre  = VG_(clo_xml) ? "  <what>" : " ";
-   HChar* xpost = VG_(clo_xml) ? "</what>"  : "";
+   HChar* src = NULL;
    tl_assert(ec);
 
    switch (okind) {
@@ -432,14 +428,14 @@ static void mc_pp_origin ( ExeContext* ec, UInt okind )
    }
    tl_assert(src); /* guards against invalid 'okind' */
 
-    if (VG_(clo_xml)) {
+   if (VG_(clo_xml)) {
       VG_(printf_xml)("  <origin>\n");
-      VG_(printf_xml)("%sUninitialised value was created%s%s",
-                      xpre, src, xpost);
+      VG_(printf_xml)("<what>Uninitialised value was created%s</what>",
+                      src);
       VG_(pp_ExeContext)( ec );
       VG_(printf_xml)("  </origin>\n");
    } else {
-      VG_(message)(Vg_UserMsg, "Uninitialised value was created%s\n",
+      VG_(message)(Vg_UserMsg, " Uninitialised value was created%s\n",
                                src);
       VG_(pp_ExeContext)( ec );
    }
@@ -596,14 +592,14 @@ void MC_(pp_Error) ( Error* err )
          LossRecord* lr              = extra->Err.Leak.lr;
 
          if (VG_(clo_xml)) {
-            VG_(message_no_f_c)(Vg_UserMsg, "  <kind>%t</kind>\n",
-                                xml_leak_kind(lr->key.state));
+            VG_(printf_xml_no_f_c)("  <kind>%t</kind>\n",
+                                   xml_leak_kind(lr->key.state));
          } else {
             VG_(message)(Vg_UserMsg, "\n");
          }
 
          if (lr->indirect_szB > 0) {
-            VG_(message)(Vg_UserMsg, 
+            emit(
                "%s%'lu (%'lu direct, %'lu indirect) bytes in %'u blocks"
                " are %s in loss record %'u of %'u%s\n",
                xpre,
@@ -614,14 +610,13 @@ void MC_(pp_Error) ( Error* err )
             );
             if (VG_(clo_xml)) {
                // Nb: don't put commas in these XML numbers 
-               VG_(message)(Vg_UserMsg, "  <leakedbytes>%lu</leakedbytes>\n", 
-                                        lr->szB + lr->indirect_szB);
-               VG_(message)(Vg_UserMsg, "  <leakedblocks>%u</leakedblocks>\n", 
-                                        lr->num_blocks);
+               VG_(printf_xml)("  <leakedbytes>%lu</leakedbytes>\n", 
+                               lr->szB + lr->indirect_szB);
+               VG_(printf_xml)("  <leakedblocks>%u</leakedblocks>\n", 
+                               lr->num_blocks);
             }
          } else {
-            VG_(message)(
-               Vg_UserMsg, 
+            emit(
                "%s%'lu bytes in %'u blocks are %s in loss record %'u of %'u%s\n",
                xpre,
                lr->szB, lr->num_blocks,
@@ -629,10 +624,10 @@ void MC_(pp_Error) ( Error* err )
                xpost
             );
             if (VG_(clo_xml)) {
-               VG_(message)(Vg_UserMsg, "  <leakedbytes>%ld</leakedbytes>\n",
-                                        lr->szB);
-               VG_(message)(Vg_UserMsg, "  <leakedblocks>%d</leakedblocks>\n",
-                                        lr->num_blocks);
+               VG_(printf_xml)("  <leakedbytes>%ld</leakedbytes>\n",
+                               lr->szB);
+               VG_(printf_xml)("  <leakedblocks>%d</leakedblocks>\n",
+                               lr->num_blocks);
             }
          }
          VG_(pp_ExeContext)(lr->key.allocated_at);
