@@ -161,6 +161,9 @@ typedef struct {
    // VG_(needs).final_IR_tidy_pass
    IRSB* (*tool_final_IR_tidy_pass)  (IRSB*);
 
+   // VG_(needs).xml_output
+   void (*tool_before_pp_Error)      (Error*);
+
    // -- Event tracking functions ------------------------------------
    void (*track_new_mem_startup)     (Addr, SizeT, Bool, Bool, Bool, ULong);
    void (*track_new_mem_stack_signal)(Addr, SizeT, ThreadId);
