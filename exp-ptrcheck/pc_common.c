@@ -38,6 +38,7 @@
 #include "pub_tool_basics.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_xarray.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_options.h"
@@ -133,8 +134,8 @@ typedef
             Addr     addr;
             SSizeT   sszB;  /* -ve is write, +ve is read */
             Seg*     vseg;
-            Char     descr1[96];
-            Char     descr2[96];
+            XArray*  descr1; /* XArray* of HChar */
+            XArray*  descr2; /* XArray* of HChar */
             Char     datasym[96];
             PtrdiffT datasymoff;
          } Heap;
@@ -256,6 +257,13 @@ Bool pc_eq_Error ( VgRes res, Error* e1, Error* e2 )
 //                                                          //
 //////////////////////////////////////////////////////////////
 
+/* This is the "this error is due to be printed shortly; so have a
+   look at it any print any preamble you want" function.  Which, in
+   Ptrcheck, we don't use.  Hence a no-op.
+*/
+void pc_before_pp_Error ( Error* err ) {
+}
+
 /* Do a printf-style operation on either the XML or normal output
    channel, depending on the setting of VG_(clo_xml).
 */
@@ -275,6 +283,13 @@ static void emit ( HChar* format, ... )
    emit_WRK(format, vargs);
    va_end(vargs);
 }
+static void emiN ( HChar* format, ... ) /* With NO FORMAT CHECK */
+{
+   va_list vargs;
+   va_start(vargs, format);
+   emit_WRK(format, vargs);
+   va_end(vargs);
+}
 
 
 static Char* readwrite(SSizeT sszB)
@@ -288,10 +303,7 @@ static Word Word__abs ( Word w ) {
 
 void pc_pp_Error ( Error* err )
 {
-   HChar* what_pre  = VG_(clo_xml) ? "  <what>"    : "";
-   HChar* what_post = VG_(clo_xml) ? "</what>"     : "";
-   HChar* auxw_pre  = VG_(clo_xml) ? "  <auxwhat>" : " ";
-   HChar* auxw_post = VG_(clo_xml) ? "</auxwhat>"  : "";
+   const Bool xml = VG_(clo_xml); /* a shorthand, that's all */
 
    XError *xe = (XError*)VG_(get_error_extra)(err);
    tl_assert(xe);
@@ -300,23 +312,34 @@ void pc_pp_Error ( Error* err )
 
    //----------------------------------------------------------
    case XE_SorG:
-      tl_assert(xe);
 
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>SorG</kind>\n");
-      emit( "%sInvalid %s of size %ld%s\n", 
-            what_pre,
-            xe->XE.SorG.sszB < 0 ? "write" : "read",
-            Word__abs(xe->XE.SorG.sszB),
-            what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+      if (xml) {
 
-      emit( "%sAddress %#lx expected vs actual:%s\n",
-            auxw_pre, xe->XE.SorG.addr, auxw_post );
-      emit( "%sExpected: %s%s\n",
-            auxw_pre, &xe->XE.SorG.expect[0], auxw_post );
-      emit( "%sActual:   %s%s\n", 
-            auxw_pre, &xe->XE.SorG.actual[0], auxw_post );
+         emit( "  <kind>SorG</kind>\n");
+         emit( "  <what>Invalid %s of size %ld</what>\n",
+               xe->XE.SorG.sszB < 0 ? "write" : "read",
+               Word__abs(xe->XE.SorG.sszB) );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+         emit( "  <auxwhat>Address %#lx expected vs actual:</auxwhat>\n",
+               xe->XE.SorG.addr );
+         emiN( "  <auxwhat>Expected: %t</auxwhat>\n",
+               &xe->XE.SorG.expect[0] );
+         emiN( "  <auxwhat>Actual:   %t</auxwhat>\n", 
+               &xe->XE.SorG.actual[0] );
+
+      } else {
+
+         emit( "Invalid %s of size %ld\n", 
+               xe->XE.SorG.sszB < 0 ? "write" : "read",
+               Word__abs(xe->XE.SorG.sszB) );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+         emit( " Address %#lx expected vs actual:\n", xe->XE.SorG.addr );
+         emit( " Expected: %s\n", &xe->XE.SorG.expect[0] );
+         emit( " Actual:   %s\n", &xe->XE.SorG.actual[0] );
+
+      }
       break;
 
    //----------------------------------------------------------
@@ -329,16 +352,30 @@ void pc_pp_Error ( Error* err )
 
       if (NONPTR == vseg) {
          // Access via a non-pointer
-         if (VG_(clo_xml))
-            VG_(printf_xml)( "  <kind>Heap</kind>\n");
-         emit( "%sInvalid %s of size %ld%s\n",
-               what_pre, readwrite(xe->XE.Heap.sszB),
-               Word__abs(xe->XE.Heap.sszB), what_post );
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
-         emit( "%sAddress %#lx is not derived from "
-               "any known block%s\n",
-               auxw_pre, a, auxw_post );
+         if (xml) {
+
+            emit( "  <kind>Heap</kind>\n");
+            emit( "  <what>Invalid %s of size %ld</what>\n",
+                  readwrite(xe->XE.Heap.sszB),
+                  Word__abs(xe->XE.Heap.sszB) );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            emit( "  <auxwhat>Address %#lx is not derived from "
+                  "any known block</auxwhat>\n", a );
+
+         } else {
+
+            emit( "Invalid %s of size %ld\n",
+                  readwrite(xe->XE.Heap.sszB),
+                  Word__abs(xe->XE.Heap.sszB) );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            emit( " Address %#lx is not derived from "
+                  "any known block\n", a );
+
+         }
+
       } else {
          // Access via a pointer, but outside its range.
          Int cmp;
@@ -351,32 +388,77 @@ void pc_pp_Error ( Error* err )
                        ? "Doubly-invalid" : "Invalid" );
          legit = ( Seg__is_freed(vseg) ? "once-" : "" );
 
-         if (VG_(clo_xml))
-            VG_(printf_xml)( "  <kind>Heap</kind>\n");
-         emit( "%s%s %s of size %ld%s\n",
-               what_pre, how_invalid,
-               readwrite(xe->XE.Heap.sszB),
-               Word__abs(xe->XE.Heap.sszB), what_post );
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xml) {
 
-         emit( "%sAddress %#lx is %lu bytes %s the accessing pointer's%s\n",
-               auxw_pre, a, miss_size, place , auxw_post );
-         emit( "%s%slegitimate range, a block of size %lu %s%s\n",
-               auxw_pre, legit, Seg__size(vseg),
-               Seg__is_freed(vseg) ? "free'd" : "alloc'd", auxw_post );
-         VG_(pp_ExeContext)(Seg__where(vseg));
+            emit( "  <kind>Heap</kind>\n");
+            emit( "  <what>%s %s of size %ld</what>\n",
+                  how_invalid,
+                  readwrite(xe->XE.Heap.sszB),
+                  Word__abs(xe->XE.Heap.sszB) );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            emit( "  <auxwhat>Address %#lx is %lu bytes %s "
+                     "the accessing pointer's</auxwhat>\n",
+                  a, miss_size, place );
+            emit( "  <auxwhat>%slegitimate range, "
+                     "a block of size %lu %s</auxwhat>\n",
+                  legit, Seg__size(vseg),
+                  Seg__is_freed(vseg) ? "free'd" : "alloc'd" );
+            VG_(pp_ExeContext)(Seg__where(vseg));
+
+         } else {
+
+            emit( "%s %s of size %ld\n",
+                  how_invalid,
+                  readwrite(xe->XE.Heap.sszB),
+                  Word__abs(xe->XE.Heap.sszB) );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            emit( " Address %#lx is %lu bytes %s the accessing pointer's\n",
+                  a, miss_size, place );
+            emit( " %slegitimate range, a block of size %lu %s\n",
+                  legit, Seg__size(vseg),
+                  Seg__is_freed(vseg) ? "free'd" : "alloc'd" );
+            VG_(pp_ExeContext)(Seg__where(vseg));
+
+         }
       }
-      if (xe->XE.Heap.descr1[0] != 0)
-         emit( "%s%s%s\n", auxw_pre, xe->XE.Heap.descr1, auxw_post );
-      if (xe->XE.Heap.descr2[0] != 0)
-         emit( "%s%s%s\n", auxw_pre, xe->XE.Heap.descr2, auxw_post );
-      if (xe->XE.Heap.datasym[0] != 0)
-         emit( "%sAddress 0x%llx is %llu bytes "
-               "inside data symbol \"%s\"%s\n",
-               auxw_pre,
-               (ULong)xe->XE.Heap.addr,
-               (ULong)xe->XE.Heap.datasymoff,
-               xe->XE.Heap.datasym, auxw_post );
+
+      /* If we have a better description of the address, show it.
+         Note that in XML mode, it will already by nicely wrapped up
+         in tags, either <auxwhat> or <xauxwhat>, so we can just emit
+         it verbatim. */
+      if (xml) {
+
+         if (xe->XE.Heap.descr1)
+            emiN( "  %t\n",
+                  (HChar*)VG_(indexXA)( xe->XE.Heap.descr1, 0 ) );
+         if (xe->XE.Heap.descr2)
+            emiN( "  %t\n",
+                  (HChar*)VG_(indexXA)( xe->XE.Heap.descr2, 0 ) );
+         if (xe->XE.Heap.datasym[0] != 0)
+            emiN( "  <auxwhat>Address 0x%llx is %llu bytes "
+                  "inside data symbol \"%t\"</auxwhat>\n",
+                  (ULong)xe->XE.Heap.addr,
+                  (ULong)xe->XE.Heap.datasymoff,
+                  xe->XE.Heap.datasym );
+
+      } else {
+
+         if (xe->XE.Heap.descr1)
+            emit( " %s\n",
+                  (HChar*)VG_(indexXA)( xe->XE.Heap.descr1, 0 ) );
+         if (xe->XE.Heap.descr2)
+            emit( " %s\n",
+                  (HChar*)VG_(indexXA)( xe->XE.Heap.descr2, 0 ) ); 
+         if (xe->XE.Heap.datasym[0] != 0)
+            emit( " Address 0x%llx is %llu bytes "
+                  "inside data symbol \"%s\"\n",
+                  (ULong)xe->XE.Heap.addr,
+                  (ULong)xe->XE.Heap.datasymoff,
+                  xe->XE.Heap.datasym );
+
+      }
       break;
    }
 
@@ -389,35 +471,69 @@ void pc_pp_Error ( Error* err )
       tl_assert(BOTTOM != seg1);
       tl_assert(BOTTOM != seg2 && UNKNOWN != seg2);
 
-      if (VG_(clo_xml))
-         VG_(printf_xml)("  <kind>Arith</kind>\n");
-      emit( "%sInvalid arguments to %s%s\n",
-            what_pre, xe->XE.Arith.opname, what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+      if (xml) {
 
-      if (seg1 != seg2) {
-         if (NONPTR == seg1) {
-            emit( "%sFirst arg not a pointer%s\n", auxw_pre, auxw_post );
-         } else if (UNKNOWN == seg1) {
-            emit( "%sFirst arg may be a pointer%s\n", auxw_pre, auxw_post );
+         emit( "  <kind>Arith</kind>\n");
+         emit( "  <what>Invalid arguments to %s</what>\n",
+               xe->XE.Arith.opname );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+         if (seg1 != seg2) {
+            if (NONPTR == seg1) {
+               emit( "  <auxwhat>First arg not a pointer</auxwhat>\n" );
+            } else if (UNKNOWN == seg1) {
+               emit( "  <auxwhat>First arg may be a pointer</auxwhat>\n" );
+            } else {
+               emit( "  <auxwhat>First arg derived from address %#lx of "
+                     "%lu-byte block alloc'd</auxwhat>\n",
+                     Seg__addr(seg1), Seg__size(seg1) );
+               VG_(pp_ExeContext)(Seg__where(seg1));
+            }
+            which = "Second arg";
          } else {
-            emit( "%sFirst arg derived from address %#lx of "
-                  "%lu-byte block alloc'd%s\n",
-                  auxw_pre, Seg__addr(seg1), Seg__size(seg1), auxw_post );
-            VG_(pp_ExeContext)(Seg__where(seg1));
+            which = "Both args";
          }
-         which = "Second arg";
+         if (NONPTR == seg2) {
+            emit( "  <auxwhat>%s not a pointer</auxwhat>\n", which );
+         } else {
+            emit( "  <auxwhat>%s derived from address %#lx of "
+                  "%lu-byte block alloc'd</auxwhat>\n",
+                  which, Seg__addr(seg2), Seg__size(seg2) );
+            VG_(pp_ExeContext)(Seg__where(seg2));
+         }
+
       } else {
-         which = "Both args";
+
+         emit( "Invalid arguments to %s\n",
+               xe->XE.Arith.opname );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+         if (seg1 != seg2) {
+            if (NONPTR == seg1) {
+               emit( " First arg not a pointer\n" );
+            } else if (UNKNOWN == seg1) {
+               emit( " First arg may be a pointer\n" );
+            } else {
+               emit( " First arg derived from address %#lx of "
+                     "%lu-byte block alloc'd\n",
+                     Seg__addr(seg1), Seg__size(seg1) );
+               VG_(pp_ExeContext)(Seg__where(seg1));
+            }
+            which = "Second arg";
+         } else {
+            which = "Both args";
+         }
+         if (NONPTR == seg2) {
+            emit( " %s not a pointer\n", which );
+         } else {
+            emit( " %s derived from address %#lx of "
+                  "%lu-byte block alloc'd\n",
+                  which, Seg__addr(seg2), Seg__size(seg2) );
+            VG_(pp_ExeContext)(Seg__where(seg2));
+         }
+
       }
-      if (NONPTR == seg2) {
-         emit( "%s%s not a pointer%s\n", auxw_pre, which, auxw_post );
-      } else {
-         emit( "%s%s derived from address %#lx of "
-               "%lu-byte block alloc'd%s\n",
-               auxw_pre, which, Seg__addr(seg2), Seg__size(seg2), auxw_post );
-         VG_(pp_ExeContext)(Seg__where(seg2));
-      }
+
       break;
    }
 
@@ -441,46 +557,87 @@ void pc_pp_Error ( Error* err )
          tl_assert(is_known_segment(seglo));
          tl_assert(Seg__is_freed(seglo)); // XXX what if it's now recycled?
 
-         if (VG_(clo_xml))
-            VG_(printf_xml)("  <kind>SysParam</kind>\n");
-         emit( "%s%s%s contains unaddressable byte(s)%s\n",
-               what_pre, what, s, what_post );
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xml) {
 
-         emit( "%sAddress %#lx is %ld bytes inside a "
-               "%ld-byte block free'd%s\n",
-               auxw_pre, lo, lo-Seg__addr(seglo),
-               Seg__size(seglo), auxw_post );
-         VG_(pp_ExeContext)(Seg__where(seglo));
+            emit( "  <kind>SysParam</kind>\n");
+            emit( "  <what>%s%s contains unaddressable byte(s)</what>\n",
+                  what, s );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            emit( "  <auxwhat>Address %#lx is %ld bytes inside a "
+                  "%ld-byte block free'd</auxwhat>\n",
+                  lo, lo-Seg__addr(seglo), Seg__size(seglo) );
+            VG_(pp_ExeContext)(Seg__where(seglo));
+
+         } else {
+
+            emit( " %s%s contains unaddressable byte(s)\n",
+                  what, s );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            emit( " Address %#lx is %ld bytes inside a "
+                  "%ld-byte block free'd\n",
+                  lo, lo-Seg__addr(seglo), Seg__size(seglo) );
+            VG_(pp_ExeContext)(Seg__where(seglo));
+
+         }
+
       } else {
          // mismatch
-         if (VG_(clo_xml))
-            VG_(printf_xml)("  <kind>SysParam</kind>\n");
-         emit( "%s%s%s is non-contiguous%s\n",
-               what_pre, what, s, what_post );
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
-         if (UNKNOWN == seglo) {
-            emit( "%sFirst byte is not inside a known block%s\n",
-                  auxw_pre, auxw_post );
+         if (xml) {
+
+            emit( "  <kind>SysParam</kind>\n");
+            emit( "  <what>%s%s is non-contiguous</what>\n",
+                  what, s );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            if (UNKNOWN == seglo) {
+               emit( "  <auxwhat>First byte is "
+                        "not inside a known block</auxwhat>\n" );
+            } else {
+               emit( "  <auxwhat>First byte (%#lx) is %ld bytes inside a "
+                     "%ld-byte block alloc'd</auxwhat>\n",
+                     lo, lo-Seg__addr(seglo), Seg__size(seglo) );
+               VG_(pp_ExeContext)(Seg__where(seglo));
+            }
+   
+            if (UNKNOWN == seghi) {
+               emit( "  <auxwhat>Last byte is "
+                        "not inside a known block</auxwhat>\n" );
+            } else {
+               emit( "  <auxwhat>Last byte (%#lx) is %ld bytes inside a "
+                     "%ld-byte block alloc'd</auxwhat>\n",
+                     hi, hi-Seg__addr(seghi), Seg__size(seghi) );
+               VG_(pp_ExeContext)(Seg__where(seghi));
+            }
+
          } else {
-            emit( "%sFirst byte (%#lx) is %ld bytes inside a "
-                  "%ld-byte block alloc'd%s\n",
-                  auxw_pre, lo, lo-Seg__addr(seglo), 
-                  Seg__size(seglo), auxw_post );
-            VG_(pp_ExeContext)(Seg__where(seglo));
+
+            emit( "%s%s is non-contiguous\n",
+                  what, s );
+            VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+   
+            if (UNKNOWN == seglo) {
+               emit( " First byte is not inside a known block\n" );
+            } else {
+               emit( " First byte (%#lx) is %ld bytes inside a "
+                     "%ld-byte block alloc'd\n",
+                     lo, lo-Seg__addr(seglo), Seg__size(seglo) );
+               VG_(pp_ExeContext)(Seg__where(seglo));
+            }
+   
+            if (UNKNOWN == seghi) {
+               emit( " Last byte is not inside a known block\n" );
+            } else {
+               emit( " Last byte (%#lx) is %ld bytes inside a "
+                     "%ld-byte block alloc'd\n",
+                     hi, hi-Seg__addr(seghi), Seg__size(seghi) );
+               VG_(pp_ExeContext)(Seg__where(seghi));
+            }
+
          }
 
-         if (UNKNOWN == seghi) {
-            emit( "%sLast byte is not inside a known block%s\n",
-                  auxw_pre, auxw_post );
-         } else {
-            emit( "%sLast byte (%#lx) is %ld bytes inside a "
-                  "%ld-byte block alloc'd%s\n",
-                  auxw_pre, hi, hi-Seg__addr(seghi),
-                  Seg__size(seghi), auxw_post );
-            VG_(pp_ExeContext)(Seg__where(seghi));
-         }
       }
       break;
    }
@@ -497,38 +654,71 @@ UInt pc_update_Error_extra ( Error* err )
    tl_assert(xe);
    switch (xe->tag) {
       case XE_SorG:
-         return sizeof(XError);
+         break;
       case XE_Heap: {
-         tl_assert(sizeof(xe->XE.Heap.descr1) == sizeof(xe->XE.Heap.descr2));
-         tl_assert(sizeof(xe->XE.Heap.descr1) > 0);
+         Bool have_descr;
+
          tl_assert(sizeof(xe->XE.Heap.datasym) > 0);
-         VG_(memset)(&xe->XE.Heap.descr1, 0, sizeof(xe->XE.Heap.descr1));
-         VG_(memset)(&xe->XE.Heap.descr2, 0, sizeof(xe->XE.Heap.descr2));
+         xe->XE.Heap.datasymoff = 0;
+         xe->XE.Heap.datasym[0] = 0;
+
+         tl_assert(!xe->XE.Heap.descr1);
+         tl_assert(!xe->XE.Heap.descr2);
+
+         xe->XE.Heap.descr1
+            = VG_(newXA)( VG_(malloc), "pc.update_extra.Heap.descr1",
+                          VG_(free), sizeof(HChar) );
+         xe->XE.Heap.descr2
+            = VG_(newXA)( VG_(malloc), "pc.update_extra.Heap.descr1",
+                          VG_(free), sizeof(HChar) );
+
          VG_(memset)(&xe->XE.Heap.datasym, 0, sizeof(xe->XE.Heap.datasym));
          xe->XE.Heap.datasymoff = 0;
-         if (VG_(get_data_description)( &xe->XE.Heap.descr1[0],
-                                        &xe->XE.Heap.descr2[0],
-                                        sizeof(xe->XE.Heap.descr1)-1,
-                                        xe->XE.Heap.addr )) {
-            tl_assert(xe->XE.Heap.descr1[sizeof(xe->XE.Heap.descr1)-1] == 0);
-            tl_assert(xe->XE.Heap.descr1[sizeof(xe->XE.Heap.descr2)-1] == 0);
+
+         have_descr
+            = VG_(get_data_description)( xe->XE.Heap.descr1,
+                                         xe->XE.Heap.descr2,
+                                         xe->XE.Heap.addr );
+
+         /* If there's nothing in descr1/2, free it.  Why is it safe to
+            to VG_(indexXA) at zero here?  Because
+            VG_(get_data_description) guarantees to zero terminate
+            descr1/2 regardless of the outcome of the call.  So there's
+            always at least one element in each XA after the call.
+         */
+         if (0 == VG_(strlen)( VG_(indexXA)( xe->XE.Heap.descr1, 0 ))
+             || !have_descr) {
+            VG_(deleteXA)( xe->XE.Heap.descr1 );
+            xe->XE.Heap.descr1 = NULL;
          }
-         else
-         if (VG_(get_datasym_and_offset)( xe->XE.Heap.addr,
-                                          &xe->XE.Heap.datasym[0],
-                                          sizeof(xe->XE.Heap.datasym)-1,
-                                          &xe->XE.Heap.datasymoff )) {
-            tl_assert(xe->XE.Heap.datasym[sizeof(xe->XE.Heap.datasym)-1] == 0);
+         if (0 == VG_(strlen)( VG_(indexXA)( xe->XE.Heap.descr2, 0 ))
+             || !have_descr) {
+            VG_(deleteXA)( xe->XE.Heap.descr2 );
+            xe->XE.Heap.descr2 = NULL;
          }
-         return sizeof(XError);
+
+         /* If Dwarf3 info produced nothing useful, see at least if
+            we can fish something useful out of the ELF symbol info. */
+         if (!have_descr) {
+            if (VG_(get_datasym_and_offset)(
+                   xe->XE.Heap.addr, &xe->XE.Heap.datasym[0],
+                   sizeof(xe->XE.Heap.datasym)-1,
+                   &xe->XE.Heap.datasymoff )
+               ) {
+               tl_assert(xe->XE.Heap.datasym[sizeof(xe->XE.Heap.datasym)-1] 
+                         == 0);
+            }
+         }
+         break;
       }
       case XE_Arith:
-         return sizeof(XError);
+         break;
       case XE_SysParam:
-         return sizeof(XError);
+         break;
       default:
          VG_(tool_panic)("update_extra");
    }
+   return sizeof(XError);
 }
 
 Bool pc_is_recognised_suppression ( Char* name, Supp *su )
