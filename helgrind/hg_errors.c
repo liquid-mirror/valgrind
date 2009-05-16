@@ -183,8 +183,8 @@ typedef
             Thread* mb_confaccthr;
             Int   mb_confaccSzB;
             Bool  mb_confaccIsW;
-            Char  descr1[96];
-            Char  descr2[96];
+            XArray* descr1; /* XArray* of HChar */
+            XArray* descr2; /* XArray* of HChar */
          } Race;
          struct {
             Thread* thr;  /* doing the unlocking */
@@ -251,6 +251,7 @@ UInt HG_(update_extra) ( Error* err )
    //}
 
    if (xe->tag == XE_Race) {
+
       /* See if we can come up with a source level description of the
          raced-upon address.  This is potentially expensive, which is
          why it's only done at the update_extra point, not when the
@@ -260,17 +261,38 @@ UInt HG_(update_extra) ( Error* err )
       if (0)
          VG_(printf)("HG_(update_extra): "
                      "%d conflicting-event queries\n", xxx);
-      tl_assert(sizeof(xe->XE.Race.descr1) == sizeof(xe->XE.Race.descr2));
-      if (VG_(get_data_description)(
-                &xe->XE.Race.descr1[0],
-                &xe->XE.Race.descr2[0],
-                sizeof(xe->XE.Race.descr1)-1,
-                xe->XE.Race.data_addr )) {
-         tl_assert( xe->XE.Race.descr1
-                       [ sizeof(xe->XE.Race.descr1)-1 ] == 0);
-         tl_assert( xe->XE.Race.descr2
-                       [ sizeof(xe->XE.Race.descr2)-1 ] == 0);
+      tl_assert(!xe->XE.Race.descr1);
+      tl_assert(!xe->XE.Race.descr2);
+
+      xe->XE.Race.descr1
+         = VG_(newXA)( HG_(zalloc), "hg.update_extra.Race.descr1",
+                       HG_(free), sizeof(HChar) );
+      xe->XE.Race.descr2
+         = VG_(newXA)( HG_(zalloc), "hg.update_extra.Race.descr2",
+                       HG_(free), sizeof(HChar) );
+
+      (void) VG_(get_data_description)( xe->XE.Race.descr1,
+                                        xe->XE.Race.descr2,
+                                        xe->XE.Race.data_addr );
+
+      /* If there's nothing in descr1/2, free it.  Why is it safe to
+         to VG_(indexXA) at zero here?  Because
+         VG_(get_data_description) guarantees to zero terminate
+         descr1/2 regardless of the outcome of the call.  So there's
+         always at least one element in each XA after the call.
+      */
+      if (0 == VG_(strlen)( VG_(indexXA)( xe->XE.Race.descr1, 0 ))) {
+         VG_(deleteXA)( xe->XE.Race.descr1 );
+         xe->XE.Race.descr1 = NULL;
       }
+      if (0 == VG_(strlen)( VG_(indexXA)( xe->XE.Race.descr2, 0 ))) {
+         VG_(deleteXA)( xe->XE.Race.descr2 );
+         xe->XE.Race.descr2 = NULL;
+      }
+
+      /* And poke around in the conflicting-event map, to see if we
+         can rustle up a plausible-looking conflicting memory access
+         to show. */
       { Thr* thrp = NULL;
         ExeContext* wherep = NULL;
         Addr  acc_addr = xe->XE.Race.data_addr;
@@ -333,7 +355,11 @@ void HG_(record_error_Race) ( Thread* thr,
    xe.XE.Race.thr         = thr;
    tl_assert(isWrite == False || isWrite == True);
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
-   xe.XE.Race.descr1[0] = xe.XE.Race.descr2[0] = 0;
+   /* Skip on the detailed description of the raced-on address at this
+      point; it's expensive.  Leave it for the update_extra function
+      if we ever make it that far. */
+   tl_assert(xe.XE.Race.descr1 == NULL);
+   tl_assert(xe.XE.Race.descr2 == NULL);
    // FIXME: tid vs thr
    // Skip on any of the conflicting-access info at this point.
    // It's expensive to obtain, and this error is more likely than
@@ -540,20 +566,36 @@ static void emit_no_f_c ( HChar* format, ... )
 
 /* Announce (that is, print the point-of-creation) of 'thr'.  Only do
    this once, as we only want to see these announcements once per
-   thread.  For the moment, don't do this in XML mode, as there is no
-   provision for representing the result in XML Protocol 4 output.
+   thread.  Returned Bool indicates whether or not an announcement was
+   made.
 */
-static void announce_one_thread ( Thread* thr ) 
+static Bool announce_one_thread ( Thread* thr ) 
 {
    tl_assert(HG_(is_sane_Thread)(thr));
    tl_assert(thr->errmsg_index >= 1);
-   if (VG_(clo_xml))
-      return;
-   if (!thr->announced) {
+   if (thr->announced)
+      return False;
+
+   if (VG_(clo_xml)) {
+
+      VG_(printf_xml)("<announcethread>\n");
+      VG_(printf_xml)("  <hthreadid>%d</threadid>\n", thr->errmsg_index);
       if (thr->errmsg_index == 1) {
          tl_assert(thr->created_at == NULL);
-         VG_(message)(Vg_UserMsg, "Thread #%d is the program's root thread\n",
-                                  thr->errmsg_index);
+         VG_(printf_xml)("  <isrootthread></isrootthread>\n");
+      } else {
+         tl_assert(thr->created_at != NULL);
+         VG_(pp_ExeContext)( thr->created_at );
+      }
+      VG_(printf_xml)("</announcethread>\n\n");
+
+   } else {
+
+      if (thr->errmsg_index == 1) {
+         tl_assert(thr->created_at == NULL);
+         VG_(message)(Vg_UserMsg, 
+                      "Thread #%d is the program's root thread\n",
+                       thr->errmsg_index);
       } else {
          tl_assert(thr->created_at != NULL);
          VG_(message)(Vg_UserMsg, "Thread #%d was created\n",
@@ -561,146 +603,283 @@ static void announce_one_thread ( Thread* thr )
          VG_(pp_ExeContext)( thr->created_at );
       }
       VG_(message)(Vg_UserMsg, "\n");
-      thr->announced = True;
+
+   }
+
+   thr->announced = True;
+   return True;
+}
+
+
+/* This is the "this error is due to be printed shortly; so have a
+   look at it any print any preamble you want" function.  We use it to
+   announce any previously un-announced threads in the upcoming error
+   message.
+*/
+void HG_(before_pp_Error) ( Error* err )
+{
+   XError* xe;
+   tl_assert(err);
+   xe = (XError*)VG_(get_error_extra)(err);
+   tl_assert(xe);
+
+   switch (VG_(get_error_kind)(err)) {
+      case XE_Misc:
+         announce_one_thread( xe->XE.Misc.thr );
+         break;
+      case XE_LockOrder:
+         announce_one_thread( xe->XE.LockOrder.thr );
+         break;
+      case XE_PthAPIerror:
+         announce_one_thread( xe->XE.PthAPIerror.thr );
+         break;
+      case XE_UnlockBogus:
+         announce_one_thread( xe->XE.UnlockBogus.thr );
+         break;
+      case XE_UnlockForeign:
+         announce_one_thread( xe->XE.UnlockForeign.thr );
+         announce_one_thread( xe->XE.UnlockForeign.owner );
+         break;
+      case XE_UnlockUnlocked:
+         announce_one_thread( xe->XE.UnlockUnlocked.thr );
+         break;
+      case XE_Race:
+         announce_one_thread( xe->XE.Race.thr );
+         if (xe->XE.Race.mb_confaccthr)
+            announce_one_thread( xe->XE.Race.mb_confaccthr );
+         break;
+      default:
+         tl_assert(0);
    }
 }
 
 
 void HG_(pp_Error) ( Error* err )
 {
-   HChar* what_pre0 = VG_(clo_xml) ? "  <what>"    : "";
-   HChar* what_pre3 = VG_(clo_xml) ? "  <what>"    : "   ";
-   HChar* what_post = VG_(clo_xml) ? "</what>"     : "";
-   HChar* auxw_pre1 = VG_(clo_xml) ? "  <auxwhat>" : " ";
-   HChar* auxw_pre2 = VG_(clo_xml) ? "  <auxwhat>" : "  ";
-   HChar* auxw_post = VG_(clo_xml) ? "</auxwhat>"  : "";
+   const Bool xml = VG_(clo_xml); /* a shorthand, that's all */
 
    XError *xe = (XError*)VG_(get_error_extra)(err);
+   tl_assert(xe);
 
    switch (VG_(get_error_kind)(err)) {
 
    case XE_Misc: {
-      tl_assert(xe);
       tl_assert( HG_(is_sane_Thread)( xe->XE.Misc.thr ) );
-      announce_one_thread( xe->XE.Misc.thr );
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>Misc</kind>\n");
-      emit( "%sThread #%d: %s%s\n",
-            what_pre0,
-            (Int)xe->XE.Misc.thr->errmsg_index,
-            xe->XE.Misc.errstr,
-            what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      if (xml) {
+
+         emit( "  <kind>Misc</kind>\n");
+         emit( "  <xwhat>\n" );
+         emit( "    <text>Thread #%d: %s</text>\n",
+               (Int)xe->XE.Misc.thr->errmsg_index,
+               xe->XE.Misc.errstr );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.Misc.thr->errmsg_index );
+         emit( "  </xwhat>\n" );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      } else {
+
+         emit( "Thread #%d: %s\n",
+               (Int)xe->XE.Misc.thr->errmsg_index,
+               xe->XE.Misc.errstr );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      }
       break;
    }
 
    case XE_LockOrder: {
-      tl_assert(xe);
       tl_assert( HG_(is_sane_Thread)( xe->XE.LockOrder.thr ) );
-      announce_one_thread( xe->XE.LockOrder.thr );
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>LockOrder</kind>\n");
-      emit( "%sThread #%d: lock order \"%p before %p\" violated%s\n",
-            what_pre0,
-            (Int)xe->XE.LockOrder.thr->errmsg_index,
-            (void*)xe->XE.LockOrder.before_ga,
-            (void*)xe->XE.LockOrder.after_ga,
-            what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
-         emit(
-            "%sRequired order was established by acquisition of lock at %p%s\n",
-            auxw_pre2, (void*)xe->XE.LockOrder.before_ga, auxw_post
-         );
-         VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
-         emit(
-            "%sfollowed by a later acquisition of lock at %p%s\n",
-            auxw_pre2, (void*)xe->XE.LockOrder.after_ga, auxw_post
-         );
-         VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
+
+      if (xml) {
+
+         emit( "  <kind>LockOrder</kind>\n");
+         emit( "  <xwhat>\n" );
+         emit( "    <text>Thread #%d: lock order \"%p before %p\" "
+                    "violated</text>\n",
+               (Int)xe->XE.LockOrder.thr->errmsg_index,
+               (void*)xe->XE.LockOrder.before_ga,
+               (void*)xe->XE.LockOrder.after_ga );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.LockOrder.thr->errmsg_index );
+         emit( "  </xwhat>\n" );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
+            emit( "  <auxwhat>Required order was established by "
+                  "acquisition of lock at %p</auxwhat>\n",
+                  (void*)xe->XE.LockOrder.before_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
+            emit( "  <auxwhat>followed by a later acquisition "
+                  "of lock at %p</auxwhat>\n",
+                  (void*)xe->XE.LockOrder.after_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
+         }
+
+      } else {
+
+         emit( "Thread #%d: lock order \"%p before %p\" violated\n",
+               (Int)xe->XE.LockOrder.thr->errmsg_index,
+               (void*)xe->XE.LockOrder.before_ga,
+               (void*)xe->XE.LockOrder.after_ga );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
+            emit( "  Required order was established by "
+                  "acquisition of lock at %p\n",
+                  (void*)xe->XE.LockOrder.before_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
+            emit( "  followed by a later acquisition of lock at %p\n",
+                  (void*)xe->XE.LockOrder.after_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
+         }
+
       }
+
       break;
    }
 
    case XE_PthAPIerror: {
-      tl_assert(xe);
       tl_assert( HG_(is_sane_Thread)( xe->XE.PthAPIerror.thr ) );
-      announce_one_thread( xe->XE.PthAPIerror.thr );
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>PthAPIerror</kind>\n");
-      emit_no_f_c( "%sThread #%d's call to %t failed%s\n",
-                   what_pre0, (Int)xe->XE.PthAPIerror.thr->errmsg_index,
-                   xe->XE.PthAPIerror.fnname, what_post );
-      emit( "%swith error code %ld (%s)%s\n",
-            what_pre3,
-            xe->XE.PthAPIerror.err, xe->XE.PthAPIerror.errstr,
-            what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      if (xml) {
+
+         emit( "  <kind>PthAPIerror</kind>\n");
+         emit( "  <xwhat>\n" );
+         emit_no_f_c(
+            "    <text>Thread #%d's call to %t failed</text>\n",
+            (Int)xe->XE.PthAPIerror.thr->errmsg_index,
+            xe->XE.PthAPIerror.fnname );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.PthAPIerror.thr->errmsg_index );
+         emit( "  </xwhat>\n" );
+         emit( "  <what>with error code %ld (%s)</what>\n",
+               xe->XE.PthAPIerror.err, xe->XE.PthAPIerror.errstr );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      } else {
+
+         emit_no_f_c( "Thread #%d's call to %t failed\n",
+                      (Int)xe->XE.PthAPIerror.thr->errmsg_index,
+                      xe->XE.PthAPIerror.fnname );
+         emit( "   with error code %ld (%s)\n",
+               xe->XE.PthAPIerror.err, xe->XE.PthAPIerror.errstr );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      }
+
       break;
    }
 
    case XE_UnlockBogus: {
-      tl_assert(xe);
       tl_assert( HG_(is_sane_Thread)( xe->XE.UnlockBogus.thr ) );
-      announce_one_thread( xe->XE.UnlockBogus.thr );
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>UnlockBogus</kind>\n");
-      emit( "%sThread #%d unlocked an invalid lock at %p %s\n",
-            what_pre0,
-            (Int)xe->XE.UnlockBogus.thr->errmsg_index,
-            (void*)xe->XE.UnlockBogus.lock_ga,
-            what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      if (xml) {
+
+         emit( "  <kind>UnlockBogus</kind>\n");
+         emit( "  <xwhat>\n" );
+         emit( "    <text>Thread #%d unlocked an invalid "
+                    "lock at %p</text>\n",
+               (Int)xe->XE.UnlockBogus.thr->errmsg_index,
+               (void*)xe->XE.UnlockBogus.lock_ga );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.UnlockBogus.thr->errmsg_index );
+         emit( "  </xwhat>\n" );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      } else {
+
+         emit( "Thread #%d unlocked an invalid lock at %p\n",
+               (Int)xe->XE.UnlockBogus.thr->errmsg_index,
+               (void*)xe->XE.UnlockBogus.lock_ga );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+      }
+
       break;
    }
 
    case XE_UnlockForeign: {
-      tl_assert(xe);
       tl_assert( HG_(is_sane_LockP)( xe->XE.UnlockForeign.lock ) );
       tl_assert( HG_(is_sane_Thread)( xe->XE.UnlockForeign.owner ) );
       tl_assert( HG_(is_sane_Thread)( xe->XE.UnlockForeign.thr ) );
-      announce_one_thread( xe->XE.UnlockForeign.thr );
-      announce_one_thread( xe->XE.UnlockForeign.owner );
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>UnlockForeign</kind>\n");
-      emit( "%sThread #%d unlocked lock at %p "
-            "currently held by thread #%d%s\n",
-            what_pre0,
-            (Int)xe->XE.UnlockForeign.thr->errmsg_index,
-            (void*)xe->XE.UnlockForeign.lock->guestaddr,
-            (Int)xe->XE.UnlockForeign.owner->errmsg_index,
-            what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.UnlockForeign.lock->appeared_at) {
-         emit( "%sLock at %p was first observed%s\n",
-               auxw_pre2,
+
+      if (xml) {
+
+         emit( "  <kind>UnlockForeign</kind>\n");
+         emit( "  <xwhat>\n" );
+         emit( "    <text>Thread #%d unlocked lock at %p "
+                    "currently held by thread #%d</text>\n",
+               (Int)xe->XE.UnlockForeign.thr->errmsg_index,
                (void*)xe->XE.UnlockForeign.lock->guestaddr,
-               auxw_post );
-         VG_(pp_ExeContext)( xe->XE.UnlockForeign.lock->appeared_at );
+               (Int)xe->XE.UnlockForeign.owner->errmsg_index );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.UnlockForeign.thr->errmsg_index );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.UnlockForeign.owner->errmsg_index );
+         emit( "  </xwhat>\n" );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+         if (xe->XE.UnlockForeign.lock->appeared_at) {
+            emit( "  <auxwhat>Lock at %p was first observed</auxwhat>\n",
+                  (void*)xe->XE.UnlockForeign.lock->guestaddr );
+            VG_(pp_ExeContext)( xe->XE.UnlockForeign.lock->appeared_at );
+         }
+
+      } else {
+
+         emit( "Thread #%d unlocked lock at %p "
+               "currently held by thread #%d\n",
+               (Int)xe->XE.UnlockForeign.thr->errmsg_index,
+               (void*)xe->XE.UnlockForeign.lock->guestaddr,
+               (Int)xe->XE.UnlockForeign.owner->errmsg_index );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xe->XE.UnlockForeign.lock->appeared_at) {
+            emit( "  Lock at %p was first observed\n",
+                  (void*)xe->XE.UnlockForeign.lock->guestaddr );
+            VG_(pp_ExeContext)( xe->XE.UnlockForeign.lock->appeared_at );
+         }
+
       }
+
       break;
    }
 
    case XE_UnlockUnlocked: {
-      tl_assert(xe);
       tl_assert( HG_(is_sane_LockP)( xe->XE.UnlockUnlocked.lock ) );
       tl_assert( HG_(is_sane_Thread)( xe->XE.UnlockUnlocked.thr ) );
-      announce_one_thread( xe->XE.UnlockUnlocked.thr );
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>UnlockUnlocked</kind>\n");
-      emit( "%sThread #%d unlocked a not-locked lock at %p %s\n",
-            what_pre0,
-            (Int)xe->XE.UnlockUnlocked.thr->errmsg_index,
-            (void*)xe->XE.UnlockUnlocked.lock->guestaddr,
-            what_post );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.UnlockUnlocked.lock->appeared_at) {
-         emit( "%sLock at %p was first observed%s\n",
-               auxw_pre2,
-               (void*)xe->XE.UnlockUnlocked.lock->guestaddr,
-               auxw_post );
-         VG_(pp_ExeContext)( xe->XE.UnlockUnlocked.lock->appeared_at );
+
+      if (xml) {
+
+         emit( "  <kind>UnlockUnlocked</kind>\n");
+         emit( "  <xwhat>\n" );
+         emit( "    <text>Thread #%d unlocked a "
+                    "not-locked lock at %p</text>\n",
+               (Int)xe->XE.UnlockUnlocked.thr->errmsg_index,
+               (void*)xe->XE.UnlockUnlocked.lock->guestaddr );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.UnlockUnlocked.thr->errmsg_index );
+         emit( "  </xwhat>\n" );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xe->XE.UnlockUnlocked.lock->appeared_at) {
+            emit( "  <auxwhat>Lock at %p was first observed</auxwhat>\n",
+                  (void*)xe->XE.UnlockUnlocked.lock->guestaddr );
+            VG_(pp_ExeContext)( xe->XE.UnlockUnlocked.lock->appeared_at );
+         }
+
+      } else {
+
+         emit( "Thread #%d unlocked a not-locked lock at %p\n",
+               (Int)xe->XE.UnlockUnlocked.thr->errmsg_index,
+               (void*)xe->XE.UnlockUnlocked.lock->guestaddr );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xe->XE.UnlockUnlocked.lock->appeared_at) {
+            emit( "  Lock at %p was first observed\n",
+                  (void*)xe->XE.UnlockUnlocked.lock->guestaddr );
+            VG_(pp_ExeContext)( xe->XE.UnlockUnlocked.lock->appeared_at );
+         }
+
       }
+
       break;
    }
 
@@ -712,49 +891,79 @@ void HG_(pp_Error) ( Error* err )
       szB       = xe->XE.Race.szB;
       err_ga = VG_(get_error_address)(err);
 
-      announce_one_thread( xe->XE.Race.thr );
+      tl_assert( HG_(is_sane_Thread)( xe->XE.Race.thr ));
       if (xe->XE.Race.mb_confaccthr)
-         announce_one_thread( xe->XE.Race.mb_confaccthr );
-      if (VG_(clo_xml))
-         VG_(printf_xml)( "  <kind>Race</kind>\n");
-      emit(
-         "%sPossible data race during %s of size %d "
-         "at %#lx by thread #%d%s\n",
-         what_pre0, what, szB, err_ga,
-         (Int)xe->XE.Race.thr->errmsg_index, what_post
-      );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.Race.mb_confacc) {
-         if (xe->XE.Race.mb_confaccthr) {
-            emit(
-               "%sThis conflicts with a previous %s of size %d "
-               "by thread #%d%s\n",
-               auxw_pre1,
-               xe->XE.Race.mb_confaccIsW ? "write" : "read",
-               xe->XE.Race.mb_confaccSzB,
-               xe->XE.Race.mb_confaccthr->errmsg_index,
-               auxw_post
-            );
-         } else {
-            // FIXME: can this ever happen?
-            emit(
-               "%sThis conflicts with a previous %s of size %d%s\n",
-               auxw_pre1,
-               xe->XE.Race.mb_confaccIsW ? "write" : "read",
-               xe->XE.Race.mb_confaccSzB,
-               auxw_post
-            );
+         tl_assert( HG_(is_sane_Thread)( xe->XE.Race.mb_confaccthr ));
+
+      if (xml) {
+
+         /* ------ XML ------ */
+         emit( "  <kind>Race</kind>\n" );
+         emit( "  <xwhat>\n" );
+         emit( "    <text>Possible data race during %s of size %d "
+                    "at %#lx by thread #%d</text>\n",
+              what, szB, err_ga, (Int)xe->XE.Race.thr->errmsg_index );
+         emit( "    <hthreadid>%d</hthreadid>\n",
+               (Int)xe->XE.Race.thr->errmsg_index );
+         emit( "  </xwhat>\n" );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+         if (xe->XE.Race.mb_confacc) {
+            if (xe->XE.Race.mb_confaccthr) {
+               emit( "  <xauxwhat>\n");
+               emit( "    <text>This conflicts with a previous %s of size %d "
+                               "by thread #%d</text>\n",
+                     xe->XE.Race.mb_confaccIsW ? "write" : "read",
+                     xe->XE.Race.mb_confaccSzB,
+                     xe->XE.Race.mb_confaccthr->errmsg_index );
+               emit( "    <hthreadid>%d</hthreadid>\n", 
+                     xe->XE.Race.mb_confaccthr->errmsg_index);
+               emit("  </xauxwhat>\n");
+            } else {
+               // FIXME: can this ever happen?
+               emit( "  <auxwhat>This conflicts with a previous %s "
+                     "of size %d</auxwhat>\n",
+                     xe->XE.Race.mb_confaccIsW ? "write" : "read",
+                     xe->XE.Race.mb_confaccSzB );
+            }
+            VG_(pp_ExeContext)( xe->XE.Race.mb_confacc );
          }
-         VG_(pp_ExeContext)( xe->XE.Race.mb_confacc );
+
+      } else {
+
+         /* ------ Text ------ */
+         emit( "Possible data race during %s of size %d "
+               "at %#lx by thread #%d\n",
+               what, szB, err_ga, (Int)xe->XE.Race.thr->errmsg_index );
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+         if (xe->XE.Race.mb_confacc) {
+            if (xe->XE.Race.mb_confaccthr) {
+               emit( " This conflicts with a previous %s of size %d "
+                     "by thread #%d\n",
+                     xe->XE.Race.mb_confaccIsW ? "write" : "read",
+                     xe->XE.Race.mb_confaccSzB,
+                     xe->XE.Race.mb_confaccthr->errmsg_index );
+            } else {
+               // FIXME: can this ever happen?
+               emit( " This conflicts with a previous %s of size %d\n",
+                     xe->XE.Race.mb_confaccIsW ? "write" : "read",
+                     xe->XE.Race.mb_confaccSzB );
+            }
+            VG_(pp_ExeContext)( xe->XE.Race.mb_confacc );
+         }
+
       }
 
-      /* If we have a better description of the address, show it. */
-      if (xe->XE.Race.descr1[0] != 0)
-         emit_no_f_c( "%s%t%s\n",
-                      auxw_pre1, &xe->XE.Race.descr1[0], auxw_post );
-      if (xe->XE.Race.descr2[0] != 0)
-         emit_no_f_c( "%s%t%s\n",
-                      auxw_pre1, &xe->XE.Race.descr2[0], auxw_post );
+      /* If we have a better description of the address, show it.
+         Note that in XML mode, it will already by nicely wrapped up
+         in tags, either <auxwhat> or <xauxwhat>, so we can just emit
+         it verbatim. */
+      if (xe->XE.Race.descr1)
+         emit( "%s%s\n", xml ? "  " : " ",
+                         (HChar*)VG_(indexXA)( xe->XE.Race.descr1, 0 ) );
+      if (xe->XE.Race.descr2)
+         emit( "%s%s\n", xml ? "  " : " ",
+                         (HChar*)VG_(indexXA)( xe->XE.Race.descr2, 0 ) );
 
       break; /* case XE_Race */
    } /* case XE_Race */
