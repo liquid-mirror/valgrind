@@ -31,6 +31,18 @@ was felt important to place the tool name right at the front along
 with the protocol number, for easy determination of parseability.
 
 
+How this specification is structured
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The TOPLEVEL nonterminal specifies top level XML output structure.  It
+is common to all error producing tools.
+
+TOPLEVEL references TOOLSPECIFICs for each tool, and these are defined
+differently for each tool.  Each TOOLSPECIFIC is an error, which is
+tool-specific.  For Helgrind, a TOOLSPECIFIC may also contain a
+so-called thread-announcement record (described below).
+
+
 Protocol 4 changes for Memcheck
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -159,7 +171,7 @@ the following in sequence:
   human-understandable.  In current Valgrind versions it is the
   elapsed wallclock time since process start.
 
-* Zero or more of (either ERROR or ERRORCOUNTS).
+* Zero or more of (either ERRORCOUNTS or TOOLSPECIFIC).
 
 * The following, indicating that the program has now finished, and
   that the any final wrapup (eg, for Memcheck, leak checking) is happening.
@@ -168,17 +180,17 @@ the following in sequence:
               <time>human-readable-time-string</time> 
      </status>
 
-* Zero or more of (either ERROR or ERRORCOUNTS).  In Memcheck's case
-  these will be complaints from the leak checker.  For Ptrcheck and
-  Helgrind we don't expect any output here (but the spec does not
+* Zero or more of (either ERRORCOUNTS or TOOLSPECIFIC).  In Memcheck's
+  case these will be complaints from the leak checker.  For Ptrcheck
+  and Helgrind we don't expect any output here (but the spec does not
   guarantee that either).
 
 * SUPPCOUNTS, indicating how many times each suppression was used.
 
 
-That's it.  The tool-specific definitions for ERROR are below; however
-let's first continue with some smaller nonterminals used in the
-construction of errors for all the tool types.
+That's it.  The tool-specific definitions for TOOLSPECIFIC are below;
+however let's first continue with some smaller nonterminals used in
+the construction of errors for all the tool types.
 
 
 ====================================================================
@@ -289,19 +301,77 @@ eg denoting "obj:/usr/X11R6/lib*/libX11.so.6.2", or
 eg denoting "fun:*libc_write"
 
 
+WHAT and XWHAT
+--------------
+
+WHAT supplies a single line of text, which is a human-understandable,
+primary description of an error.
+
+XWHAT is an extended version of WHAT.  It also contains a piece
+of text intended for human reading, but in addition may contain
+arbitrary other tagged data.  This extra data is tool-specific, and
+is intended to supply GUIs with links to other data in the 
+sequence of TOOLSPECIFICs, that are associated with the error.
+
+For example, we could get:
+
+  <what>Possible data race on address 0x12345678</what>
+
+or alternatively
+
+  <xwhat>
+     <text>Possible data race by thread #17 on address 0x12345678</text>
+     <threadid>17</threadid>
+  </xwhat>
+
+And presumably the <threadid>17</threadid> refers to some previously
+emitted entity in the stream of TOOLSPECIFICs for this tool.
+
+In an XWHAT, the <text> tag-pair is mandatory.  GUIs which don't want
+to handle the extra fields can just ignore them and display the text
+part.  In this way they have the option to present at least something
+useful to the user even in the case where the extra fields can't be
+handled, for whatever reason.
+
+A corollary of this is that the degenerate extended case
+
+   <xwhat> <text>T</text> </xwhat>
+
+is exactly equivalent to
+
+   <what>T</what>
+
+
+AUXWHAT and XAUXWHAT
+--------------------
+
+AUXWHAT is exactly like WHAT: a single line of text.  It provides
+additional, secondary description of an error, that should be shown to
+the user.
+
+XAUXWHAT relates to AUXWHAT in the same way XWHAT relates to WHAT: it
+wraps up extra tagged info along with the line of text that would be
+in the AUXWHAT.
+
+
 ====================================================================
 
-ERROR definition -- common fields
----------------------------------
+ERROR definition -- common structure
+------------------------------------
 
 ERROR defines an error, and is the most complex nonterminal.  For all
-of the tools, the first four fields and the last field are common:
+of the tools, the structure is mostly common, and always conforms to
+the following:
 
   <error>
      <unique>HEX64</unique>
      <tid>INT</tid>
      <kind>KIND</kind>
-     <what>TEXT</what>      (either 1 or 2 times)
+
+     (either WHAT or XWHAT)
+     optionally: (either WHAT or XWHAT)
+
+     STACK
 
      ... tool-specific fields ...
 
@@ -310,7 +380,7 @@ of the tools, the first four fields and the last field are common:
 
 
 * Each error contains a unique, arbitrary 64-bit hex number.  This is
-  used to refer to the error in ERRORCOUNTS nonterminals (see below).
+  used to refer to the error in ERRORCOUNTS nonterminals (see above).
 
 * The <tid> tag indicates the Valgrind thread number.  This value
   is arbitrary but may be used to determine which threads produced
@@ -321,13 +391,18 @@ of the tools, the first four fields and the last field are common:
   The tags themselves are tool-specific and are defined further
   below, for each tool.
 
-* The <what> tag gives a human-understandable description of the
-  error.  There may be two consecutive <what>TEXT</what> blocks, in
-  which case the second block gives further details, and should be
-  displayed by GUIs immediately following the first one.
+* The "(either WHAT or XWHAT)" gives a primary description of the
+  error.  WHAT and XWHAT are described above.
 
-* Finally, optionally, a SUPPRESSION may be provided.  This contains
-  a suppression that would hide the error.
+* Optionally, a second line of primary description may be present.
+
+* A STACK gives the primary source location for the error.
+
+* There then follow zero or more "... tool-specific fields ...",
+  which provide further (auxiliary) information about the error.
+
+* Optionally, as the last field, a SUPPRESSION may be provided.  This
+  contains a suppression that would hide the error.
 
 
 ====================================================================
@@ -523,35 +598,70 @@ The possible values are:
 
 ====================================================================
 
-ERROR definition for Helgrind
------------------------------
+TOOLSPECIFIC definition for Helgrind
+-------------------------------------
 
-The definition is:
+For Helgrind, a TOOLSPECIFIC may be one of two things:
 
-  <error>
-     <unique>HEX64</unique>
-     <tid>INT</tid>
-     <kind>KIND</kind>
-     <what>TEXT</what>      (either 1 or 2 times)
-
-     STACK
-
-     zero or more of (STACK or <auxwhat>TEXT</auxwhat>)
-
-     optionally: SUPPRESSION
-  </error>
+TOOLSPECIFIC = either ERROR or ANNOUNCETHREAD
 
 
-The first four fields and the last field are specified in "ERROR
-definition -- common fields" above.  The remaining fields are as
-follows:
+ANNOUNCETHREAD
+--------------
 
-* The primary STACK for this error, indicating where it occurred.
+The definition is
 
-* Some error types may have auxiliary information attached, expressed
-  as an arbitrary sequence of (STACK or <auxwhat>TEXT</auxwhat>).
-  These should be presented to the user in the sequence they appear in
-  the file, as they are intended to be read top-to-bottom.
+   <announcethread>
+      <hthreadid>INT</hthreadid>
+      STACK
+   </announcethread>
+
+This states the creation point of a thread, and gives it a unique
+"hthreadid", which may be referred to in subsequent ERRORs.  Note that
+
+1. The appearance of ANNOUNCETHREAD does not mean that the thread was
+   actually created at that point relative to any preceding or
+   following ERRORs in the output stream -- in general the thread will
+   have been created arbitrarily earlier.  Helgrind only "announces" a
+   thread when it needs to refer to it for the first time, in a
+   subsequent ERROR.
+
+2. The "hthreadid" is a number which uniquely identifies the thread
+   for the run - no other thread will have the same hthreadid.  The
+   hthreadid is a Helgrind-specific piece of information and is
+   unrelated to the <tid> fields in the common part of an ERROR.
+   Be careful not to confuse the two.
+
+
+ERROR details for Helgrind
+--------------------------
+
+The "... tool-specific fields ..." for Helgrind consist of
+zero or more of "(either AUXWHAT or XAUXWHAT or STACK)".
+They should be shown to the user in the order they appear.
+
+
+XWHATs (for definition, see above) may contain the following extra
+components (along with the mandatory <text>...</text> component):
+
+* <hthreadid>INT</hthreadid> fields.  These refer to ANNOUNCETHREADs
+  appearing previously in the scheme, and state the creation points of
+  the thread(s) concerned in the ERROR.  Hence it should be possible
+  for GUIs to show users stacks of the creation points of all threads
+  involved in each ERROR.
+
+
+XAUXWHATs (for definition, see above) may contain the following extra
+components (along with the mandatory <text>...</text> component):
+
+* <hthreadid>INT</hthreadid>, same meaning as when referred to in
+  XWHAT
+
+* <file>TEXT</file>, as defined in FRAME
+
+* <line>INT</line>, as defined in FRAME
+
+* <dir>TEXT</dir>, as defined in FRAME
 
 
 KIND for Helgrind
