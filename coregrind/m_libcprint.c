@@ -256,6 +256,17 @@ UInt VG_(snprintf) ( Char* buf, Int size, const HChar *format, ... )
 }
 
 
+/* --------- vcbprintf --------- */
+
+void VG_(vcbprintf)( void(*char_sink)(HChar, void* opaque),
+                     void* opaque,
+                     const HChar* format, va_list vargs )
+{
+   (void) VG_(debugLog_vprintf)
+             ( char_sink, opaque, format, vargs );
+}
+
+
 /* ---------------------------------------------------------------------
    percentify()
    ------------------------------------------------------------------ */

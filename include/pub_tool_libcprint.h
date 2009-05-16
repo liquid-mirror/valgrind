@@ -73,6 +73,12 @@ extern UInt VG_(vsnprintf)( Char* buf, Int size,
                                        const HChar *format, va_list vargs )
                           PRINTF_CHECK(3, 0);
 
+/* Yet another, totally general, version of vprintf, which hands all
+   output bytes to CHAR_SINK, passing it OPAQUE as the second arg. */
+extern void VG_(vcbprintf)( void(*char_sink)(HChar, void* opaque),
+                            void* opaque,
+                            const HChar* format, va_list vargs );
+
 /* These are the same as the non "_xml" versions above, except the
    output goes on the selected XML output channel instead of the
    normal one.
@@ -84,7 +90,6 @@ extern UInt VG_(vprintf_xml) ( const HChar *format, va_list vargs )
                              PRINTF_CHECK(1, 0);
 
 extern UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... );
-
 
 // Percentify n/m with d decimal places.  Includes the '%' symbol at the end.
 // Right justifies in 'buf'.
