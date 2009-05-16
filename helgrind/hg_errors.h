@@ -35,9 +35,10 @@
 
 /* The standard bundle of error management functions that we are
 required to present to the core/tool interface at startup. */
-Bool  HG_(eq_Error) ( VgRes not_used, Error* e1, Error* e2 );
-void  HG_(pp_Error) ( Error* err );
-UInt  HG_(update_extra) ( Error* err );
+Bool  HG_(eq_Error)        ( VgRes not_used, Error* e1, Error* e2 );
+void  HG_(before_pp_Error) ( Error* err );
+void  HG_(pp_Error)        ( Error* err );
+UInt  HG_(update_extra)    ( Error* err );
 Bool  HG_(recognised_suppression) ( Char* name, Supp *su );
 Bool  HG_(read_extra_suppression_info) ( Int fd, Char* buf, Int nBuf,
                                          Supp* su );
