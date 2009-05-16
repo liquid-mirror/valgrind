@@ -261,7 +261,8 @@ Bool VG_(showing_core_errors)(void)
    return VG_(needs).core_errors && VG_(clo_verbosity) >= 1 && !VG_(clo_xml);
 }
 
-/* Compare errors, to detect duplicates. */
+/* Compare errors, to detect duplicates. 
+*/
 static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
 {
    if (e1->ekind != e2->ekind) 
@@ -286,124 +287,10 @@ static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
    }
 }
 
-/* This prints an error, either in text or XML mode.  Note that in XML
-   mode, it does not print the trailing </error> tag.  That is so as
-   to allow callers to print more stuff (specificially, an XML-form
-   suppression for the error, by calling do_actions_on_error) before
-   the closing tag. */
-static void pp_Error ( Error* err )
-{
-   if (VG_(clo_xml)) {
-      VG_(printf_xml)("<error>\n");
-      VG_(printf_xml)("  <unique>0x%x</unique>\n", err->unique);
-      VG_(printf_xml)("  <tid>%d</tid>\n", err->tid);
-   }
 
-   if (!VG_(clo_xml)) {
-     if (VG_(tdict).tool_show_ThreadIDs_for_errors
-         && err->tid > 0 && err->tid != last_tid_printed) {
-         VG_(UMSG)("Thread %d:\n", err->tid );
-         last_tid_printed = err->tid;
-      }
-   }
-
-   switch (err->ekind) {
-      //(example code, see comment on CoreSuppKind above)
-      //case ThreadErr:
-      //   vg_assert(VG_(needs).core_errors);
-      //   VG_(tm_error_print)(err);
-      //   break;
-      default: 
-         if (VG_(needs).tool_errors)
-            VG_TDICT_CALL( tool_pp_Error, err );
-         else {
-            VG_(printf)("\nUnhandled error type: %u.  VG_(needs).tool_errors\n"
-                        "probably needs to be set?\n",
-                        err->ekind);
-            VG_(tool_panic)("unhandled error type");
-         }
-   }
-
-   // No .. the caller must do this.  See comment at the start of
-   // this fn.
-   //if (VG_(clo_xml))
-   //   VG_(printf_xml)("</error>\n");
-}
-
-/* Figure out if we want to perform a given action for this error, possibly
-   by asking the user. */
-Bool VG_(is_action_requested) ( Char* action, Bool* clo )
-{
-   Char ch, ch2;
-   Int res;
-
-   if (*clo == False)
-      return False;
-
-   VG_(UMSG)("\n");
-
-  again:
-   VG_(printf)(
-      "==%d== "
-      "---- %s ? --- [Return/N/n/Y/y/C/c] ---- ", 
-      VG_(getpid)(), action
-   );
-
-   res = VG_(read)(VG_(clo_input_fd), &ch, 1);
-   if (res != 1) goto ioerror;
-   /* res == 1 */
-   if (ch == '\n') return False;
-   if (ch != 'N' && ch != 'n' && ch != 'Y' && ch != 'y' 
-      && ch != 'C' && ch != 'c') goto again;
-
-   res = VG_(read)(VG_(clo_input_fd), &ch2, 1);
-   if (res != 1) goto ioerror;
-   if (ch2 != '\n') goto again;
-
-   /* No, don't want to do action. */
-   if (ch == 'n' || ch == 'N') return False;
-   /* Yes, want to do action. */
-   if (ch == 'y' || ch == 'Y') return True;
-   /* No, don't want to do action, and don't ask again either. */
-   vg_assert(ch == 'c' || ch == 'C');
-
-  ioerror:
-   *clo = False;
-   return False;
-}
-
-
-/* Construct an error */
-static __inline__
-void construct_error ( Error* err, ThreadId tid, ErrorKind ekind, Addr a,
-                       Char* s, void* extra, ExeContext* where )
-{
-   /* DO NOT MAKE unique_counter NON-STATIC */
-   static UInt unique_counter = 0;
-
-   tl_assert(tid < VG_N_THREADS);
-
-   /* Core-only parts */
-   err->unique   = unique_counter++;
-   err->next     = NULL;
-   err->supp     = NULL;
-   err->count    = 1;
-   err->tid      = tid;
-   if (NULL == where)
-     err->where = VG_(record_ExeContext)( tid, 0 );
-   else
-      err->where = where;
-
-   /* Tool-relevant parts */
-   err->ekind  = ekind;
-   err->addr   = a;
-   err->extra  = extra;
-   err->string = s;
-
-   /* sanity... */
-   vg_assert( tid < VG_N_THREADS );
-}
-
+/* Helper function for suppression generation: print a single line of
+   a suppression pseudo-stack-trace, either in XML or text mode.
+*/
 #define ERRTXT_LEN   4096
 
 static void printSuppForIp(UInt n, Addr ip)
@@ -430,6 +317,9 @@ static void printSuppForIp(UInt n, Addr ip)
    }
 }
 
+
+/* Generate a suppression for an error, either in text or XML mode.
+*/
 static void gen_suppression(Error* err)
 {
    ExeContext* ec      = VG_(get_error_where)(err);
@@ -472,10 +362,69 @@ static void gen_suppression(Error* err)
    }
 }
 
+
+/* Figure out if we want to perform a given action for this error,
+   possibly by asking the user.
+*/
+Bool VG_(is_action_requested) ( Char* action, Bool* clo )
+{
+   Char ch, ch2;
+   Int res;
+
+   /* First off, we shouldn't be asking the user anything if
+      we're in XML mode. */
+   if (VG_(clo_xml))
+      return False; /* That's a Nein, oder Nay as they say down here in B-W */
+
+   if (*clo == False)
+      return False;
+
+   VG_(UMSG)("\n");
+
+  again:
+   VG_(printf)(
+      "==%d== "
+      "---- %s ? --- [Return/N/n/Y/y/C/c] ---- ", 
+      VG_(getpid)(), action
+   );
+
+   res = VG_(read)(VG_(clo_input_fd), &ch, 1);
+   if (res != 1) goto ioerror;
+   /* res == 1 */
+   if (ch == '\n') return False;
+   if (ch != 'N' && ch != 'n' && ch != 'Y' && ch != 'y' 
+      && ch != 'C' && ch != 'c') goto again;
+
+   res = VG_(read)(VG_(clo_input_fd), &ch2, 1);
+   if (res != 1) goto ioerror;
+   if (ch2 != '\n') goto again;
+
+   /* No, don't want to do action. */
+   if (ch == 'n' || ch == 'N') return False;
+   /* Yes, want to do action. */
+   if (ch == 'y' || ch == 'Y') return True;
+   /* No, don't want to do action, and don't ask again either. */
+   vg_assert(ch == 'c' || ch == 'C');
+
+  ioerror:
+   *clo = False;
+   return False;
+}
+
+
+/* Do text-mode actions on error, that is, immediately after an error
+   is printed.  These are:
+   * possibly, attach to a debugger
+   * possibly, generate a suppression.
+   Note this should not be called in XML mode! 
+*/
 static 
 void do_actions_on_error(Error* err, Bool allow_db_attach)
 {
    Bool still_noisy = True;
+
+   /* Should be assured by caller */
+   vg_assert( ! VG_(clo_xml) );
 
    /* Perhaps we want a debugger attach at this point? */
    if (allow_db_attach &&
@@ -494,6 +443,119 @@ void do_actions_on_error(Error* err, Bool allow_db_attach)
    if (VG_(clo_gen_suppressions) == 1 && !still_noisy)
       VG_(clo_gen_suppressions) = 0;
 }
+
+
+/* Prints an error.  Not entirely simple because of the differences
+   between XML and text mode output.
+ 
+   In XML mode:
+
+   * calls the tool's pre-show method, so the tool can create any
+     preamble ahead of the message, if it wants.
+
+   * prints the opening tag, and the <unique> and <tid> fields
+
+   * prints the tool-specific parts of the message
+
+   * if suppression generation is required, a suppression
+
+   * the closing tag
+
+   In text mode:
+
+   * calls the tool's pre-show method, so the tool can create any
+     preamble ahead of the message, if it wants.
+
+   * prints the tool-specific parts of the message
+
+   * calls do_actions_on_error.  This optionally does a debugger
+     attach (and detach), and optionally prints a suppression; both
+     of these may require user input.
+*/
+static void pp_Error ( Error* err, Bool allow_db_attach )
+{
+   /* If this fails, you probably specified your tool's method
+      dictionary incorrectly. */
+   vg_assert(VG_(needs).tool_errors);
+
+   if (VG_(clo_xml)) {
+
+      /* Note, allow_db_attach is ignored in here. */
+ 
+      /* Ensure that suppression generation is either completely
+         enabled or completely disabled; either way, we won't require
+         any user input.  m_main.process_cmd_line_options should
+         ensure the asserted condition holds. */
+      vg_assert( VG_(clo_gen_suppressions) == 0 /* disabled */
+                 || VG_(clo_gen_suppressions) == 2 /* for all errors */ );
+
+      /* Pre-show it to the tool */
+      VG_TDICT_CALL( tool_before_pp_Error, err );
+   
+      /* standard preamble */
+      VG_(printf_xml)("<error>\n");
+      VG_(printf_xml)("  <unique>0x%x</unique>\n", err->unique);
+      VG_(printf_xml)("  <tid>%d</tid>\n", err->tid);
+
+      /* actually print it */
+      VG_TDICT_CALL( tool_pp_Error, err );
+
+      if (VG_(clo_gen_suppressions) > 0)
+        gen_suppression(err);
+
+      /* postamble */
+      VG_(printf_xml)("</error>\n");
+
+   } else {
+
+      VG_TDICT_CALL( tool_before_pp_Error, err );
+
+      if (VG_(tdict).tool_show_ThreadIDs_for_errors
+          && err->tid > 0 && err->tid != last_tid_printed) {
+         VG_(UMSG)("Thread %d:\n", err->tid );
+         last_tid_printed = err->tid;
+      }
+   
+      VG_TDICT_CALL( tool_pp_Error, err );
+
+      do_actions_on_error(err, allow_db_attach);
+
+   }
+}
+
+
+/* Construct an error */
+static
+void construct_error ( Error* err, ThreadId tid, ErrorKind ekind, Addr a,
+                       Char* s, void* extra, ExeContext* where )
+{
+   /* DO NOT MAKE unique_counter NON-STATIC */
+   static UInt unique_counter = 0;
+
+   tl_assert(tid < VG_N_THREADS);
+
+   /* Core-only parts */
+   err->unique   = unique_counter++;
+   err->next     = NULL;
+   err->supp     = NULL;
+   err->count    = 1;
+   err->tid      = tid;
+   if (NULL == where)
+     err->where = VG_(record_ExeContext)( tid, 0 );
+   else
+      err->where = where;
+
+   /* Tool-relevant parts */
+   err->ekind  = ekind;
+   err->addr   = a;
+   err->extra  = extra;
+   err->string = s;
+
+   /* sanity... */
+   vg_assert( tid < VG_N_THREADS );
+}
+
+
 
 /* Shared between VG_(maybe_record_error)() and VG_(unique_error)(),
    just for pretty printing purposes. */
@@ -651,20 +713,19 @@ void VG_(maybe_record_error) ( ThreadId tid,
    errors  = p;
    if (p->supp == NULL) {
       n_errs_found++;
+      /* A bit of prettyprinting, to ensure there's a blank line
+         in between each error. */
       if (!is_first_shown_context) {
          if (VG_(clo_xml))
             VG_(printf_xml)("\n");
          else
             VG_(UMSG)("\n");
       }
-      pp_Error(p);
+      /* Actually show the error; more complex than you might think. */
+      pp_Error( p, /*allow_db_attach*/True );
+      /* update stats */
       is_first_shown_context = False;
       n_errs_shown++;
-      do_actions_on_error(p, /*allow_db_attach*/True);
-      // Finish up the <error> block started by the call to pp_Error.  See
-      // comments on pp_Error for why pp_Error does not do this itself.
-      if (VG_(clo_xml))
-         VG_(printf_xml)("</error>\n");
    } else {
       n_errs_suppressed++;
       p->supp->count++;
@@ -703,20 +764,19 @@ Bool VG_(unique_error) ( ThreadId tid, ErrorKind ekind, Addr a, Char* s,
          n_errs_found++;
 
       if (print_error) {
+         /* A bit of prettyprinting, to ensure there's a blank line
+            in between each error. */
          if (!is_first_shown_context) {
             if (VG_(clo_xml))
                VG_(printf_xml)("\n");
             else
                VG_(UMSG)("\n");
          }
-         pp_Error(&err);
+         /* Actually show the error; more complex than you might think. */
+         pp_Error(&err, allow_db_attach);
+         /* update stats */
          is_first_shown_context = False;
          n_errs_shown++;
-         do_actions_on_error(&err, allow_db_attach);
-         // Finish up the <error> block started by the call to pp_Error.  See
-         // comments on pp_Error for why pp_Error does not do this itself.
-         if (VG_(clo_xml))
-            VG_(printf_xml)("</error>\n");
       }
       return False;
 
@@ -822,10 +882,9 @@ void VG_(show_all_errors) ( void )
       VG_(UMSG)("\n");
       VG_(UMSG)("%d errors in context %d of %d:\n",
                 p_min->count, i+1, n_err_contexts);
-      pp_Error( p_min );
-      // Finish up the <error> block started by the call to pp_Error.  See
-      // comments on pp_Error for why pp_Error does not do this itself.
-      // Except, we're not printing XML -- we'd have exited above if so.
+      pp_Error( p_min, False/*allow_db_attach*/ );
+
+      // We're not printing XML -- we'd have exited above if so.
       vg_assert(! VG_(clo_xml));
 
       if ((i+1 == VG_(clo_dump_error))) {
