@@ -358,6 +358,8 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
 
    vg_assert( VG_(args_for_valgrind) );
 
+   /* BEGIN command-line processing loop */
+
    for (i = 0; i < VG_(sizeXA)( VG_(args_for_valgrind) ); i++) {
 
       HChar* arg   = * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i );
@@ -574,6 +576,8 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
       }
    }
 
+   /* END command-line processing loop */
+
    /* Make VEX control parameters sane */
 
    if (VG_(clo_vex_control).guest_chase_thresh
@@ -608,28 +612,56 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
       /*NOTREACHED*/
    }
 
+   vg_assert( VG_(clo_gen_suppressions) >= 0 );
+   vg_assert( VG_(clo_gen_suppressions) <= 2 );
+
    /* If we've been asked to emit XML, mash around various other
       options so as to constrain the output somewhat, and to remove
-      any need for user input during the run. */
+      any need for user input during the run. 
+   */
    if (VG_(clo_xml)) {
-      /* Disable suppression generation (requires user input) */
-      //VG_(clo_gen_suppressions) = 0;
-      /* Disable attaching to GDB (requires user input) */
-      //VG_(clo_db_attach) = False;
-      /* Set a known verbosity level */
-      //VG_(clo_verbosity) = 1;
+
+      /* We can't allow --gen-suppressions=yes, since that requires us
+         to print the error and then ask the user if she wants a
+         suppression for it, but in XML mode we won't print it until
+         we know whether we also need to print a suppression.  Hence a
+         circular dependency.  So disallow this.
+         (--gen-suppressions=all is still OK since we don't need any
+         user interaction in this case.) */
+      if (VG_(clo_gen_suppressions) == 1) {
+         VG_(UMSG)(
+            "When --xml=yes is specified, only --gen-suppressions=no\n"
+            "or --gen-suppressions=all are allowed, but not "
+            "--gen-suppressions=yes.\n");
+         /* FIXME: this is really a misuse of VG_(err_bad_option). */
+         VG_(err_bad_option)(
+            "--xml=yes together with --gen-suppressions=yes");
+      }
+
+      /* We can't allow DB attaching (or we maybe could, but results
+         could be chaotic ..) since it requires user input.  Hence
+         disallow. */
+      if (VG_(clo_db_attach)) {
+         VG_(UMSG)("--db-attach=yes is not allowed in XML mode,\n"
+                  "as it would require user input.\n");
+         /* FIXME: this is really a misuse of VG_(err_bad_option). */
+         VG_(err_bad_option)(
+            "--xml=yes together with --db-attach=yes");
+      }
+
+      /* Disallow dump_error in XML mode; sounds like a recipe for
+         chaos.  No big deal; dump_error is a flag for debugging V
+         itself. */
+      if (VG_(clo_dump_error) > 0) {
+         /* FIXME: this is really a misuse of VG_(err_bad_option). */
+         VG_(err_bad_option)(
+            "--xml=yes together with --dump-error=");
+      }
+
       /* Disable error limits (this might be a bad idea!) */
       VG_(clo_error_limit) = False;
       /* Disable emulation warnings */
-      //VG_(clo_show_emwarns) = False;
-      /* Disable waiting for GDB to debug Valgrind */
-      //VG_(clo_wait_for_gdb) = False;
-      /* No file-descriptor leak checking yet */
-      //VG_(clo_track_fds) = False;
-      /* Disable timestamped output */
-      //VG_(clo_time_stamp) = False;
-      /* Disable heap profiling, since that prints lots of stuff. */
-      //VG_(clo_profile_heap) = False;
+
       /* Also, we want to set options for the leak checker, but that
          will have to be done in Memcheck's flag-handling code, not
          here. */
@@ -793,6 +825,21 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
          }
          break;
       }
+   }
+
+   /* If we've got this far, and XML mode was requested, but no XML
+      output channel appears to have been specified, just stop.  We
+      could continue, and XML output will simply vanish into nowhere,
+      but that is likely to confuse the hell out of users, which is
+      distinctly Ungood. */
+   if (VG_(clo_xml) && tmp_xml_fd == -1) {
+      VG_(UMSG)(
+          "--xml=yes has been specified, but there is no XML output\n"
+          "destination.  You must specify an XML output destination\n"
+          "using --xml-fd=, --xml-file= or --xml=socket=.\n" );
+      /* FIXME: this is really a misuse of VG_(err_bad_option). */
+      VG_(err_bad_option)(
+         "--xml=yes, but no XML destination specified");
    }
 
    // Finalise the output fds: the log fd ..
