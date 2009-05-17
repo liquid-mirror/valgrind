@@ -407,48 +407,42 @@ the following:
 
 ====================================================================
 
-ERROR definition for Memcheck
------------------------------
+TOOLSPECIFIC definition for Memcheck
+------------------------------------
 
-The definition is:
+For Memcheck, a TOOLSPECIFIC is simply an ERROR:
 
-  <error>
-     <unique>HEX64</unique>
-     <tid>INT</tid>
-     <kind>KIND</kind>
-     <what>TEXT</what>      (either 1 or 2 times)
-
-     optionally: <leakedbytes>INT</leakedbytes>
-     optionally: <leakedblocks>INT</leakedblocks>
-
-     STACK
-
-     zero, one or two: <auxwhat>TEXT</auxwhat>
-     optionally:       STACK
-     optionally:       ORIGIN
-
-     optionally: SUPPRESSION
-  </error>
+TOOLSPECIFIC = ERROR
 
 
-The first four fields and the last field are specified in "ERROR
-definition -- common fields" above.  The remaining fields are as
-follows:
+ERROR details for Memcheck
+--------------------------
 
-* For <kind> tags specifying a KIND of the form "Leak_*", the
-  optional <leakedbytes> and <leakedblocks> indicate the number of
-  bytes and blocks leaked by this error.
+The "... tool-specific fields ..." for Memcheck consist of zero or
+more of "(either AUXWHAT or XAUXWHAT or STACK)".  They should be shown
+to the user in the order they appear.
 
-* The primary STACK for this error, indicating where it occurred.
 
-* Some error types may have auxiliary information attached:
+XWHATs (for definition, see above) may contain the following extra
+components (along with the mandatory <text>...</text> component):
 
-     <auxwhat>TEXT</auxwhat> (zero, one or two) gives an auxiliary
-     human-readable description (usually of invalid addresses)
+* <leakedbytes>INT</leakedbytes>
 
-     STACK gives an auxiliary stack (usually the allocation/free point
-     of a block).  If this STACK is present then the
-     <auxwhat>TEXT</auxwhat> blocks will precede it.
+* <leakedblocks>INT</leakedblocks>
+
+These fields are used in errors that have a <kind> tag specifying a
+KIND of the form "Leak_*", to indicate the number of leaked bytes and
+blocks.
+
+
+XAUXWHATs (for definition, see above) may contain the following extra
+components (along with the mandatory <text>...</text> component):
+
+* <file>TEXT</file>, as defined in FRAME
+
+* <line>INT</line>, as defined in FRAME
+
+* <dir>TEXT</dir>, as defined in FRAME
 
 
 KIND for Memcheck
@@ -522,19 +516,6 @@ The possible values are:
       memory leak; pointers to un-freed blocks are still available
 
 
-ORIGIN
-------
-ORIGIN shows the origin of uninitialised data in errors that involve
-uninitialised data.  STACK shows the origin of the uninitialised
-value.  TEXT gives a human-understandable hint as to the meaning of
-the information in STACK.
-
-   <origin>
-      <what>TEXT<what>
-      STACK
-   </origin>
-
-
 ====================================================================
 
 TOOLSPECIFIC definition for Ptrcheck
@@ -542,7 +523,7 @@ TOOLSPECIFIC definition for Ptrcheck
 
 For Ptrcheck, a TOOLSPECIFIC is simply an ERROR:
 
-TOOLSPECIIFIC = ERROR
+TOOLSPECIFIC = ERROR
 
 
 ERROR details for Ptrcheck
@@ -554,14 +535,11 @@ They should be shown to the user in the order they appear.
 
 
 Ptrcheck does not produce any XWHAT records, despite the fact that
-"ERROR definition -- common structure" says it might do.
+"ERROR definition -- common structure" says that tools may do so.
 
 
 XAUXWHATs (for definition, see above) may contain the following extra
 components (along with the mandatory <text>...</text> component):
-
-* <hthreadid>INT</hthreadid>, same meaning as when referred to in
-  XWHAT
 
 * <file>TEXT</file>, as defined in FRAME
 
