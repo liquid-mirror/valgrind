@@ -575,13 +575,19 @@ categories.</para>
 
 <para>The single most important option.</para>
 
-<itemizedlist>
-  <listitem id="tool_name">
-    <para><option>--tool=&lt;name&gt;</option> [default=memcheck]</para>
-    <para>Run the Valgrind tool called <emphasis>name</emphasis>,
-    e.g. Memcheck, Cachegrind, etc.</para>
-  </listitem>
-</itemizedlist>
+<variablelist>
+
+  <varlistentry id="tool_name" xreflabel="--tool">
+    <term>
+      <option><![CDATA[--tool=<name> [default: memcheck] ]]></option>
+    </term>
+    <listitem>
+      <para>Run the Valgrind tool called <emphasis>name</emphasis>,
+      e.g. Memcheck, Cachegrind, etc.</para>
+    </listitem>
+  </varlistentry>
+
+</variablelist>
 
 </sect2>
 
