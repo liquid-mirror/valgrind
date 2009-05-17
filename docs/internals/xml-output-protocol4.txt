@@ -81,7 +81,10 @@ XWHAT, and between AUXWHAT and XAUXWHAT.
 
 The definition of Protocol 4 now follows.  It is structured similarly
 to that of the previous protocols, except that there is a separate
-definition of ERROR for each of Memcheck, Helgrind and Ptrcheck.
+definition of a nonterminal called TOOLSPECIFIC for each of Memcheck,
+Helgrind and Ptrcheck.  The XWHAT and XAUXWHAT nonterminals also have
+tool-specific components.  Apart from that, the structure is common
+to all supported tools.
 
 
 ====================================================================
