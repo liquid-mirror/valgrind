@@ -445,7 +445,7 @@ void MC_(pp_Error) ( Error* err )
          // the following code is untested.  Bad.
          if (xml) {
             emit( "  <kind>CoreMemError</kind>\n" );
-            emit( "  <what>%s contains unaddressable byte(s)</what>\n",
+            emiN( "  <what>%t contains unaddressable byte(s)</what>\n",
                   VG_(get_error_string)(err));
             VG_(pp_ExeContext)( VG_(get_error_where)(err) );
          } else {
@@ -503,7 +503,7 @@ void MC_(pp_Error) ( Error* err )
          MC_(any_value_errors) = True;
          if (xml) {
             emit( "  <kind>SyscallParam</kind>\n" );
-            emit( "  <what>Syscall param %s contains "
+            emiN( "  <what>Syscall param %t contains "
                   "uninitialised byte(s)</what>\n",
                   VG_(get_error_string)(err) );
             VG_(pp_ExeContext)( VG_(get_error_where)(err) );
@@ -525,7 +525,7 @@ void MC_(pp_Error) ( Error* err )
             MC_(any_value_errors) = True;
          if (xml) {
             emit( "  <kind>SyscallParam</kind>\n" );
-            emit( "  <what>Syscall param %s points to %s byte(s)</what>\n",
+            emiN( "  <what>Syscall param %t points to %s byte(s)</what>\n",
                   VG_(get_error_string)(err),
                   extra->Err.MemParam.isAddrErr 
                      ? "unaddressable" : "uninitialised" );
@@ -652,8 +652,8 @@ void MC_(pp_Error) ( Error* err )
          if (xml) {
             emit( "  <kind>Overlap</kind>\n" );
             if (extra->Err.Overlap.szB == 0) {
-               emit( "  <what>Source and destination overlap "
-                     "in %s(%#lx, %#lx)\n</what>\n",
+               emiN( "  <what>Source and destination overlap "
+                     "in %t(%#lx, %#lx)\n</what>\n",
                      VG_(get_error_string)(err),
                      extra->Err.Overlap.dst, extra->Err.Overlap.src );
             } else {
@@ -666,7 +666,7 @@ void MC_(pp_Error) ( Error* err )
             VG_(pp_ExeContext)( VG_(get_error_where)(err) );
          } else {
             if (extra->Err.Overlap.szB == 0) {
-               emit( "Source and destination overlap in %s(%#lx, %#lx)\n",
+               emiN( "Source and destination overlap in %t(%#lx, %#lx)\n",
                      VG_(get_error_string)(err),
                      extra->Err.Overlap.dst, extra->Err.Overlap.src );
             } else {
