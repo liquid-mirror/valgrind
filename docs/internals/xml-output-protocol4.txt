@@ -42,11 +42,16 @@ differently for each tool.  Each TOOLSPECIFIC is an error, which is
 tool-specific.  For Helgrind, a TOOLSPECIFIC may also contain a
 so-called thread-announcement record (described below).
 
+Overall there is a very high degree of format commonality between the
+three tools.  Once a GUI is able to display the output correctly for
+one tool, it should be easy to extend it for the other two.
+
 
 Protocol 4 changes for Memcheck
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Protocol 4 for Memcheck is identical to Protocol 3, except that
+Protocol 4 for Memcheck is similar to Protocol 3, but has a number
+of changes to make it fit in the common framework:
 
 - the SUPPCOUNTS nonterminal now appears after the "Zero or more
   ERRORs" block, and not before it.
@@ -57,11 +62,22 @@ Protocol 4 for Memcheck is identical to Protocol 3, except that
 - ERRORs for Memcheck may contain a SUPPRESSION field, which gives
   the corresponding suppression for it.
 
+- ERRORs for Memcheck now use the XWHAT and XAUXWHAT nonterminals, as
+  well as WHAT and XWHAT.
+
+- The ad-hoc blocks <leakedbytes> and <leakedblocks> used by Memcheck
+  have been moved inside the XWHAT for the relevant error kinds.  This
+  facilitates a common definition of ERROR across all three tools.
+
 The first two changes are required in order to correct a longstanding
 design flaw in the way Memcheck interacts with Valgrind's error
 management mechanism.  See bug #186790
 (https://bugs.kde.org/show_bug.cgi?id=186790).  The third change was
 requested in #191189 (https://bugs.kde.org/show_bug.cgi?id=191189).
+
+For GUI authors upgrading from Protocol 3 or earlier, the most
+significant new concept to grasp is the relationship between WHAT and
+XWHAT, and between AUXWHAT and XAUXWHAT.
 
 The definition of Protocol 4 now follows.  It is structured similarly
 to that of the previous protocols, except that there is a separate
@@ -97,9 +113,9 @@ Valgrind versions 3.0.0 and 3.0.1 emit protocol version 1.  Versions
 protocol version 3.  3.5.X emits version 4.
 
 The TEXT in <protocoltool> is either "memcheck", "helgrind" or
-"ptrcheck" and determines the allowed format of the ERROR nonterminal.
-Note that <protocoltool> is only present when the protocol version is
-4 or above.
+"exp-ptrcheck" and determines the allowed format of the ERROR
+nonterminal.  Note that <protocoltool> is only present when the
+protocol version is 4 or above.
 
 
 PROTOCOL for version 4
@@ -307,11 +323,14 @@ WHAT and XWHAT
 WHAT supplies a single line of text, which is a human-understandable,
 primary description of an error.
 
-XWHAT is an extended version of WHAT.  It also contains a piece
-of text intended for human reading, but in addition may contain
-arbitrary other tagged data.  This extra data is tool-specific, and
-is intended to supply GUIs with links to other data in the 
-sequence of TOOLSPECIFICs, that are associated with the error.
+XWHAT is an extended version of WHAT.  It also contains a piece of
+text intended for human reading, but in addition may contain arbitrary
+other tagged data.  This extra data is tool-specific.  One of its
+purposes is to supply GUIs with links to other data in the sequence of
+TOOLSPECIFICs, that are associated with the error.  Another purpose is
+wrap certain quantities (numbers, file names, etc) embedded in the
+message, so that the GUIs can get hold of them without having to parse
+the text itself.
 
 For example, we could get:
 
@@ -360,8 +379,8 @@ ERROR definition -- common structure
 ------------------------------------
 
 ERROR defines an error, and is the most complex nonterminal.  For all
-of the tools, the structure is mostly common, and always conforms to
-the following:
+of the tools, the structure is common, and always conforms to the
+following:
 
   <error>
      <unique>HEX64</unique>
@@ -373,7 +392,7 @@ the following:
 
      STACK
 
-     ... tool-specific fields ...
+     zero or more: (either AUXWHAT or XAUXWHAT or STACK)
 
      optionally: SUPPRESSION
   </error>
@@ -392,14 +411,19 @@ the following:
   below, for each tool.
 
 * The "(either WHAT or XWHAT)" gives a primary description of the
-  error.  WHAT and XWHAT are described above.
+  error.  WHAT and XWHAT are defined earlier in this file.  Any XWHATs
+  appearing here may contain tool-specific subcomponents.
 
 * Optionally, a second line of primary description may be present.
 
 * A STACK gives the primary source location for the error.
 
-* There then follow zero or more "... tool-specific fields ...",
-  which provide further (auxiliary) information about the error.
+* There then follow zero or more of "(either AUXWHAT or XAUXWHAT or
+  STACK)".  These give further (auxiliary) information about the
+  error, possibly including stack traces.  They should be shown to the
+  user in the order they appear.  AUXWHAT and XAUXWHAT are defined
+  earlier in this file.  Any XAUXWHATs appearing here may contain
+  tool-specific subcomponents.
 
 * Optionally, as the last field, a SUPPRESSION may be provided.  This
   contains a suppression that would hide the error.
@@ -417,11 +441,6 @@ TOOLSPECIFIC = ERROR
 
 ERROR details for Memcheck
 --------------------------
-
-The "... tool-specific fields ..." for Memcheck consist of zero or
-more of "(either AUXWHAT or XAUXWHAT or STACK)".  They should be shown
-to the user in the order they appear.
-
 
 XWHATs (for definition, see above) may contain the following extra
 components (along with the mandatory <text>...</text> component):
@@ -529,11 +548,6 @@ TOOLSPECIFIC = ERROR
 ERROR details for Ptrcheck
 --------------------------
 
-The "... tool-specific fields ..." for Ptrcheck consist of
-zero or more of "(either AUXWHAT or XAUXWHAT or STACK)".
-They should be shown to the user in the order they appear.
-
-
 Ptrcheck does not produce any XWHAT records, despite the fact that
 "ERROR definition -- common structure" says that tools may do so.
 
@@ -615,11 +629,6 @@ This states the creation point of a thread, and gives it a unique
 
 ERROR details for Helgrind
 --------------------------
-
-The "... tool-specific fields ..." for Helgrind consist of
-zero or more of "(either AUXWHAT or XAUXWHAT or STACK)".
-They should be shown to the user in the order they appear.
-
 
 XWHATs (for definition, see above) may contain the following extra
 components (along with the mandatory <text>...</text> component):
