@@ -130,6 +130,7 @@ static void report_and_quit ( const Char* report,
 {
    Addr stacktop;
    Addr ips[BACKTRACE_DEPTH];
+   Int  n_ips;
    ThreadState *tst 
       = VG_(get_ThreadState)( VG_(lwpid_to_vgtid)( VG_(gettid)() ) );
  
@@ -141,15 +142,17 @@ static void report_and_quit ( const Char* report,
    }
  
    stacktop = tst->os_state.valgrind_stack_init_SP;
- 
-   VG_(get_StackTrace_wrk)(
-      0/*tid is unknown*/, 
-      ips, BACKTRACE_DEPTH, 
-      NULL/*array to dump SP values in*/,
-      NULL/*array to dump FP values in*/,
-      ip, sp, fp, lr, sp, stacktop
-   );
-   VG_(pp_StackTrace)  (ips, BACKTRACE_DEPTH);
+
+   n_ips = 
+      VG_(get_StackTrace_wrk)(
+         0/*tid is unknown*/, 
+         ips, BACKTRACE_DEPTH, 
+         NULL/*array to dump SP values in*/,
+         NULL/*array to dump FP values in*/,
+         ip, sp, fp, lr, sp, stacktop
+      );
+   VG_(clo_xml) = False;
+   VG_(pp_StackTrace) (ips, n_ips);
  
    VG_(show_sched_status)();
    VG_(printf)(
@@ -194,7 +197,7 @@ void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file,
    }
 
    if (VG_(clo_xml))
-      VG_(UMSG)("</valgrindoutput>\n");
+      VG_(printf_xml)("</valgrindoutput>\n");
 
    // Treat vg_assert2(0, "foo") specially, as a panicky abort
    if (VG_STREQ(expr, "0")) {
@@ -215,7 +218,7 @@ static void panic ( Char* name, Char* report, Char* str,
                     Addr ip, Addr sp, Addr fp, Addr lr )
 {
    if (VG_(clo_xml))
-      VG_(UMSG)("</valgrindoutput>\n");
+      VG_(printf_xml)("</valgrindoutput>\n");
    VG_(printf)("\n%s: the 'impossible' happened:\n   %s\n", name, str);
    report_and_quit(report, ip, sp, fp, lr);
 }
@@ -239,7 +242,7 @@ void VG_(tool_panic) ( Char* str )
 void VG_(unimplemented) ( Char* msg )
 {
    if (VG_(clo_xml))
-      VG_(UMSG)("</valgrindoutput>\n");
+      VG_(printf_xml)("</valgrindoutput>\n");
    VG_(UMSG)("\n");
    VG_(UMSG)("Valgrind detected that your program requires\n");
    VG_(UMSG)("the following unimplemented functionality:\n");
