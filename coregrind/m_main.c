@@ -2299,27 +2299,47 @@ void shutdown_actions_NORETURN( ThreadId tid,
 
    if (VG_(clo_xml)) {
       HChar buf[50];
-      if (VG_(needs).core_errors || VG_(needs).tool_errors) {
-         VG_(show_error_counts_as_XML)();
-         VG_(printf_xml)( "\n" );
-      }
       VG_(elapsed_wallclock_time)(buf);
       VG_(printf_xml_no_f_c)( "<status>\n"
                               "  <state>FINISHED</state>\n"
                               "  <time>%t</time>\n"
                               "</status>\n",
                               buf);
-      VG_(printf_xml)( "\n" );
    }
 
    /* Print out file descriptor summary and stats. */
    if (VG_(clo_track_fds))
       VG_(show_open_fds)();
 
-   if (VG_(needs).core_errors || VG_(needs).tool_errors)
-      VG_(show_all_errors)();
+   /* ** HACK ALERT ** HACK ALERT ** HACK ALERT ** HACK ALERT ** */
+   if (VG_(clo_xml)) {
+      /* THIS IS WHAT WE SHOULD CHANGE IT TO */
+      /* For the moment, do it like this (the "right way") in XML
+         mode, so that output is as described in XML Protocol 4. */
+      /* A good test is memcheck/tests/amd64/defcfaexpr; ensure
+         the output does not change */
+      VG_TDICT_CALL(tool_fini, 0/*exitcode*/);
 
-   VG_TDICT_CALL(tool_fini, 0/*exitcode*/);
+      /* Show the error counts. */
+      if (VG_(needs).core_errors || VG_(needs).tool_errors) {
+         VG_(printf_xml)( "\n" );
+         VG_(show_error_counts_as_XML)();
+         VG_(printf_xml)( "\n" );
+      }
+
+      /* In XML mode, this merely prints the used suppressions. */
+      if (VG_(needs).core_errors || VG_(needs).tool_errors)
+         VG_(show_all_errors)();
+
+   } else {
+      /* THIS IS WHAT IT HAS ALWAYS BEEN,
+         resulting in  https://bugs.kde.org/show_bug.cgi?id=186790 */
+      if (VG_(needs).core_errors || VG_(needs).tool_errors)
+         VG_(show_all_errors)();
+
+      VG_TDICT_CALL(tool_fini, 0/*exitcode*/);
+   }
+   /* END ** HACK ALERT ** HACK ALERT ** HACK ALERT ** HACK ALERT ** */
 
    if (VG_(clo_xml)) {
       VG_(printf_xml)("\n");
