@@ -225,6 +225,7 @@ void VG_(needs_superblock_discards)(
 
 void VG_(needs_tool_errors)(
    Bool (*eq)         (VgRes, Error*, Error*),
+   void (*before_pp)  (Error*),
    void (*pp)         (Error*),
    Bool show_TIDs,
    UInt (*update)     (Error*),
@@ -237,6 +238,7 @@ void VG_(needs_tool_errors)(
 {
    VG_(needs).tool_errors = True;
    VG_(tdict).tool_eq_Error                     = eq;
+   VG_(tdict).tool_before_pp_Error              = before_pp;
    VG_(tdict).tool_pp_Error                     = pp;
    VG_(tdict).tool_show_ThreadIDs_for_errors    = show_TIDs;
    VG_(tdict).tool_update_extra                 = update;
@@ -315,12 +317,9 @@ void VG_(needs_malloc_replacement)(
    VG_(tdict).tool_client_redzone_szB   = client_malloc_redzone_szB;
 }
 
-void VG_(needs_xml_output)(
-   void (*before_pp_Error)( Error* )
-)
+void VG_(needs_xml_output)( void )
 {
    VG_(needs).xml_output = True;
-   VG_(tdict).tool_before_pp_Error = before_pp_Error;
 }
 
 void VG_(needs_final_IR_tidy_pass)( 

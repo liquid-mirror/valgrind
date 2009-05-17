@@ -194,6 +194,12 @@ static Bool drd_tool_error_eq(VgRes res, Error* e1, Error* e2)
    return False;
 }
 
+static void drd_tool_error_before_pp(Error* const e)
+{
+   /* No need to do anything; drd_tool_error_pp does all
+      the work. */
+}
+
 static void drd_tool_error_pp(Error* const e)
 {
    switch (VG_(get_error_kind)(e))
@@ -450,6 +456,7 @@ void DRD_(register_error_handlers)(void)
 {
    // Tool error reporting.
    VG_(needs_tool_errors)(drd_tool_error_eq,
+                          drd_tool_error_before_pp,
                           drd_tool_error_pp,
                           True,
                           drd_tool_error_update_extra,

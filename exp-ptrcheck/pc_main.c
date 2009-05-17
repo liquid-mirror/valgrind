@@ -176,6 +176,7 @@ static void pc_pre_clo_init(void)
 
    VG_(needs_core_errors)       ();
    VG_(needs_tool_errors)       (pc_eq_Error,
+                                 pc_before_pp_Error,
                                  pc_pp_Error,
                                  True,/*show TIDs for errors*/
                                  pc_update_Error_extra,
@@ -185,7 +186,7 @@ static void pc_pre_clo_init(void)
                                  pc_get_error_name,
                                  pc_print_extra_suppression_info);
 
-   VG_(needs_xml_output)        (pc_before_pp_Error);
+   VG_(needs_xml_output)        ();
 
    VG_(needs_syscall_wrapper)( h_pre_syscall,
                                h_post_syscall );

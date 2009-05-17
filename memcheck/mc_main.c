@@ -5690,6 +5690,7 @@ static void mc_pre_clo_init(void)
 
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (MC_(eq_Error),
+                                   MC_(before_pp_Error),
                                    MC_(pp_Error),
                                    True,/*show TIDs for errors*/
                                    MC_(update_Error_extra),
@@ -5717,7 +5718,7 @@ static void mc_pre_clo_init(void)
                                    MC_(malloc_usable_size), 
                                    MC_MALLOC_REDZONE_SZB );
 
-   VG_(needs_xml_output)          (MC_(before_pp_Error));
+   VG_(needs_xml_output)          ();
 
    VG_(track_new_mem_startup)     ( mc_new_mem_startup );
    VG_(track_new_mem_stack_signal)( make_mem_undefined_w_tid );
