@@ -96,9 +96,13 @@ static
 void drd_report_data_race(Error* const err, const DataRaceErrInfo* const dri)
 {
    AddrInfo ai;
-   const unsigned descr_size = 256;
-   Char* descr1 = VG_(malloc)("drd.error.drdr2.1", descr_size);
-   Char* descr2 = VG_(malloc)("drd.error.drdr2.2", descr_size);
+
+   XArray* /* of HChar */ descr1
+      = VG_(newXA)( VG_(malloc), "drd.error.drdr2.1",
+                    VG_(free), sizeof(HChar) );
+   XArray* /* of HChar */ descr2
+      = VG_(newXA)( VG_(malloc), "drd.error.drdr2.2",
+                    VG_(free), sizeof(HChar) );
 
    tl_assert(dri);
    tl_assert(dri->addr);
@@ -106,11 +110,29 @@ void drd_report_data_race(Error* const err, const DataRaceErrInfo* const dri)
    tl_assert(descr1);
    tl_assert(descr2);
 
-   descr1[0] = 0;
-   descr2[0] = 0;
-   VG_(get_data_description)(descr1, descr2, descr_size, dri->addr);
-   if (descr1[0] == 0)
+   (void) VG_(get_data_description)(descr1, descr2, dri->addr);
+   /* If there's nothing in descr1/2, free them.  Why is it safe to to
+      VG_(indexXA) at zero here?  Because VG_(get_data_description)
+      guarantees to zero terminate descr1/2 regardless of the outcome
+      of the call.  So there's always at least one element in each XA
+      after the call.
+   */
+   if (0 == VG_(strlen)( VG_(indexXA)( descr1, 0 ))) {
+      VG_(deleteXA)( descr1 );
+      descr1 = NULL;
+   }
+   if (0 == VG_(strlen)( VG_(indexXA)( descr2, 0 ))) {
+      VG_(deleteXA)( descr2 );
+      descr2 = NULL;
+   }
+   /* Assume (assert) that VG_(get_data_description) fills in descr1
+      before it fills in descr2 */
+   if (descr1 == NULL)
+      tl_assert(descr2 == NULL);
+   /* So anyway.  Do we have something useful? */
+   if (descr1 == NULL)
    {
+      /* No.  Do Plan B. */
       describe_malloced_addr(dri->addr, dri->size, &ai);
    }
    VG_(message)(Vg_UserMsg,
@@ -121,10 +143,11 @@ void drd_report_data_race(Error* const err, const DataRaceErrInfo* const dri)
                 dri->addr,
                 dri->size);
    VG_(pp_ExeContext)(VG_(get_error_where)(err));
-   if (descr1[0])
+   if (descr1 != NULL)
    {
-      VG_(message)(Vg_UserMsg, "%s\n", descr1);
-      VG_(message)(Vg_UserMsg, "%s\n", descr2);
+      VG_(message)(Vg_UserMsg, "%s\n", (HChar*)VG_(indexXA)(descr1, 0));
+      if (descr2 != NULL)
+         VG_(message)(Vg_UserMsg, "%s\n", (HChar*)VG_(indexXA)(descr2, 0));
    }
    else if (ai.akind == eMallocd && ai.lastchange)
    {
@@ -160,8 +183,10 @@ void drd_report_data_race(Error* const err, const DataRaceErrInfo* const dri)
                                                dri->access_type);
    }
 
-   VG_(free)(descr2);
-   VG_(free)(descr1);
+   if (descr2)
+      VG_(deleteXA)(descr2);
+   if (descr1)
+      VG_(deleteXA)(descr1);
 }
 
 static Bool drd_tool_error_eq(VgRes res, Error* e1, Error* e2)
