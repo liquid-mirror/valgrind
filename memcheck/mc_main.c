@@ -5716,7 +5716,8 @@ static void mc_pre_clo_init(void)
                                    MC_(realloc),
                                    MC_(malloc_usable_size), 
                                    MC_MALLOC_REDZONE_SZB );
-   VG_(needs_xml_output)          ();
+
+   VG_(needs_xml_output)          (MC_(before_pp_Error));
 
    VG_(track_new_mem_startup)     ( mc_new_mem_startup );
    VG_(track_new_mem_stack_signal)( make_mem_undefined_w_tid );
