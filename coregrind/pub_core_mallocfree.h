@@ -74,7 +74,7 @@ typedef Int ArenaId;
       defined(VGP_ppc32_aix5)
 #  define VG_MIN_MALLOC_SZB        8
 // Nb: We always use 16 bytes for Darwin, even on 32-bits, so it can be used
-// for any AltiVec- or SSE-related type.
+// for any AltiVec- or SSE-related type.  This matches the Darwin libc.
 #elif defined(VGP_amd64_linux) || \
       defined(VGP_ppc64_linux) || \
       defined(VGP_ppc64_aix5)  || \
