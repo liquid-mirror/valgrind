@@ -44,6 +44,19 @@
    memcheck/mc_replace_strmem.c.  If you copy more in, please keep
    them in the same order as in mc_replace_strmem.c. */
 
+
+#define STRNLEN(soname, fnname) \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* str, SizeT n ); \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* str, SizeT n ) \
+   { \
+      SizeT i = 0; \
+      while (i < n && str[i] != 0) i++; \
+      return i; \
+   }
+
+STRNLEN(VG_Z_LIBC_SONAME, strnlen)
+
+
 // Note that this replacement often doesn't get used because gcc inlines
 // calls to strlen() with its own built-in version.  This can be very
 // confusing if you aren't expecting it.  Other small functions in this file
