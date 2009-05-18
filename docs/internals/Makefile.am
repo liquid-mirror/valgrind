@@ -1,6 +1,7 @@
 EXTRA_DIST = \
 	3_0_BUGSTATUS.txt 3_1_BUGSTATUS.txt \
 	3_2_BUGSTATUS.txt 3_3_BUGSTATUS.txt \
+	3_4_BUGSTATUS.txt \
 	BIG_APP_NOTES.txt \
 	Darwin-notes.txt \
 	debugstub_removed_at_r9477.diff \
