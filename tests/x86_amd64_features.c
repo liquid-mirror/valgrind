@@ -17,11 +17,8 @@
 #define True   1
 typedef int    Bool;
 
-//---------------------------------------------------------------------------
-// {x86,amd64}-linux (part 1 of 2)
-//---------------------------------------------------------------------------
-#if defined(VGP_x86_linux) || defined(VGP_amd64_linux) || \
-                              defined(VGP_amd64_darwin)
+
+#if defined(VGA_x86) || defined(VGA_amd64)
 static void cpuid ( unsigned int n,
                     unsigned int* a, unsigned int* b,
                     unsigned int* c, unsigned int* d )
@@ -32,49 +29,6 @@ static void cpuid ( unsigned int n,
       : "0" (n)         /* input */
    );
 }
-#endif   // VGP_x86_linux || VGP_amd64_linux || VGP_amd64_darwin
-
-//---------------------------------------------------------------------------
-// x86-darwin (part 1 of 2)
-//---------------------------------------------------------------------------
-// We can't use the one above for x86-darwin, because we get this:
-//
-//   arch_test.c:88: error: can't find a register in class ‘BREG’ while
-//   reloading ‘asm’
-//
-// because %ebx is reserved for PIC.  This version preserves %ebx.
-#if defined(VGP_x86_darwin)
-static void cpuid ( unsigned int n,
-                    unsigned int* a, unsigned int* b,
-                    unsigned int* c, unsigned int* d )
-{
-   unsigned int abcd[4] = { n, 0, 0, 0 };
-
-   __asm__ __volatile__ (
-      "\tmovl %%ebx,%%esi\n"
-      "\tmovl 0(%0),%%eax\n"
-      "\tcpuid\n"
-      "\tmovl %%eax,0(%0)\n"
-      "\tmovl %%ebx,4(%0)\n"
-      "\tmovl %%ecx,8(%0)\n"
-      "\tmovl %%edx,12(%0)\n"
-      "\tmovl %%esi,%%ebx\n"
-      : /*out*/
-      : /*in*/ "r"(abcd)
-      : /*clobber*/ "eax", "esi", "ecx", "edx", "memory", "cc"
-      );
-
-   *a = abcd[0];
-   *b = abcd[1];
-   *c = abcd[2];
-   *d = abcd[3];
-}
-#endif   // VGP_x86_darwin
-
-//---------------------------------------------------------------------------
-// {x86,amd64}-{linux,darwin} (part 2 of 2)
-//---------------------------------------------------------------------------
-#if defined(VGA_x86)  || defined(VGA_amd64)
 static Bool go(char* cpu)
 { 
    unsigned int level = 0, cmask = 0, dmask = 0, a, b, c, d;
