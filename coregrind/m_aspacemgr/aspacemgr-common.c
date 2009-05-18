@@ -272,10 +272,12 @@ Int ML_(am_readlink)(HChar* path, HChar* buf, UInt bufsiz)
 
 Int ML_(am_fcntl) ( Int fd, Int cmd, Addr arg )
 {
-#  if defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
+#  elif defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_fcntl_nocancel, fd, cmd, arg);
 #  else
-   SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
+#  error "Unknown OS"
 #  endif
    return sr_isError(res) ? -1 : sr_Res(res);
 }

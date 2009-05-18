@@ -251,16 +251,16 @@ typedef struct SigQueue {
 
 /* ------ Macros for pulling stuff out of ucontexts ------ */
 
-/* Q: what does UCONTEXT_SYSCALL_SYSRES do?  A: let's suppose the
+/* Q: what does VG_UCONTEXT_SYSCALL_SYSRES do?  A: let's suppose the
    machine context (uc) reflects the situation that a syscall had just
    completed, quite literally -- that is, that the program counter was
    now at the instruction following the syscall.  (or we're slightly
    downstream, but we're sure no relevant register has yet changed
-   value.)  Then UCONTEXT_SYSCALL_SYSRES returns a SysRes reflecting
+   value.)  Then VG_UCONTEXT_SYSCALL_SYSRES returns a SysRes reflecting
    the result of the syscall; it does this by fishing relevant bits of
    the machine state out of the uc.  Of course if the program counter
    was somewhere else entirely then the result is likely to be
-   meaningless, so the caller of UCONTEXT_SYSCALL_SYSRES has to be
+   meaningless, so the caller of VG_UCONTEXT_SYSCALL_SYSRES has to be
    very careful to pay attention to the results only when it is sure
    that the said constraint on the program counter is indeed valid. */
 #if defined(VGP_x86_linux)
@@ -1158,16 +1158,16 @@ SysRes VG_(do_sys_sigprocmask) ( ThreadId tid,
                                  vki_sigset_t* oldset )
 {
    switch(how) {
-   case VKI_SIG_BLOCK:
-   case VKI_SIG_UNBLOCK:
-   case VKI_SIG_SETMASK:
-      vg_assert(VG_(is_valid_tid)(tid));
-      do_setmask ( tid, how, set, oldset );
-      return VG_(mk_SysRes_Success)( 0 );
+      case VKI_SIG_BLOCK:
+      case VKI_SIG_UNBLOCK:
+      case VKI_SIG_SETMASK:
+         vg_assert(VG_(is_valid_tid)(tid));
+         do_setmask ( tid, how, set, oldset );
+         return VG_(mk_SysRes_Success)( 0 );
 
-   default:
-      VG_DMSG("sigprocmask: unknown 'how' field %d", how);
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+      default:
+         VG_DMSG("sigprocmask: unknown 'how' field %d", how);
+         return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 }
 
@@ -1432,39 +1432,39 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
    vg_assert(VG_(is_running_thread)(tid));
    
    switch(sigNo) {
-   case VKI_SIGQUIT:	/* core */
-   case VKI_SIGILL:	/* core */
-   case VKI_SIGABRT:	/* core */
-   case VKI_SIGFPE:	/* core */
-   case VKI_SIGSEGV:	/* core */
-   case VKI_SIGBUS:	/* core */
-   case VKI_SIGTRAP:	/* core */
-   case VKI_SIGXCPU:	/* core */
-   case VKI_SIGXFSZ:	/* core */
-      terminate = True;
-      core = True;
-      break;
+      case VKI_SIGQUIT:	/* core */
+      case VKI_SIGILL:	/* core */
+      case VKI_SIGABRT:	/* core */
+      case VKI_SIGFPE:	/* core */
+      case VKI_SIGSEGV:	/* core */
+      case VKI_SIGBUS:	/* core */
+      case VKI_SIGTRAP:	/* core */
+      case VKI_SIGXCPU:	/* core */
+      case VKI_SIGXFSZ:	/* core */
+         terminate = True;
+         core = True;
+         break;
 
-   case VKI_SIGHUP:	/* term */
-   case VKI_SIGINT:	/* term */
-   case VKI_SIGKILL:	/* term - we won't see this */
-   case VKI_SIGPIPE:	/* term */
-   case VKI_SIGALRM:	/* term */
-   case VKI_SIGTERM:	/* term */
-   case VKI_SIGUSR1:	/* term */
-   case VKI_SIGUSR2:	/* term */
-   case VKI_SIGIO:	/* term */
-#  if defined(VKI_SIGPWR)
-   case VKI_SIGPWR:	/* term */
-#  endif
-   case VKI_SIGSYS:	/* term */
-   case VKI_SIGPROF:	/* term */
-   case VKI_SIGVTALRM:	/* term */
-#  if defined(VKI_SIGRTMIN) && defined(VKI_SIGRTMAX)
-   case VKI_SIGRTMIN ... VKI_SIGRTMAX: /* term */
-#  endif
-      terminate = True;
-      break;
+      case VKI_SIGHUP:	/* term */
+      case VKI_SIGINT:	/* term */
+      case VKI_SIGKILL:	/* term - we won't see this */
+      case VKI_SIGPIPE:	/* term */
+      case VKI_SIGALRM:	/* term */
+      case VKI_SIGTERM:	/* term */
+      case VKI_SIGUSR1:	/* term */
+      case VKI_SIGUSR2:	/* term */
+      case VKI_SIGIO:	/* term */
+#     if defined(VKI_SIGPWR)
+      case VKI_SIGPWR:	/* term */
+#     endif
+      case VKI_SIGSYS:	/* term */
+      case VKI_SIGPROF:	/* term */
+      case VKI_SIGVTALRM:	/* term */
+#     if defined(VKI_SIGRTMIN) && defined(VKI_SIGRTMAX)
+      case VKI_SIGRTMIN ... VKI_SIGRTMAX: /* term */
+#     endif
+         terminate = True;
+         break;
    }
 
    vg_assert(!core || (core && terminate));

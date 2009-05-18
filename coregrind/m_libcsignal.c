@@ -221,7 +221,15 @@ Int VG_(sigaction) ( Int signum,
                      const vki_sigaction_toK_t* act,  
                      vki_sigaction_fromK_t* oldact)
 {
-#  if defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   /* Normal case: vki_sigaction_toK_t and vki_sigaction_fromK_t are
+      identical types. */
+   SysRes res = VG_(do_syscall4)(__NR_rt_sigaction,
+                                 signum, (UWord)act, (UWord)oldact, 
+                                 _VKI_NSIG_WORDS * sizeof(UWord));
+   return sr_isError(res) ? -1 : 0;
+
+#  elif defined(VGO_darwin)
    /* If we're passing a new action to the kernel, make a copy of the
       new action, install our own sa_tramp field in it, and ignore
       whatever we were provided with.  This is OK because all the
@@ -266,13 +274,6 @@ Int VG_(sigaction) ( Int signum,
    }
    return sr_isError(res) ? -1 : 0;
 
-#  elif defined(VGO_linux) || defined(VGO_aix5)
-   /* Normal case: vki_sigaction_toK_t and vki_sigaction_fromK_t are
-      identical types. */
-   SysRes res = VG_(do_syscall4)(__NR_rt_sigaction,
-                                 signum, (UWord)act, (UWord)oldact, 
-                                 _VKI_NSIG_WORDS * sizeof(UWord));
-   return sr_isError(res) ? -1 : 0;
 #  else
 #    error "Unsupported OS"
 #  endif

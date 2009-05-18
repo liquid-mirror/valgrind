@@ -1213,14 +1213,14 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
             vex does not know what it should be.  Vex sets the next
             address to zero, so if you don't set guest_EIP, the thread
             will jump to zero afterwards and probably die as a result. */
-#        if defined(VGP_x86_darwin)
+#        if defined(VGP_x86_linux)
+         vg_assert2(0, "VG_(scheduler), phase 3: "
+                       "sysenter_x86 on x86-linux is not supported");
+#        elif defined(VGP_x86_darwin)
          /* return address in client edx */
          VG_(threads)[tid].arch.vex.guest_EIP
             = VG_(threads)[tid].arch.vex.guest_EDX;
          handle_syscall(tid, trc);
-#        elif defined(VGP_x86_linux)
-         vg_assert2(0, "VG_(scheduler), phase 3: "
-                       "sysenter_x86 on x86-linux is not supported");
 #        else
          vg_assert2(0, "VG_(scheduler), phase 3: "
                        "sysenter_x86 on non-x86 platform?!?!");

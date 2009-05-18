@@ -2462,12 +2462,7 @@ void VG_(reap_threads)(ThreadId self)
    while (!i_am_the_only_thread()) {
       /* Let other thread(s) run */
       VG_(vg_yield)();
-#if defined(VGO_darwin)
-      I_die_here;
-      // DDD: #warning GrP fixme signals
-#else
       VG_(poll_signals)(self);
-#endif
    }
    vg_assert(i_am_the_only_thread());
 }

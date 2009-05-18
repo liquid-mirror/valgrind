@@ -188,8 +188,6 @@ Int VG_(pipe) ( Int fd[2] )
 OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {
 #  if defined(VGP_x86_darwin)
-   /* ppc32_darwin is like this, except the two offset args are
-      the other way round, unsurprisingly */
    SysRes res = VG_(do_syscall4)(__NR_lseek, fd, 
                                  offset & 0xffffffff, offset >> 32, whence);
 #  elif defined(VGP_amd64_darwin) \
@@ -213,7 +211,7 @@ OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 /* Note that on Darwin, the _p_vkistat fields st_{a,m,c}time{_,nsec}
    "happen" to have the same name as on Linux only due to a bit of
    #define magic in vki-darwin.h. */
-# define TRANSLATE_TO_vg_stat(_p_vgstat, _p_vkistat) \
+#define TRANSLATE_TO_vg_stat(_p_vgstat, _p_vkistat) \
    do { \
       (_p_vgstat)->dev        = (ULong)( (_p_vkistat)->st_dev ); \
       (_p_vgstat)->ino        = (ULong)( (_p_vkistat)->st_ino ); \
@@ -569,20 +567,20 @@ Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
 SysRes VG_(pread) ( Int fd, void* buf, Int count, OffT offset )
 {
    SysRes res;
-#  if defined(VGP_amd64_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   /* Linux, AIX5 */
+   OffT off = VG_(lseek)( fd, offset, VKI_SEEK_SET);
+   if (off < 0)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
+   return res;
+#  elif defined(VGP_amd64_darwin)
    res = VG_(do_syscall4)(__NR_pread_nocancel, fd, (UWord)buf, count, offset);
    return res;
 #  elif defined(VGP_x86_darwin)
    /* ppc32-darwin is the same, but with the args inverted */
    res = VG_(do_syscall5)(__NR_pread_nocancel, fd, (UWord)buf, count, 
                           offset & 0xffffffff, offset >> 32);
-   return res;
-#  elif defined(VGO_linux) || defined(VGO_aix5)
-   /* Linux, AIX5 */
-   OffT off = VG_(lseek)( fd, offset, VKI_SEEK_SET);
-   if (off < 0)
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
-   res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
    return res;
 #  else
 #    error "Unknown platform"

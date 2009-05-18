@@ -72,12 +72,6 @@
    ppc64  r2  r3   r4   r5   r6   r7   r8   r9   r10  r3(res),r4(err)
 
    DARWIN:
-   ppc32  r0  r3   r4   r5   r6   r7   r8   r9   r10  r3+r4+pc
-          BSD syscalls: result is in r4:r3, (hiW:loW)
-          on failure, execution returns to the instruction following 'sc'
-          on success, execution returns to the 2nd instruction following 'sc'
-          Mach traps: result is in r3, and there is no error flag.
-   ppc64  r0  r3   r4   r5   r6   r7   r8   ??   ??   r3+CR0.SO (== ARG1)
    x86    eax +4   +8   +12  +16  +20  +24  +28  +32  edx:eax, eflags.c
    amd64  rax rdi  rsi  rdx  rcx  r8   r9   +8   +16  rdx:rax, rflags.c
 
@@ -162,8 +156,6 @@
              Fail(N) ==>     r3 = N, CR0.SO = 1
 
      Darwin:
-     ppc32:  Success(N) ==>  r3 = N, pc = LAST_SC+8
-             Fail(N)    ==>  r3 = N, pc = LAST_SC+4
      x86:    Success(N) ==>  edx:eax = N, cc = 0
              Fail(N)    ==>  edx:eax = N, cc = 1
 

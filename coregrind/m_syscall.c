@@ -40,7 +40,7 @@
 
 #if defined(VGO_linux)
 
-/* Make a SysRes value from an syscall return value.  This is
+/* Make a SysRes value from a syscall return value.  This is
    Linux-specific.
 
    From:

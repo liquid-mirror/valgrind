@@ -405,20 +405,7 @@ Int VG_(setrlimit) (Int resource, const struct vki_rlimit *rlim)
 
 Int VG_(gettid)(void)
 {
-#  if defined(VGO_aix5)
-   SysRes res;
-   Int    r;
-   vg_assert(__NR_AIX5__thread_self != __NR_AIX5_UNKNOWN);
-   res = VG_(do_syscall0)(__NR_AIX5__thread_self);
-   r = sr_Res(res);
-   return r;
-
-#  elif defined(VGO_darwin)
-   // Darwin's gettid syscall is something else.
-   // Use Mach thread ports for lwpid instead.
-   return mach_thread_self();
-
-#  elif defined(VGO_linux)
+#  if defined(VGO_linux)
    SysRes res = VG_(do_syscall0)(__NR_gettid);
 
    if (sr_isError(res) && sr_Res(res) == VKI_ENOSYS) {
@@ -451,6 +438,19 @@ Int VG_(gettid)(void)
    }
 
    return sr_Res(res);
+
+#  elif defined(VGO_aix5)
+   SysRes res;
+   Int    r;
+   vg_assert(__NR_AIX5__thread_self != __NR_AIX5_UNKNOWN);
+   res = VG_(do_syscall0)(__NR_AIX5__thread_self);
+   r = sr_Res(res);
+   return r;
+
+#  elif defined(VGO_darwin)
+   // Darwin's gettid syscall is something else.
+   // Use Mach thread ports for lwpid instead.
+   return mach_thread_self();
 
 #  else
 #    error "Unknown OS"
@@ -591,7 +591,22 @@ UInt VG_(read_millisecond_timer) ( void )
    static ULong base = 0;
    ULong  now;
 
-#  if defined(VGO_aix5)
+#  if defined(VGO_linux)
+   { SysRes res;
+     struct vki_timespec ts_now;
+     res = VG_(do_syscall2)(__NR_clock_gettime, VKI_CLOCK_MONOTONIC,
+                            (UWord)&ts_now);
+     if (sr_isError(res) == 0) {
+        now = ts_now.tv_sec * 1000000ULL + ts_now.tv_nsec / 1000;
+     } else {
+       struct vki_timeval tv_now;
+       res = VG_(do_syscall2)(__NR_gettimeofday, (UWord)&tv_now, (UWord)NULL);
+       vg_assert(! sr_isError(res));
+       now = tv_now.tv_sec * 1000000ULL + tv_now.tv_usec;
+     }
+   }
+
+#  elif defined(VGO_aix5)
    /* AIX requires a totally different implementation since
       sys_gettimeofday doesn't exist.  We use the POWER real-time
       register facility.  This will SIGILL on PowerPC 970 on AIX,
@@ -609,21 +624,6 @@ UInt VG_(read_millisecond_timer) ( void )
    vg_assert(nsec < 1000*1000*1000);
    now  = ((ULong)sec1) * 1000000ULL;
    now += (ULong)(nsec / 1000);
-
-#  elif defined(VGO_linux)
-   { SysRes res;
-     struct vki_timespec ts_now;
-     res = VG_(do_syscall2)(__NR_clock_gettime, VKI_CLOCK_MONOTONIC,
-                            (UWord)&ts_now);
-     if (sr_isError(res) == 0) {
-        now = ts_now.tv_sec * 1000000ULL + ts_now.tv_nsec / 1000;
-     } else {
-       struct vki_timeval tv_now;
-       res = VG_(do_syscall2)(__NR_gettimeofday, (UWord)&tv_now, (UWord)NULL);
-       vg_assert(! sr_isError(res));
-       now = tv_now.tv_sec * 1000000ULL + tv_now.tv_usec;
-     }
-   }
 
 #  elif defined(VGO_darwin)
    { SysRes res;
