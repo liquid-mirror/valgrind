@@ -241,9 +241,9 @@ STRNCAT(VG_Z_DYLD,        strncat)
       return m; \
    }
 
-STRLCAT(VG_Z_LIBC_SONAME, strlcat)
 #if defined(VGO_darwin)
-STRLCAT(VG_Z_DYLD,           strlcat)
+STRLCAT(VG_Z_LIBC_SONAME, strlcat)
+STRLCAT(VG_Z_DYLD,        strlcat)
 #endif
 
 
@@ -357,8 +357,8 @@ STRNCPY(VG_Z_DYLD,        strncpy)
       return src - src_orig; \
    }
 
-STRLCPY(VG_Z_LIBC_SONAME, strlcpy)
 #if defined(VGO_darwin)
+STRLCPY(VG_Z_LIBC_SONAME, strlcpy)
 STRLCPY(VG_Z_DYLD,        strlcpy)
 #endif
 
@@ -636,8 +636,8 @@ MEMMOVE(VG_Z_DYLD,        memmove)
       } \
    }
 
-BCOPY(VG_Z_LIBC_SONAME, bcopy)
 #if defined(VGO_darwin)
+BCOPY(VG_Z_LIBC_SONAME, bcopy)
 BCOPY(VG_Z_DYLD,        bcopy)
 #endif
 
