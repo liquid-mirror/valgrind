@@ -47,7 +47,7 @@ VexControl VG_(clo_vex_control);
 Bool   VG_(clo_error_limit)    = True;
 Int    VG_(clo_error_exitcode) = 0;
 Bool   VG_(clo_db_attach)      = False;
-Char*  VG_(clo_db_command)     = GDB_PATH " -nw -q '%f' %p";
+Char*  VG_(clo_db_command)     = GDB_PATH " -nw %f %p";
 Int    VG_(clo_gen_suppressions) = 0;
 Int    VG_(clo_sanity_level)   = 1;
 Int    VG_(clo_verbosity)      = 1;
