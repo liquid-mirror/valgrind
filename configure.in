@@ -884,26 +884,6 @@ AC_MSG_RESULT([no])
 ])
 
 
-# Check whether FILE has a member called _lock and whether it's a pointer.
-
-AC_MSG_CHECKING([for FILE::_lock])
-
-AC_TRY_COMPILE(
-[
-  #include <stdio.h>
-], [
-  void *p;
-  p = stdout->_lock;
-  return 0;
-], [
-AC_MSG_RESULT([yes])
-AC_DEFINE([HAVE_LIBC_FILE_LOCK], 1,
-          [Define to 1 if FILE has a member called _lock.])
-], [
-AC_MSG_RESULT([no])
-])
-
-
 # Check whether pthread_mutex_t has a member called __m_kind.
 
 AC_MSG_CHECKING([for pthread_mutex_t::__m_kind])
@@ -1356,24 +1336,6 @@ if test x$ac_have_builtin_expect = xyes ; then
 fi
 
 
-# does this compiler have built-in functions for atomic memory access ?
-AC_MSG_CHECKING([if gcc supports __sync_bool_compare_and_swap])
-
-AC_TRY_LINK(,
-[
-  int variable = 1;
-  return (__sync_bool_compare_and_swap(&variable, 1, 2)
-         && __sync_add_and_fetch(&variable, 1) ? 1 : 0)
-],
-[
-  AC_MSG_RESULT([yes])
-  AC_DEFINE(HAVE_BUILTIN_ATOMIC, 1, [Define to 1 if gcc supports __sync_bool_compare_and_swap() a.o.])
-],
-[
-  AC_MSG_RESULT([no])
-])
-
-
 # does the ppc assembler support "mtocrf" et al?
 AC_MSG_CHECKING([if ppc32/64 as supports mtocrf/mfocrf])
 
@@ -1798,7 +1760,7 @@ AM_CONDITIONAL([HAVE_BOOST_1_35], [test x$ac_have_boost_1_35 = xyes])
 AC_MSG_CHECKING([for OpenMP])
 
 safe_CFLAGS=$CFLAGS
-CFLAGS="-fopenmp"
+CFLAGS="-fopenmp $mflag_primary"
 
 AC_LINK_IFELSE(
 [
@@ -1819,6 +1781,29 @@ AC_MSG_RESULT([no])
 CFLAGS=$safe_CFLAGS
 
 AM_CONDITIONAL([HAVE_OPENMP], [test x$ac_have_openmp = xyes])
+
+
+# does this compiler have built-in functions for atomic memory access ?
+AC_MSG_CHECKING([if gcc supports __sync_bool_compare_and_swap])
+
+safe_CFLAGS=$CFLAGS
+CFLAGS="$mflag_primary"
+
+AC_TRY_LINK(,
+[
+  int variable = 1;
+  return (__sync_bool_compare_and_swap(&variable, 1, 2)
+          && __sync_add_and_fetch(&variable, 1) ? 1 : 0)
+],
+[
+  AC_MSG_RESULT([yes])
+  AC_DEFINE(HAVE_BUILTIN_ATOMIC, 1, [Define to 1 if gcc supports __sync_bool_compare_and_swap() a.o.])
+],
+[
+  AC_MSG_RESULT([no])
+])
+
+CFLAGS=$safe_CFLAGS
 
 
 #----------------------------------------------------------------------------
