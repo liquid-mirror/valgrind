@@ -172,7 +172,7 @@
    inline asm stuff to be useful.
 */
 
-/* ------------------------- x86-linux ------------------------- */
+/* ------------------------- x86-{linux,darwin} ---------------- */
 
 #if defined(PLAT_x86_linux)  ||  defined(PLAT_x86_darwin)
 
@@ -224,9 +224,9 @@ typedef
                      __SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* call-noredir *%EAX */                     \
                      "xchgl %%edx,%%edx\n\t"
-#endif /* PLAT_x86_linux */
+#endif /* PLAT_x86_linux || PLAT_x86_darwin */
 
-/* ------------------------ amd64-linux ------------------------ */
+/* ------------------------ amd64-{linux,darwin} --------------- */
 
 #if defined(PLAT_amd64_linux)  ||  defined(PLAT_amd64_darwin)
 
@@ -278,7 +278,7 @@ typedef
                      __SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* call-noredir *%RAX */                     \
                      "xchgq %%rdx,%%rdx\n\t"
-#endif /* PLAT_amd64_linux */
+#endif /* PLAT_amd64_linux || PLAT_amd64_darwin */
 
 /* ------------------------ ppc32-linux ------------------------ */
 
@@ -632,7 +632,7 @@ typedef
    do { volatile unsigned long _junk;                             \
         CALL_FN_W_7W(_junk,fnptr,arg1,arg2,arg3,arg4,arg5,arg6,arg7); } while (0)
 
-/* ------------------------- x86-linux ------------------------- */
+/* ------------------------- x86-{linux,darwin} ---------------- */
 
 #if defined(PLAT_x86_linux)  ||  defined(PLAT_x86_darwin)
 
@@ -1027,9 +1027,9 @@ typedef
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
 
-#endif /* PLAT_x86_linux */
+#endif /* PLAT_x86_linux || PLAT_x86_darwin */
 
-/* ------------------------ amd64-linux ------------------------ */
+/* ------------------------ amd64-{linux,darwin} --------------- */
 
 #if defined(PLAT_amd64_linux)  ||  defined(PLAT_amd64_darwin)
 
@@ -1465,7 +1465,7 @@ typedef
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
 
-#endif /* PLAT_amd64_linux */
+#endif /* PLAT_amd64_linux || PLAT_amd64_darwin */
 
 /* ------------------------ ppc32-linux ------------------------ */
 
