@@ -27,7 +27,7 @@ runcmd () {
    echo "$*" >> $logfile.verbose
 
    # Run the command
-   (eval "$*") >> $logfile.verbose 2>&1
+   ("${ABT_EVAL}" "$*") >> $logfile.verbose 2>&1
    res=$?
 
    # Write result to the short logfile
@@ -70,9 +70,12 @@ rm -rf diffs diff.short final Inst new.short new.verbose old.short old.verbose
 rm -rf sendmail.log unchanged.log valgrind
 
 # Setup any relevant environment variables from conf/<tag>.conf.
-source conf/$ABT_MACHINE.conf
+. conf/$ABT_MACHINE.conf
 if [ "${ABT_JOBS}" = "" ]; then
   ABT_JOBS=1
+fi
+if [ "${ABT_EVAL}" = "" ]; then
+  ABT_EVAL="eval"
 fi
 if [ "${ABT_RUN_REGTEST}" = "" ]; then
   ABT_RUN_REGTEST="cd valgrind && perl tests/vg_regtest --all"
@@ -187,7 +190,7 @@ fi
 # Gather up the diffs (at most the first 100 lines for each one) into a
 # single file.
 MAX_LINES=100
-diff_files=`find . -name '*.diff'`
+diff_files=`find . -name '*.diff*' | sort`
 if [ z"$diff_files" = z ] ; then
    echo "Congratulations, all tests passed!" >> diffs
 else
