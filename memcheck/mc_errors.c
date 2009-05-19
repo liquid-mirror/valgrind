@@ -268,9 +268,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          if (maybe_gcc) {
             VG_(message)(Vg_UserMsg, 
                "%sAddress 0x%llx is just below the stack ptr.  "
-#if !defined(VGO_darwin)
                "To suppress, use: --workaround-gcc296-bugs=yes"
-#endif
                "%s", 
                xpre, (ULong)a, xpost
             );
@@ -681,12 +679,10 @@ void MC_(record_address_error) ( ThreadId tid, Addr a, Int szB,
 
    just_below_esp = is_just_below_ESP( VG_(get_SP)(tid), a );
 
-#if !defined(VGO_darwin)
    /* If this is caused by an access immediately below %ESP, and the
       user asks nicely, we just ignore it. */
    if (MC_(clo_workaround_gcc296_bugs) && just_below_esp)
       return;
-#endif
 
    extra.Err.Addr.isWrite   = isWrite;
    extra.Err.Addr.szB       = szB;

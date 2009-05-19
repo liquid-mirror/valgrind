@@ -4658,9 +4658,7 @@ Long          MC_(clo_freelist_vol)           = 10*1000*1000LL;
 LeakCheckMode MC_(clo_leak_check)             = LC_Summary;
 VgRes         MC_(clo_leak_resolution)        = Vg_LowRes;
 Bool          MC_(clo_show_reachable)         = False;
-#if !defined(VGO_darwin)
 Bool          MC_(clo_workaround_gcc296_bugs) = False;
-#endif
 Int           MC_(clo_malloc_fill)            = -1;
 Int           MC_(clo_free_fill)              = -1;
 Int           MC_(clo_mc_level)               = 2;
@@ -4713,10 +4711,8 @@ static Bool mc_process_cmd_line_options(Char* arg)
 
 	if VG_BOOL_CLO(arg, "--partial-loads-ok", MC_(clo_partial_loads_ok)) {}
    else if VG_BOOL_CLO(arg, "--show-reachable",   MC_(clo_show_reachable))   {}
-#if !defined(VGO_darwin)
    else if VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",
                                             MC_(clo_workaround_gcc296_bugs)) {}
-#endif
 
    else if VG_BINT_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 
                                                0, 10*1000*1000*1000LL) {}
@@ -4784,9 +4780,7 @@ static void mc_print_usage(void)
 "    --track-origins=no|yes           show origins of undefined values? [no]\n"
 "    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
 "    --freelist-vol=<number>          volume of freed blocks queue [10000000]\n"
-#if !defined(VGO_darwin)
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
-#endif
 "    --ignore-ranges=0xPP-0xQQ[,0xRR-0xSS]   assume given addresses are OK\n"
 "    --malloc-fill=<hexnumber>        fill malloc'd areas with given value\n"
 "    --free-fill=<hexnumber>          fill free'd areas with given value\n"
