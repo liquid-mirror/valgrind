@@ -84,8 +84,6 @@ extern void VG_(do_atfork_pre)    ( ThreadId tid );
 extern void VG_(do_atfork_parent) ( ThreadId tid );
 extern void VG_(do_atfork_child) ( ThreadId tid );
 
-extern void VG_(start_helper_thread)(void (*fn)(void));
-
 #endif   // __PUB_CORE_LIBCPROC_H
 
 /*--------------------------------------------------------------------*/
