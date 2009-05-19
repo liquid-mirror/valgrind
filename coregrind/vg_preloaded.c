@@ -51,7 +51,7 @@
    Hook for running __libc_freeres once the program exits.
    ------------------------------------------------------------------ */
 
-#if !defined(VGO_darwin)
+#if defined(VGO_linux) || defined(VGO_aix5)
 // GrP GrP fixme
 
 void VG_NOTIFY_ON_LOAD(freeres)( void );
@@ -69,9 +69,7 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
    *(int *)0 = 'x';
 }
 
-#endif
-
-#if defined(VGO_darwin)
+#elif defined(VGO_darwin)
 
 /* ---------------------------------------------------------------------
    Darwin crash log hints
@@ -155,6 +153,9 @@ void VG_REPLACE_FUNCTION_ZU(libSystemZdZaZddylib, arc4random_addrandom)(unsigned
     // but don't care if it's initialized
 }
 
+#else
+
+#  error Unknown OS
 #endif
 
 /*--------------------------------------------------------------------*/
