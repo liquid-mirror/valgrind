@@ -2344,13 +2344,15 @@ PRE(sys_pwrite64)
          ARG1, ARG2, (ULong)ARG3, LOHI64(ARG4,ARG5));
    PRE_REG_READ5(ssize_t, "pwrite64",
                  unsigned int, fd, const char *, buf, vki_size_t, count,
-                 UWord, offset_low32, UWord, offset_high32);
-#else
+                 vki_u32, offset_low32, vki_u32, offset_high32);
+#elif VG_WORDSIZE == 8
    PRINT("sys_pwrite64 ( %ld, %#lx, %llu, %lld )",
          ARG1, ARG2, (ULong)ARG3, (Long)ARG4);
    PRE_REG_READ4(ssize_t, "pwrite64",
                  unsigned int, fd, const char *, buf, vki_size_t, count,
-                 UWord, offset);
+                 Word, offset);
+#else
+#  error Unexpected word size
 #endif
    PRE_MEM_READ( "pwrite64(buf)", ARG2, ARG3 );
 }
@@ -2401,13 +2403,15 @@ PRE(sys_pread64)
          ARG1, ARG2, (ULong)ARG3, LOHI64(ARG4,ARG5));
    PRE_REG_READ5(ssize_t, "pread64",
                  unsigned int, fd, char *, buf, vki_size_t, count,
-                 UWord, offset_low32, UWord, offset_high32);
-#else
+                 vki_u32, offset_low32, vki_u32, offset_high32);
+#elif VG_WORDSIZE == 8
    PRINT("sys_pread64 ( %ld, %#lx, %llu, %lld )",
          ARG1, ARG2, (ULong)ARG3, (Long)ARG4);
    PRE_REG_READ4(ssize_t, "pread64",
                  unsigned int, fd, char *, buf, vki_size_t, count,
-                 UWord, offset);
+                 Word, offset);
+#else
+#  error Unexpected word size
 #endif
    PRE_MEM_WRITE( "pread64(buf)", ARG2, ARG3 );
 }
