@@ -108,7 +108,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	noisy_child.vgtest noisy_child.stderr.exp noisy_child.stdout.exp \
 	null_socket.stderr.exp null_socket.vgtest \
 	origin1-yes.vgtest origin1-yes.stdout.exp \
-	origin1-yes.stderr.exp \
+	    origin1-yes.stderr.exp origin1-yes.stderr.exp-darwin \
 	origin2-not-quite.vgtest origin2-not-quite.stdout.exp \
 	origin2-not-quite.stderr.exp \
 	origin3-no.vgtest origin3-no.stdout.exp \
