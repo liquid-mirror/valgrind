@@ -193,11 +193,11 @@ Char* VG_(strncat) ( Char* dest, const Char* src, SizeT n )
    return dest_orig;
 }
 
-Char* VG_(strpbrk) ( const Char* s, const Char* s2 )
+Char* VG_(strpbrk) ( const Char* s, const Char* accpt )
 {
    const Char* a;
    while (*s) {
-      a = s2;
+      a = accpt;
       while (*a)
          if (*a++ == *s)
             return (Char *) s;
@@ -356,13 +356,12 @@ Char* VG_(strrchr) ( const Char* s, Char c )
    return NULL;
 }
 
-// "2" suffix avoids shadowing problems in memcheck/tests/unit_libcbase.c.
-SizeT VG_(strspn) ( const Char* s, const Char* s2 )
+SizeT VG_(strspn) ( const Char* s, const Char* accpt )
 {
    const Char *p, *a;
    SizeT count = 0;
    for (p = s; *p != '\0'; ++p) {
-      for (a = s2; *a != '\0'; ++a)
+      for (a = accpt; *a != '\0'; ++a)
          if (*p == *a)
             break;
       if (*a == '\0')

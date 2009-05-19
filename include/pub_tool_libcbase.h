@@ -94,9 +94,7 @@ extern Char* VG_(strstr)         ( const Char* haystack, Char* needle );
 extern Char* VG_(strcasestr)     ( const Char* haystack, Char* needle );
 extern Char* VG_(strchr)         ( const Char* s, Char c );
 extern Char* VG_(strrchr)        ( const Char* s, Char c );
-// We use "__accept" rather than "accept" to avoid warnings about shadowed
-// declarations with GCC 4.01 on Darwin.
-extern SizeT VG_(strspn)         ( const Char* s, const Char* __accept );
+extern SizeT VG_(strspn)         ( const Char* s, const Char* accpt );
 extern SizeT VG_(strcspn)        ( const Char* s, const char* reject );
 
 /* Like strncpy(), but if 'src' is longer than 'ndest' inserts a '\0' as the
