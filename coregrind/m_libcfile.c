@@ -151,10 +151,12 @@ Int VG_(read) ( Int fd, void* buf, Int count)
 Int VG_(write) ( Int fd, const void* buf, Int count)
 {
    Int    ret;
-#  if defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   SysRes res = VG_(do_syscall3)(__NR_write, fd, (UWord)buf, count);
+#  elif defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_write_nocancel, fd, (UWord)buf, count);
 #  else
-   SysRes res = VG_(do_syscall3)(__NR_write, fd, (UWord)buf, count);
+#    error "Unknown OS"
 #  endif
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
