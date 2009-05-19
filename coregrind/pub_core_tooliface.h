@@ -86,7 +86,6 @@ typedef
       Bool superblock_discards;
       Bool command_line_options;
       Bool client_requests;
-      Bool debugger_commands;
       Bool syscall_wrapper;
       Bool sanity_checks;
       Bool var_info;
