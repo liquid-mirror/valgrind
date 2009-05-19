@@ -169,6 +169,7 @@ no_op_client_for_valgrind_LDFLAGS   = $(AM_CFLAGS_PRI)
 
 noinst_HEADERS = \
 	$(mach_hdrs) \
+	launcher-aix5-bootblock.h \
 	pub_core_aspacehl.h	\
 	pub_core_aspacemgr.h	\
 	pub_core_basics.h	\
@@ -240,6 +241,8 @@ noinst_HEADERS = \
 	m_demangle/demangle.h	\
 	m_demangle/safe-ctype.h \
 	m_demangle/vg_libciface.h \
+	m_initimg/priv_initimg_pathscan.h \
+	m_initimg/simple_huffman.c \
 	m_scheduler/priv_sema.h \
 	m_syswrap/priv_types_n_macros.h \
 	m_syswrap/priv_syswrap-generic.h \
@@ -248,10 +251,7 @@ noinst_HEADERS = \
 	m_syswrap/priv_syswrap-aix5.h \
 	m_syswrap/priv_syswrap-darwin.h \
 	m_syswrap/priv_syswrap-main.h \
-	m_ume/priv_ume.h \
-	launcher-aix5-bootblock.h \
-	m_initimg/priv_initimg_pathscan.h \
-	m_initimg/simple_huffman.c
+	m_ume/priv_ume.h
 
 BUILT_SOURCES = 
 CLEANFILES = 
