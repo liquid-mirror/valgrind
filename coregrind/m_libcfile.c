@@ -110,12 +110,14 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
 
 SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
 {  
-#  if defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   SysRes res = VG_(do_syscall3)(__NR_open,
+                                 (UWord)pathname, flags, mode);
+#  elif defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_open_nocancel,
                                  (UWord)pathname, flags, mode);
 #  else
-   SysRes res = VG_(do_syscall3)(__NR_open,
-                                 (UWord)pathname, flags, mode);
+#    error Unknown OS
 #  endif
    return res;
 }
@@ -123,20 +125,24 @@ SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
 void VG_(close) ( Int fd )
 {
    /* Hmm.  Return value is not checked.  That's uncool. */
-#  if defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   (void)VG_(do_syscall1)(__NR_close, fd);
+#  elif defined(VGO_darwin)
    (void)VG_(do_syscall1)(__NR_close_nocancel, fd);
 #  else
-   (void)VG_(do_syscall1)(__NR_close, fd);
+#    error Unknown OS
 #  endif
 }
 
 Int VG_(read) ( Int fd, void* buf, Int count)
 {
    Int    ret;
-#  if defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count);
+#  elif defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_read_nocancel, fd, (UWord)buf, count);
 #  else
-   SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count);
+#    error Unknown OS
 #  endif
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
@@ -352,10 +358,12 @@ SysRes VG_(dup2) ( Int oldfd, Int newfd )
 /* Returns -1 on error. */
 Int VG_(fcntl) ( Int fd, Int cmd, Addr arg )
 {
-#  if defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
+#  elif defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_fcntl_nocancel, fd, cmd, arg);
 #  else
-   SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
+#    error "Unknown OS"
 #  endif
    return sr_isError(res) ? -1 : sr_Res(res);
 }
