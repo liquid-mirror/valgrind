@@ -169,6 +169,7 @@ no_op_client_for_valgrind_LDFLAGS   = $(AM_CFLAGS_PRI)
 
 noinst_HEADERS = \
 	$(mach_hdrs) \
+	pub_core_aspacehl.h	\
 	pub_core_aspacemgr.h	\
 	pub_core_basics.h	\
 	pub_core_basics_asm.h	\
@@ -254,6 +255,10 @@ noinst_HEADERS = \
 
 BUILT_SOURCES = 
 CLEANFILES = 
+if VGCONF_OS_IS_DARWIN
+BUILT_SOURCES += $(COREGRIND_DARWIN_BUILT_SOURCES)
+CLEANFILES    += $(COREGRIND_DARWIN_BUILT_SOURCES)
+endif
 
 
 COREGRIND_SOURCES_COMMON = \
@@ -341,16 +346,18 @@ COREGRIND_DARWIN_SOURCE = \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readmacho.c \
 	m_debuginfo/readpdb.c \
-	m_mach/mach_vmUser.c \
-	m_mach/taskUser.c \
-	m_mach/thread_actUser.c \
-	m_mach/vm_mapUser.c \
 	m_mach/mach_basics.c \
 	m_mach/mach_msg.c \
 	m_initimg/initimg-darwin.c \
 	m_initimg/initimg-pathscan.c \
 	m_syswrap/syswrap-darwin.c \
 	m_syswrap/syswrap-generic.c
+
+COREGRIND_DARWIN_BUILT_SOURCES = \
+	m_mach/mach_vmUser.c \
+	m_mach/taskUser.c \
+	m_mach/thread_actUser.c \
+	m_mach/vm_mapUser.c
 
 libcoregrind_x86_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
@@ -439,6 +446,7 @@ libcoregrind_x86_darwin_a_SOURCES = \
 	m_start-x86-darwin.S \
 	m_syswrap/syscall-x86-darwin.S \
 	m_syswrap/syswrap-x86-darwin.c
+nodist_libcoregrind_x86_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_x86_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CFLAGS = $(AM_CFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_X86_DARWIN)
@@ -455,6 +463,7 @@ libcoregrind_amd64_darwin_a_SOURCES = \
 	m_start-amd64-darwin.S \
 	m_syswrap/syscall-amd64-darwin.S \
 	m_syswrap/syswrap-amd64-darwin.c
+nodist_libcoregrind_amd64_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_amd64_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_DARWIN)
 libcoregrind_amd64_darwin_a_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN)
 libcoregrind_amd64_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_AMD64_DARWIN)
