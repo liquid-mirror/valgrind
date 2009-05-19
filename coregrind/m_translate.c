@@ -36,10 +36,8 @@
 #include "pub_core_machine.h"    // VG_(fnptr_to_fnentry)
                                  // VG_(get_SP)
                                  // VG_(machine_get_VexArchInfo)
-#include "pub_core_errormgr.h"
-#include "pub_core_debugger.h"
-#include "pub_core_libcassert.h"
 #include "pub_core_libcbase.h"
+#include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
 
@@ -48,7 +46,6 @@
 
 #include "pub_core_signals.h"    // VG_(synth_fault_{perms,mapping}
 #include "pub_core_stacks.h"     // VG_(unknown_SP_update)()
-#include "pub_core_stacktrace.h"    // For VG_(get_and_pp_StackTrace)()
 #include "pub_core_tooliface.h"  // VG_(tdict)
 
 #include "pub_core_translate.h"
