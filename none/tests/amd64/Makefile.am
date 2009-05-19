@@ -61,8 +61,7 @@ if BUILD_SSSE3_TESTS
  check_PROGRAMS += ssse3_misaligned
 endif
 
-# DDD: not sure if these ones should work on Darwin or not... if not, should
-# be moved into amd64-linux/.
+# DDD: these need to be made to work on Darwin like the x86/ ones were.
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	bug137714-amd64 \
