@@ -140,8 +140,8 @@ check_PROGRAMS = \
 	bug129866 \
 	closeall coolo_strlen \
 	discard exec-sigmask execve faultstatus fcntl_setown \
-	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 fdleak_ipv4 \
-	fdleak_fcntl fdleak_open fdleak_pipe \
+	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 \
+	fdleak_fcntl fdleak_ipv4 fdleak_open fdleak_pipe \
 	fdleak_socketpair \
 	floored fork fucomip \
 	munmap_exe map_unaligned map_unmap mq \
