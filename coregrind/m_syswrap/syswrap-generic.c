@@ -500,7 +500,7 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
 
 #  undef MIN_SIZET
 }
-#endif /* HAVE_REMAP */
+#endif /* HAVE_MREMAP */
 
 
 /* ---------------------------------------------------------------------
@@ -2295,7 +2295,7 @@ PRE(sys_mremap)
       do_mremap((Addr)ARG1, ARG2, (Addr)ARG5, ARG3, ARG4, tid) 
    );
 }
-#endif /* HAVE_REMAP */
+#endif /* HAVE_MREMAP */
 
 PRE(sys_nice)
 {
