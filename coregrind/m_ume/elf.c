@@ -44,9 +44,6 @@
 
 #include "priv_ume.h"
 
-// DDD: ranlib complains about there being no symbols in this file, because
-// on Darwin the file is empty.  Consider selecting/not selecting this file
-// from within coregrind/Makefile.am instead.
 #if defined(HAVE_ELF)
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
