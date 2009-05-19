@@ -555,25 +555,6 @@ void VG_(get_and_pp_StackTrace) ( ThreadId tid, UInt max_n_ips )
    VG_(pp_StackTrace)(ips, n_ips);
 }
 
-void VG_(bt)(ThreadId tid)
-{
-   VG_(get_and_pp_StackTrace)(tid, 30);
-}
-
-void VG_(taabt)(void)
-{
-   int i;
-   for (i = 1; i < VG_N_THREADS; i++) {
-      if (VG_(is_valid_tid)(i)) {
-         VG_(message)(Vg_UserMsg, "");
-         VG_(message)(Vg_UserMsg, "");
-         VG_(message)(Vg_UserMsg, "Thread %d (%#x):", i, VG_(threads)[i].os_state.lwpid);
-         VG_(message)(Vg_UserMsg, "");
-         VG_(bt)(i);
-      }
-   }
-}
-
 void VG_(apply_StackTrace)( void(*action)(UInt n, Addr ip),
                             StackTrace ips, UInt n_ips )
 {

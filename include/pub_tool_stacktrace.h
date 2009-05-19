@@ -75,13 +75,6 @@ extern void VG_(pp_StackTrace) ( StackTrace ips, UInt n_ips );
 // calling VG_(get_StackTrace)() then VG_(pp_StackTrace)().
 extern void VG_(get_and_pp_StackTrace) ( ThreadId tid, UInt n_ips );
 
-// Equivalent to VG_(get_and_pp_StackTrace)(tid, 30).  For debugging.
-extern void VG_(bt) ( ThreadId tid );
-
-// For each valid thread, prints its lwpid and then calls VG_(bt).
-// For debugging.
-extern void VG_(taabt) ( void );
-
 #endif   // __PUB_TOOL_STACKTRACE_H
 
 /*--------------------------------------------------------------------*/
