@@ -82,7 +82,7 @@ extern Int  VG_(ptrace)( Int request, Int pid, void *addr, void *data );
 // atfork
 extern void VG_(do_atfork_pre)    ( ThreadId tid );
 extern void VG_(do_atfork_parent) ( ThreadId tid );
-extern void VG_(do_atfork_child) ( ThreadId tid );
+extern void VG_(do_atfork_child)  ( ThreadId tid );
 
 #endif   // __PUB_CORE_LIBCPROC_H
 
