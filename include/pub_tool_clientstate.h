@@ -62,9 +62,6 @@ extern Int VG_(args_for_valgrind_noexecpass);
    line. */
 extern HChar* VG_(args_the_exename);
 
-/* The name of the client executable, after searching PATH */
-extern HChar *VG_(client_exename);
-
 
 #endif   // __PUB_TOOL_CLIENTSTATE_H
 
