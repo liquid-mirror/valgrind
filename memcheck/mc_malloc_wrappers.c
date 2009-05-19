@@ -155,7 +155,7 @@ MC_Chunk* create_MC_Chunk ( ExeContext* ec, Addr p, SizeT szB,
 /*--- client_malloc(), etc                                 ---*/
 /*------------------------------------------------------------*/
 
-// DDD: should make this a proper error (bug #79311).
+// XXX: should make this a proper error (bug #79311).
 static Bool complain_about_silly_args(SizeT sizeB, Char* fn)
 {
    // Cast to a signed type to catch any unexpectedly negative args.  We're
