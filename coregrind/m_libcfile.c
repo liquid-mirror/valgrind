@@ -187,14 +187,12 @@ Int VG_(pipe) ( Int fd[2] )
 
 OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {
-#  if defined(VGP_x86_darwin)
-   SysRes res = VG_(do_syscall4)(__NR_lseek, fd, 
-                                 offset & 0xffffffff, offset >> 32, whence);
-#  elif defined(VGP_amd64_darwin) \
-        || defined(VGO_linux) || defined(VGO_aix5)
-   /* all other platforms */
+#  if defined(VGO_linux) || defined(VGO_aix5) || defined(VGP_amd64_darwin)
    SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
    vg_assert(sizeof(OffT) == sizeof(Word));
+#  elif defined(VGP_x86_darwin)
+   SysRes res = VG_(do_syscall4)(__NR_lseek, fd, 
+                                 offset & 0xffffffff, offset >> 32, whence);
 #  else
 #    error "Unknown plat"
 #  endif
