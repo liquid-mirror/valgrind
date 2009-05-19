@@ -371,7 +371,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	VGCONF_PLATFORM_SEC_CAPS=""
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      amd64-linux)
 	if test x$vg_cv_only64bit = xyes; then
@@ -389,7 +389,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	fi
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      ppc32-linux)
         VGCONF_ARCH_PRI="ppc32"
@@ -397,7 +397,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	VGCONF_PLATFORM_SEC_CAPS=""
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      ppc64-aix5)
 	if test x$vg_cv_only64bit = xyes; then
@@ -415,7 +415,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	fi
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      ppc64-linux)
 	if test x$vg_cv_only64bit = xyes; then
@@ -434,7 +434,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	fi
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      x86-darwin)
         VGCONF_ARCH_PRI="x86"
@@ -442,7 +442,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	VGCONF_PLATFORM_SEC_CAPS=""
         valt_load_address_normal="0x0"
         valt_load_address_inner="0x0"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      amd64-darwin)
 	if test x$vg_cv_only64bit = xyes; then
@@ -461,7 +461,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	fi
         valt_load_address_normal="0x0"
         valt_load_address_inner="0x0"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
     *)
         VGCONF_ARCH_PRI="unknown"
