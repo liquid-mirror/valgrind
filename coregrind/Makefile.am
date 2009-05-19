@@ -264,6 +264,7 @@ endif
 COREGRIND_SOURCES_COMMON = \
 	m_commandline.c \
 	m_clientstate.c \
+	m_cpuid.S \
 	m_debugger.c \
 	m_debuglog.c \
 	m_errormgr.c \
@@ -363,7 +364,6 @@ libcoregrind_x86_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_LINUX_SOURCE) \
 	m_coredump/coredump-x86-linux.c \
-	m_cpuid.S \
 	m_dispatch/dispatch-x86-linux.S \
 	m_sigframe/sigframe-x86-linux.c \
 	m_syswrap/syscall-x86-linux.S \
@@ -376,7 +376,6 @@ libcoregrind_amd64_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_LINUX_SOURCE) \
 	m_coredump/coredump-amd64-linux.c \
-	m_cpuid.S \
 	m_dispatch/dispatch-amd64-linux.S \
 	m_sigframe/sigframe-amd64-linux.c \
 	m_syswrap/syscall-amd64-linux.S \
@@ -439,7 +438,6 @@ libcoregrind_x86_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_DARWIN_SOURCE) \
 	m_coredump/coredump-x86-darwin.c \
-	m_cpuid.S \
 	m_dispatch/dispatch-x86-darwin.S \
 	m_mach/mach_traps-x86-darwin.S \
 	m_sigframe/sigframe-x86-darwin.c \
@@ -456,7 +454,6 @@ libcoregrind_amd64_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_DARWIN_SOURCE) \
 	m_coredump/coredump-amd64-darwin.c \
-	m_cpuid.S \
 	m_dispatch/dispatch-amd64-darwin.S \
 	m_mach/mach_traps-amd64-darwin.S \
 	m_sigframe/sigframe-amd64-darwin.c \
