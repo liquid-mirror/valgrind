@@ -687,8 +687,7 @@ lc_scan_memory(Addr start, SizeT len, Bool is_prior_definite, Int clique)
             VG_(printf)("%#lx not valid\n", ptr);
          }
          ptr += sizeof(Addr);
-      }
-      else {
+      } else {
          // We need to restore the signal mask, because we were
          // longjmped out of a signal handler.
          VG_(sigprocmask)(VKI_SIG_SETMASK, &sigmask, NULL);
