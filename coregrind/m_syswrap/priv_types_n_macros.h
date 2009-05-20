@@ -79,7 +79,7 @@ typedef
 
 /* Guest state layout info for syscall args. */
 typedef
-   struct SyscallArgLayout {
+   struct {
       // Note that, depending on the platform, arguments may be found in
       // registers or on the stack.  (See the comment at the top of
       // syswrap-main.c for per-platform details.)  For register arguments
