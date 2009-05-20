@@ -106,7 +106,6 @@ typedef
          the corresponding host code (must be in the same sector!)
          This is a pointer into the sector's tc (code) area. */
       ULong* tcptr;
-      ULong tc_szQ;  // GrP word count occupied following tcptr
 
       /* This is the original guest address that purportedly is the
          entry point of the translation.  You might think that .entry
@@ -247,7 +246,7 @@ typedef
    tt_fast and tt_fastN are referred to from assembly code
    (dispatch.S).
 */
-UInt* VG_(tt_fastN)[VG_TT_FAST_SIZE];
+/*global*/UInt* VG_(tt_fastN)[VG_TT_FAST_SIZE];
 
 
 /* Make sure we're not used before initialisation. */
@@ -806,7 +805,7 @@ static void invalidate_icache ( void *ptr, Int nbytes )
    cls = vai.ppc_cache_line_szB;
 
    /* Stay sane .. */
-   vg_assert(cls == 32 || cls == 128);
+   vg_assert(cls == 32 || cls == 64 || cls == 128);
 
    startaddr &= ~(cls - 1);
    for (addr = startaddr; addr < endaddr; addr += cls)
@@ -941,7 +940,6 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
 
    sectors[y].tt[i].status = InUse;
    sectors[y].tt[i].tcptr  = tcptr;
-   sectors[y].tt[i].tc_szQ = reqdQ;
    sectors[y].tt[i].count  = 0;
    sectors[y].tt[i].weight = 1;
    sectors[y].tt[i].vge    = *vge;
