@@ -1186,20 +1186,6 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
 
    /* If we get here, they are the same name. */
 
-#if defined(VGO_darwin)
-   // DDD: don't need this now that stabs is disabled for Darwin?
-   /* GrP Resolved nlist vs DWARF. If one extends to the end of the 
-      text segment, drop it (it's from an nlist and the size was fake). */
-   if (a->isText  &&  b->isText  &&  a->size != b->size) {
-      if (a->addr + a->size == di->text_avma + di->text_size) {
-         preferB = True; goto out;
-      }
-      if (b->addr + b->size == di->text_avma + di->text_size) {
-         preferA = True; goto out;
-      }
-   }
-#endif
-
    /* In this case we could choose either (arbitrarily), but might as
       well choose the one with the lowest DiSym* address, so as to try
       and make the comparison mechanism more stable (a la sorting
