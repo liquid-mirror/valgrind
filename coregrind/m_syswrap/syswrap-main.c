@@ -515,7 +515,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       canonical->arg7  = stack[8];
       canonical->arg8  = stack[9];
       
-      PRINT("SYSCALL[%d,?](%5lld) syscall(#%ld, ...); please stand by...\n",
+      PRINT("SYSCALL[%d,?](%3lld) syscall(#%ld, ...); please stand by...\n",
             VG_(getpid)(), /*tid,*/ (Long)0, canonical->sysno);
    }
 
@@ -587,7 +587,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       canonical->arg7  = stack[2];
       canonical->arg8  = stack[3];
       
-      PRINT("SYSCALL[%d,?](%5lld) syscall(#%lx, ...); please stand by...\n",
+      PRINT("SYSCALL[%d,?](%3lld) syscall(#%lx, ...); please stand by...\n",
             VG_(getpid)(), /*tid,*/ (Long)0,
             VG_DARWIN_SYSNO_PRINT(canonical->sysno));
    }
@@ -1395,7 +1395,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
    */
 
    {
-      PRINT("SYSCALL[%d,%d](%5lld) ", VG_(getpid)(), tid, (Long)
+      PRINT("SYSCALL[%d,%d](%3lld) ", VG_(getpid)(), tid, (Long)
       // DDD: make this generic
       #if defined(VGO_linux) || defined(VGO_aix5)
          sysno
@@ -1544,11 +1544,11 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
             tmp_sysno = VG_DARWIN_SYSNO_PRINT(tmp_sysno);
 #           endif
             if (failed) {
-               PRINT("SYSCALL[%d,%d](%5ld) ... [async] --> Failure(0x%llx)",
+               PRINT("SYSCALL[%d,%d](%3ld) ... [async] --> Failure(0x%llx)",
                      VG_(getpid)(), tid, tmp_sysno, 
                      (ULong)sr_Err(sci->status.sres));
             } else {
-               PRINT("SYSCALL[%d,%d](%5ld) ... [async] --> "
+               PRINT("SYSCALL[%d,%d](%3ld) ... [async] --> "
                      "Success(0x%llx:0x%llx)",
                      VG_(getpid)(), tid, tmp_sysno, 
                      (ULong)sr_ResHI(sci->status.sres),
@@ -2112,7 +2112,7 @@ void ML_(wqthread_continue_NORETURN)(ThreadId tid)
 
    VG_(acquire_BigLock)(tid, "wqthread_continue_NORETURN");
 
-   PRINT("SYSCALL[%d,%d](%5lld) workq_ops() starting new workqueue item\n", 
+   PRINT("SYSCALL[%d,%d](%3lld) workq_ops() starting new workqueue item\n", 
          VG_(getpid)(), tid, (Long)VG_DARWIN_SYSNO_PRINT(__NR_workq_ops));
 
    vg_assert(VG_(is_valid_tid)(tid));
