@@ -73,8 +73,8 @@ check_PROGRAMS = \
 	fxtract \
 	getseg \
 	incdec_alt \
-	int \
 	$(INSN_TESTS) \
+	int \
 	jcxz \
 	lahf \
 	looper \
