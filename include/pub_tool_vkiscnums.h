@@ -70,12 +70,17 @@
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 #  include "vki/vki-scnums-aix5.h"
 
+/* Make it possible to include this file in assembly sources. */
+#if !defined(VG_IN_ASSEMBLY_SOURCE)
+
 /* Look up the name of a syscall, using the bindings previously
    created by VG_(aix5_register_syscall), for the purposes of making
    error messages. */
 // DDD: should combine this and VG_DARWIN_SYSNO_PRINT into a single generic
 // function which returns a string, something like VG_(pprint_sysno)().
 extern UChar* VG_(aix5_sysno_to_sysname)( Int sysno );
+
+#endif /* !defined(VG_IN_ASSEMBLY_SOURCE) */
 
 #elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
 #  include "vki/vki-scnums-darwin.h"
