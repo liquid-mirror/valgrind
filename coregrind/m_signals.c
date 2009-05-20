@@ -1383,12 +1383,11 @@ static Bool is_signal_from_kernel(ThreadId tid, int signum, int si_code)
    // - For SIGILL, it's unclear.
    // - For SIGTRAP, it's always 1.
    // You can see the "NOTIMP" (not implemented) status of a number of the
-   // sub-cases in sys/signal.h.  Since it's fairly hopeless, we just pretend
-   // like the problems don't exist.  Hopefully future versions of Darwin will
-   // get closer to this ideal...
+   // sub-cases in sys/signal.h.  Hopefully future versions of Darwin will
+   // get this right.
 
    // If we're blocked waiting on a syscall, it must be a user signal, because
-   // the kernel won't generate async signals within syscalls.
+   // the kernel won't generate sync signals within syscalls.
    if (VG_(threads)[tid].status == VgTs_WaitSys) {
       return False;
 
@@ -2270,25 +2269,6 @@ void sync_signalhandler_from_kernel ( ThreadId tid,
 
 /* 
    Receive a sync signal from the host. 
-*/
-/* Darwin inside-vs-outside examples:
-   Segfault from within the same process (sync signal)
-      info->si_signo  11
-      info->si_errno  0
-      info->si_code   1
-      info->si_pid    0
-      info->si_uid    0
-      info->si_status 0
-      info->si_addr   0x90000000
-   Segfault from outside this process (async signal)
-      sync_sighandler(11, 0xF21ACDF4, 0xF21ACE34)
-      info->si_signo  11
-      info->si_errno  0
-      info->si_code   0
-      info->si_pid    0
-      info->si_uid    0
-      info->si_status 0
-      info->si_addr   0xF00C2E90
 */
 static
 void sync_signalhandler ( Int sigNo,
