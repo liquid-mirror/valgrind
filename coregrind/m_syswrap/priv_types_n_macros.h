@@ -387,19 +387,43 @@ static inline UWord getERR ( SyscallStatus* st ) {
 */
 
 #if defined(VGO_linux)
-   /* All parameters are in registers (though max is less than 8) */
-#  define SYSCALL_PARAMS_IN_REGISTERS 8
+   /* Up to 6 parameters, all in registers. */
+#  define PRA1(s,t,a) PRRAn(1,s,t,a)
+#  define PRA2(s,t,a) PRRAn(2,s,t,a)
+#  define PRA3(s,t,a) PRRAn(3,s,t,a)
+#  define PRA4(s,t,a) PRRAn(4,s,t,a)
+#  define PRA5(s,t,a) PRRAn(5,s,t,a)
+#  define PRA6(s,t,a) PRRAn(6,s,t,a)
+
+#elif defined(VGO_aix5)
+#  error Need to fill this in for AIX5
+
 #elif defined(VGP_x86_darwin)
-   /* All parameters are on the stack */
-#  define SYSCALL_PARAMS_IN_REGISTERS 0
-#  define SYSCALL_SP VG_(threads)[tid].arch.vex.guest_ESP;
+   /* Up to 8 parameters, all on the stack. */
+#  define PRA1(s,t,a) PSRAn(1,s,t,a)
+#  define PRA2(s,t,a) PSRAn(2,s,t,a)
+#  define PRA3(s,t,a) PSRAn(3,s,t,a)
+#  define PRA4(s,t,a) PSRAn(4,s,t,a)
+#  define PRA5(s,t,a) PSRAn(5,s,t,a)
+#  define PRA6(s,t,a) PSRAn(6,s,t,a)
+#  define PRA7(s,t,a) PSRAn(7,s,t,a)
+#  define PRA8(s,t,a) PSRAn(8,s,t,a)
+
 #elif defined(VGP_amd64_darwin)
-   /* 6 parameters are in registers; the rest are on the stack */
-#  define SYSCALL_PARAMS_IN_REGISTERS 6
-#  define SYSCALL_SP VG_(threads)[tid].arch.vex.guest_RSP;
+   /* Up to 8 parameters, 6 in registers, 2 on the stack. */
+#  define PRA1(s,t,a) PRRAn(1,s,t,a)
+#  define PRA2(s,t,a) PRRAn(2,s,t,a)
+#  define PRA3(s,t,a) PRRAn(3,s,t,a)
+#  define PRA4(s,t,a) PRRAn(4,s,t,a)
+#  define PRA5(s,t,a) PRRAn(5,s,t,a)
+#  define PRA6(s,t,a) PRRAn(6,s,t,a)
+#  define PRA7(s,t,a) PSRAn(7,s,t,a)
+#  define PRA8(s,t,a) PSRAn(8,s,t,a)
+
 #else
-#  error unknown architecture
+#  error Unknown platform
 #endif
+
 
 /* Tell the tool that the syscall number is being read. */
 #define PRRSN \
@@ -472,7 +496,7 @@ static inline UWord getERR ( SyscallStatus* st ) {
 */
 #define PSRAn_LE(n,s,t,a)                          \
    do {                                            \
-      Addr here = layout->s_arg##n + SYSCALL_SP;   \
+      Addr here = layout->s_arg##n + VG_(threads)[tid].arch.vex.VG_STACK_PTR; \
       vg_assert(sizeof(t) <= sizeof(UWord));       \
       VG_(tdict).track_pre_mem_read(               \
          Vg_CoreSysCallArgInMem, tid, s"("#a")",   \
@@ -488,7 +512,8 @@ static inline UWord getERR ( SyscallStatus* st ) {
 */
 #define PSRAn_BE(n,s,t,a)                                         \
    do {                                                           \
-      Addr next = layout->o_arg##n + sizeof(UWord) + SYSCALL_SP;  \
+      Addr next = layout->o_arg##n + sizeof(UWord) +              \
+                  VG_(threads)[tid].arch.vex.VG_STACK_PTR;        \
       vg_assert(sizeof(t) <= sizeof(UWord));                      \
       VG_(tdict).track_pre_mem_read(                              \
          Vg_CoreSysCallArgInMem, tid, s"("#a")",                  \
@@ -504,39 +529,6 @@ static inline UWord getERR ( SyscallStatus* st ) {
 #  error "Unknown endianness"
 #endif
 
-
-#if SYSCALL_PARAMS_IN_REGISTERS == 8
-#  define PRA1(s,t,a) PRRAn(1,s,t,a)
-#  define PRA2(s,t,a) PRRAn(2,s,t,a)
-#  define PRA3(s,t,a) PRRAn(3,s,t,a)
-#  define PRA4(s,t,a) PRRAn(4,s,t,a)
-#  define PRA5(s,t,a) PRRAn(5,s,t,a)
-#  define PRA6(s,t,a) PRRAn(6,s,t,a)
-#  define PRA7(s,t,a) PRRAn(7,s,t,a)
-#  define PRA8(s,t,a) PRRAn(8,s,t,a)
-#elif SYSCALL_PARAMS_IN_REGISTERS == 6
-#  define PRA1(s,t,a) PRRAn(1,s,t,a)
-#  define PRA2(s,t,a) PRRAn(2,s,t,a)
-#  define PRA3(s,t,a) PRRAn(3,s,t,a)
-#  define PRA4(s,t,a) PRRAn(4,s,t,a)
-#  define PRA5(s,t,a) PRRAn(5,s,t,a)
-#  define PRA6(s,t,a) PRRAn(6,s,t,a)
-#  define PRA7(s,t,a) PSRAn(7,s,t,a)
-#  define PRA8(s,t,a) PSRAn(8,s,t,a)
-#elif SYSCALL_PARAMS_IN_REGISTERS == 0
-#  define PRA1(s,t,a) PSRAn(1,s,t,a)
-#  define PRA2(s,t,a) PSRAn(2,s,t,a)
-#  define PRA3(s,t,a) PSRAn(3,s,t,a)
-#  define PRA4(s,t,a) PSRAn(4,s,t,a)
-#  define PRA5(s,t,a) PSRAn(5,s,t,a)
-#  define PRA6(s,t,a) PSRAn(6,s,t,a)
-#  define PRA7(s,t,a) PSRAn(7,s,t,a)
-#  define PRA8(s,t,a) PSRAn(8,s,t,a)
-#else
-#  error unknown SYSCALL_PARAMS_IN_REGISTERS value
-#endif
-
-#undef SYSCALL_PARAMS_IN_REGISTERS
 
 #define PRE_REG_READ0(tr, s) \
    if (VG_(tdict).track_pre_reg_read) { \
