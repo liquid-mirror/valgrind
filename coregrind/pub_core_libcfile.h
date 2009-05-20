@@ -50,7 +50,7 @@ extern Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf );
 extern Long VG_(fsize) ( Int fd );
 
 /* Is the file a directory? */
-extern Bool VG_(is_dir) ( HChar* f );
+extern Bool VG_(is_dir) ( const HChar* f );
 
 /* Default destination port to be used in logging over a network, if
    none specified. */
@@ -71,7 +71,8 @@ extern Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getsockopt)  ( Int sd, Int level, Int optname, 
                               void *optval, Int *optlen );
 
-extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
+extern Int VG_(access) ( const HChar* path, Bool irusr, Bool iwusr,
+                                            Bool ixusr );
 
 /* Is the file executable?  Returns: 0 = success, non-0 is failure */
 extern Int VG_(check_executable)(/*OUT*/Bool* is_setuid,

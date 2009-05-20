@@ -328,7 +328,7 @@ Long VG_(fsize) ( Int fd )
    return (res == -1) ? (-1LL) : buf.size;
 }
 
-Bool VG_(is_dir) ( HChar* f )
+Bool VG_(is_dir) ( const HChar* f )
 {
    struct vg_stat buf;
    SysRes res = VG_(stat)(f, &buf);
@@ -468,7 +468,7 @@ Int VG_(getdents) (Int fd, struct vki_dirent *dirp, UInt count)
 
 /* Check accessibility of a file.  Returns zero for access granted,
    nonzero otherwise. */
-Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
+Int VG_(access) ( const HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
 {
 #  if defined(VGO_linux)
    /* Very annoyingly, I cannot find any definition for R_OK et al in
