@@ -64,13 +64,6 @@ typedef
       Addr exe_base;     // INOUT: lowest (allowed) address of exe
       Addr exe_end;      // INOUT: highest (allowed) address
 
-      Addr entry;        // OUT: entrypoint in main executable
-      Addr init_ip;      // OUT: address of first instruction to execute
-      Addr brkbase;      // OUT: base address of brk segment
-      Addr init_toc;     // OUT: address of table-of-contents, on
-                         // platforms for which that makes sense
-                         // (ppc64-linux only)
-
 #if !defined(VGO_darwin)
       Addr phdr;         // OUT: address phdr was mapped at
       Int  phnum;        // OUT: number of phdrs
@@ -83,9 +76,16 @@ typedef
       char* executable_path;  // OUT: path passed to execve()
 #endif
 
+      Addr entry;        // OUT: entrypoint in main executable
+      Addr init_ip;      // OUT: address of first instruction to execute
+      Addr brkbase;      // OUT: base address of brk segment
+      Addr init_toc;     // OUT: address of table-of-contents, on
+                         // platforms for which that makes sense
+                         // (ppc64-linux only)
+
       // These are the extra args added by #! scripts
-      HChar*  interp_name;    // OUT: the interpreter name
-      HChar*  interp_args;    // OUT: the args for the interpreter
+      HChar*  interp_name;  // OUT: the interpreter name
+      HChar*  interp_args;  // OUT: the args for the interpreter
    }
    ExeInfo;
 
