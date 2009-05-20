@@ -58,8 +58,8 @@ check_PROGRAMS = \
 	badseg \
 	bt_everything \
 	bt_literal \
-	bug126147-x86 \
 	bug125959-x86 \
+	bug126147-x86 \
 	bug132813-x86 \
 	bug135421-x86 \
 	bug137714-x86 \
