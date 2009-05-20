@@ -76,7 +76,7 @@ static UInt local_sys_write_stderr ( HChar* buf, Int n )
       "movl  0(%%ebx), %%ecx\n" /* %ecx = buf */
       "movl  4(%%ebx), %%edx\n" /* %edx = n */
       "movl  $"VG_STRINGIFY(__NR_write)", %%eax\n" /* %eax = __NR_write */
-      "movl  $1, %%ebx\n"       /* %ebx = stderr */
+      "movl  $2, %%ebx\n"       /* %ebx = stderr */
       "int   $0x80\n"           /* write(stderr, buf, n) */
       "popl  %%ebx\n"           /* reestablish &block */
       "movl  %%eax, 0(%%ebx)\n" /* block[0] = result */
@@ -413,7 +413,7 @@ static UInt local_sys_write_stderr ( HChar* buf, Int n )
       "pushl %%eax\n"
       "movl  %1, %%eax\n"    /* push buf */
       "pushl %%eax\n"
-      "movl  $1, %%eax\n"    /* push stderr */
+      "movl  $2, %%eax\n"    /* push stderr */
       "pushl %%eax\n"
       "movl  $"VG_STRINGIFY(VG_DARWIN_SYSNO_INDEX(__NR_write_nocancel))
              ", %%eax\n"
@@ -451,7 +451,7 @@ static UInt local_sys_write_stderr ( HChar* buf, Int n )
 {
    UInt __res;
    __asm__ volatile (
-      "movq  $1, %%rdi\n"    /* push stderr */
+      "movq  $2, %%rdi\n"    /* push stderr */
       "movq  %1, %%rsi\n"    /* push buf */
       "movl  %2, %%edx\n"    /* push n */
       "movl  $"VG_STRINGIFY(VG_DARWIN_SYSNO_NUM(__NR_write_nocancel))
