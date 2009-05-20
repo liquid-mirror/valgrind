@@ -204,6 +204,7 @@ if VGCONF_OS_IS_AIX5
  res_search_LDADD       = -lpthread
 else
  res_search_LDADD       = -lresolv -lpthread
+ resolv_LDADD           = -lresolv -lpthread
 endif
 semlimit_LDADD		= -lpthread
 thread_exits_LDADD	= -lpthread
