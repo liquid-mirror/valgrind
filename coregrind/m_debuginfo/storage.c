@@ -1237,9 +1237,11 @@ static void canonicaliseSymtab ( struct _DebugInfo* di )
 #if !defined(VGO_darwin) 
              && di->symtab[i].size   == di->symtab[i+1].size
 #else 
-             // DDD: don't need this now that stabs is disabled for Darwin?
+             // DDD: this can be removed if DWARF3 symbol reading is disabled.
+             // It's unclear why DWARF3 symbol reading is currently enabled
+             // alongside normal symbol table reading. --njn
              /* darwin: use prefersym to resolve same-address but 
-                different-size (probably STABS vs DWARF */
+                different-size */
 #endif
              ) {
 	    di->symtab[di->symtab_used++] 
