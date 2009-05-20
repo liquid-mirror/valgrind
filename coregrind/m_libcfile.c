@@ -214,9 +214,6 @@ OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
    'struct vg_stat' in order to have a single structure that callers
    can use consistently on all platforms. */
 
-/* Note that on Darwin, the _p_vkistat fields st_{a,m,c}time{_,nsec}
-   "happen" to have the same name as on Linux only due to a bit of
-   #define magic in vki-darwin.h. */
 #define TRANSLATE_TO_vg_stat(_p_vgstat, _p_vkistat) \
    do { \
       (_p_vgstat)->dev        = (ULong)( (_p_vkistat)->st_dev ); \
