@@ -107,6 +107,9 @@ Also, startup is not done on the interim startup stack -- why not?
 
 VG_(post_syscall): contains important-looking code that is #if 0'd
 out.  Said code does VG_TRACK( post_reg_write).  Needs looking into.
+[The 'post_reg_write' call has been moved into
+putSyscallStatusIntoGuestState().  This might be an improvement, as on some
+platforms more than one register is written with a result.]
 
 
 VG_(di_notify_mmap): Linux version is also used for Darwin, and
