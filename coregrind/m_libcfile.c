@@ -81,8 +81,8 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
 {
 #  if defined(VGO_linux)
    HChar tmp[64];
-   VG_(memset)(buf, 0, n_buf);
    VG_(sprintf)(tmp, "/proc/self/fd/%d", fd);
+   VG_(memset)(buf, 0, n_buf);
    if (VG_(readlink)(tmp, buf, n_buf) > 0 && buf[0] == '/')
       return True;
    else
