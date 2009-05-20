@@ -43,7 +43,12 @@
    specific vki_stat{,64} kernel structure will work and is
    consistently available on different architectures on Linux, so we
    have to use this 'struct vg_stat' impedance-matching type
-   instead. */
+   instead.
+
+   Also note that the fieldnames aren't prefixed with "st_".  This is because
+   st_atime et al are macros in sys/stat.h on DARWIN, and using those names
+   screws things up.
+*/
 struct vg_stat {
    ULong   dev;
    ULong   ino;
