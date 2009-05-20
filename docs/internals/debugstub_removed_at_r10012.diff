@@ -1,0 +1,16 @@
+Index: include/vki/vki-linux.h
+===================================================================
+--- include/vki/vki-linux.h	(revision 10011)
++++ include/vki/vki-linux.h	(working copy)
+@@ -157,11 +157,6 @@
+ 
+ typedef unsigned int	        vki_uint;
+ 
+-// [[Other OSes (eg. Darwin) have a socklen_t type used in bind(), accept(),
+-// etc, but Linux just uses 'int'.  So we use this typedef, which is *not*
+-// present in the Linux kernel. --njn]]
+-typedef int                     vki_socklen_t;
+-
+ //----------------------------------------------------------------------
+ // Now the rest of the arch-specific stuff
+ //----------------------------------------------------------------------

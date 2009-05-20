@@ -7,6 +7,7 @@ EXTRA_DIST = \
 	debugstub_removed_at_r9477.diff \
 	debugstub_removed_at_r9711.diff \
 	debugstub_removed_at_r9759.diff \
+	debugstub_removed_at_r10012.diff \
 	directory-structure.txt \
 	howto_BUILD_KDE42.txt \
 	howto_oprofile.txt \
