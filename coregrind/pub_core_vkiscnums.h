@@ -65,13 +65,11 @@ extern Bool VG_(aix5_register_syscall)( Int, UChar* );
 #  error unknown arch
 #endif
 
-
 #else
 #  error Unknown OS
-#endif   // defined(VGO_*)
+#endif // defined(VGO_*)
 
-
-#endif /* !defined(VG_IN_ASSEMBLY_SOURCE) */
+#endif // !defined(VG_IN_ASSEMBLY_SOURCE)
 
 #endif // __PUB_CORE_VKISCNUMS_H
 
