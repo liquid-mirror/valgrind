@@ -15,6 +15,22 @@ TOOLS =		memcheck \
 EXP_TOOLS = 	exp-omega \
 		exp-ptrcheck
 
+# DDD: once all tools work on Darwin, TEST_TOOLS and TEST_EXP_TOOLS can be
+# replaced with TOOLS and EXP_TOOLS.
+if !VGCONF_OS_IS_DARWIN
+  TEST_TOOLS = $(TOOLS)
+  TEST_EXP_TOOLS = $(EXP_TOOLS)
+else
+  TEST_TOOLS =	memcheck \
+		cachegrind \
+		callgrind \
+		massif \
+		lackey \
+		none
+
+  TEST_EXP_TOOLS = exp-omega
+endif
+
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
 SUBDIRS = include coregrind . tests perf auxprogs $(TOOLS) $(EXP_TOOLS) docs
@@ -90,11 +106,11 @@ default.supp: $(DEFAULT_SUPP_FILES)
 
 ## Preprend @PERL@ because tests/vg_regtest isn't executable
 regtest: check
-	@PERL@ tests/vg_regtest $(TOOLS) $(EXP_TOOLS)
+	@PERL@ tests/vg_regtest $(TEST_TOOLS) $(TEST_EXP_TOOLS)
 nonexp-regtest: check
-	@PERL@ tests/vg_regtest $(TOOLS)
+	@PERL@ tests/vg_regtest $(TEST_TOOLS)
 exp-regtest: check
-	@PERL@ tests/vg_regtest $(EXP_TOOLS)
+	@PERL@ tests/vg_regtest $(TEST_EXP_TOOLS)
 
 ## Preprend @PERL@ because tests/vg_perf isn't executable
 perf: check
