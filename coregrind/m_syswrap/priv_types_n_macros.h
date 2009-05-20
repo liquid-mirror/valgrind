@@ -275,12 +275,14 @@ SyscallTableEntry* ML_(get_ppc64_aix5_syscall_entry) ( UInt sysno );
     vgSysWrap_##auxstr##_##name##_after
 
 /* Add a generic wrapper to a syscall table. */
-#if defined(VGO_darwin)
-#define GENX_(sysno, name)    WRAPPER_ENTRY_X_(generic, VG_DARWIN_SYSNO_INDEX(sysno), name)
-#define GENXY(sysno, name)    WRAPPER_ENTRY_XY(generic, VG_DARWIN_SYSNO_INDEX(sysno), name)
+#if defined(VGO_linux) || defined(VGO_aix5)
+#  define GENX_(sysno, name)  WRAPPER_ENTRY_X_(generic, sysno, name)
+#  define GENXY(sysno, name)  WRAPPER_ENTRY_XY(generic, sysno, name)
+#elif defined(VGO_darwin)
+#  define GENX_(sysno, name)  WRAPPER_ENTRY_X_(generic, VG_DARWIN_SYSNO_INDEX(sysno), name)
+#  define GENXY(sysno, name)  WRAPPER_ENTRY_XY(generic, VG_DARWIN_SYSNO_INDEX(sysno), name)
 #else
-#define GENX_(sysno, name)    WRAPPER_ENTRY_X_(generic, sysno, name)
-#define GENXY(sysno, name)    WRAPPER_ENTRY_XY(generic, sysno, name)
+#  error Unknown OS
 #endif
 
 /* Add a Linux-specific, arch-independent wrapper to a syscall
