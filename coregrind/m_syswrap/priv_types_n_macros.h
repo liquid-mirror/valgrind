@@ -496,7 +496,7 @@ static inline UWord getERR ( SyscallStatus* st ) {
 */
 #define PSRAn_LE(n,s,t,a)                          \
    do {                                            \
-      Addr here = layout->s_arg##n + VG_(threads)[tid].arch.vex.VG_STACK_PTR; \
+      Addr here = layout->s_arg##n + VG_(get_SP)(tid); \
       vg_assert(sizeof(t) <= sizeof(UWord));       \
       VG_(tdict).track_pre_mem_read(               \
          Vg_CoreSysCallArgInMem, tid, s"("#a")",   \
