@@ -46,7 +46,7 @@
    instead.
 
    Also note that the fieldnames aren't prefixed with "st_".  This is because
-   st_atime et al are macros in sys/stat.h on DARWIN, and using those names
+   st_atime et al are macros in sys/stat.h on Darwin, and using those names
    screws things up.
 */
 struct vg_stat {
