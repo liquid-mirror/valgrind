@@ -519,6 +519,8 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
             VG_(getpid)(), /*tid,*/ (Long)0, canonical->sysno);
    }
 
+   // DDD: Would it be better to stash the JMP kind into the Darwin
+   // thread state rather than passing in the trc?
    switch (trc) {
    case VEX_TRC_JMP_SYS_INT128:
       // int $0x80 = Unix, 64-bit result
@@ -1231,7 +1233,7 @@ static void ensure_initialised ( void )
 
 void VG_(client_syscall) ( ThreadId tid, UInt trc )
 {
-   Word                    sysno;
+   Word                     sysno;
    ThreadState*             tst;
    const SyscallTableEntry* ent;
    SyscallArgLayout         layout;
@@ -1394,19 +1396,16 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
         sci->flags        is zero.
    */
 
-   {
-      PRINT("SYSCALL[%d,%d](%3lld) ", VG_(getpid)(), tid, (Long)
-      // DDD: make this generic
-      #if defined(VGO_linux) || defined(VGO_aix5)
-         sysno
-      #elif defined(VGO_darwin)
-         VG_DARWIN_SYSNO_PRINT(sysno)
-      #else
-      #  error Unknown OS
-      #endif
-      );
-   // VG_(check_segments)("### before syscall");
-   }
+   PRINT("SYSCALL[%d,%d](%3lld) ", VG_(getpid)(), tid,
+   // DDD: make this generic
+   #if defined(VGO_linux) || defined(VGO_aix5)
+      (Long)sysno
+   #elif defined(VGO_darwin)
+      (Long)VG_DARWIN_SYSNO_PRINT(sysno)
+   #else
+   #  error Unknown OS
+   #endif
+   );
 
    /* Do any pre-syscall actions */
    if (VG_(needs).syscall_wrapper) {
@@ -1541,6 +1540,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
             Bool failed = sr_isError(sci->status.sres);
             Word tmp_sysno = sysno;
 #           if defined(VGO_darwin)
+            // DDD: genericise this
             tmp_sysno = VG_DARWIN_SYSNO_PRINT(tmp_sysno);
 #           endif
             if (failed) {
