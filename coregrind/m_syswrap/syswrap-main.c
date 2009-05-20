@@ -1138,8 +1138,7 @@ void bad_before ( ThreadId              tid,
 static SyscallTableEntry bad_sys =
    { bad_before, NULL };
 
-static const SyscallTableEntry* get_syscall_entry ( Int syscallno, 
-                                                    ThreadState *tst )
+static const SyscallTableEntry* get_syscall_entry ( Int syscallno )
 {
    const SyscallTableEntry* sys = NULL;
 
@@ -1374,7 +1373,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
    /* Fetch the syscall's handlers.  If no handlers exist for this
       syscall, we are given dummy handlers which force an immediate
       return with ENOSYS. */
-   ent = get_syscall_entry(sysno, tst);
+   ent = get_syscall_entry(sysno);
 
    /* Fetch the layout information, which tells us where in the guest
       state the syscall args reside.  This is a platform-dependent
@@ -1670,7 +1669,7 @@ void VG_(post_syscall) (ThreadId tid)
       original and potentially-modified args. */
    vg_assert(sci->args.sysno == sci->orig_args.sysno);
    sysno = sci->args.sysno;
-   ent = get_syscall_entry(sysno, tst);
+   ent = get_syscall_entry(sysno);
 
    // DDD: the trunk has the following code...
 #if 0
