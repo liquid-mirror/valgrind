@@ -2901,20 +2901,21 @@ PRE(sys_fork)
 
    if (!SUCCESS) return;
 
-#if defined(VGO_darwin)
+#if defined(VGO_linux) || defined(VGO_aix5)
+   // RES is 0 for child, non-0 (the child's PID) for parent.
+   is_child = ( RES == 0 ? True : False );
+   child_pid = ( is_child ? -1 : RES );
+#elif defined(VGO_darwin)
    // RES is the child's pid.  RESHI is 1 for child, 0 for parent.
    is_child = RESHI;
    child_pid = RES;
 #else
-   // RES is 0 for child, non-0 (the child's PID) for parent.
-   is_child = ( RES == 0 ? True : False );
-   child_pid = ( is_child ? -1 : RES );
+#  error Unknown OS
 #endif
 
    VG_(do_atfork_pre)(tid);
 
    if (is_child) {
-      /* child */
       VG_(do_atfork_child)(tid);
 
       /* restore signal mask */
@@ -2926,9 +2927,8 @@ PRE(sys_fork)
          duly stops writing any further logging output. */
       if (!VG_(logging_to_socket) && VG_(clo_child_silent_after_fork))
          VG_(clo_log_fd) = -1;
-   } 
-   else {
-      /* parent */
+
+   } else {
       VG_(do_atfork_parent)(tid);
 
       PRINT("   fork: process %d created child %d\n", VG_(getpid)(), child_pid);
