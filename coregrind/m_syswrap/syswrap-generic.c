@@ -2885,7 +2885,8 @@ static vki_sigset_t fork_saved_mask;
 // ignore the various args it gets, and so it looks arch-neutral.  Hmm.
 PRE(sys_fork)
 {
-   UWord result;
+   Bool is_child;
+   Int child_pid;
    vki_sigset_t mask;
 
    PRINT("sys_fork ( )");
@@ -2901,15 +2902,18 @@ PRE(sys_fork)
    if (!SUCCESS) return;
 
 #if defined(VGO_darwin)
-   // RES is child's pid; RESHI is 1 for child, 0 for parent
-   result = RESHI ? 0 : RES;
+   // RES is the child's pid.  RESHI is 1 for child, 0 for parent.
+   is_child = RESHI;
+   child_pid = RES;
 #else
-   result = RES;
+   // RES is 0 for child, non-0 (the child's PID) for parent.
+   is_child = ( RES == 0 ? True : False );
+   child_pid = ( is_child ? -1 : RES );
 #endif
 
    VG_(do_atfork_pre)(tid);
 
-   if (result == 0) {
+   if (is_child) {
       /* child */
       VG_(do_atfork_child)(tid);
 
@@ -2927,7 +2931,7 @@ PRE(sys_fork)
       /* parent */
       VG_(do_atfork_parent)(tid);
 
-      PRINT("   fork: process %d created child %ld\n", VG_(getpid)(), result);
+      PRINT("   fork: process %d created child %d\n", VG_(getpid)(), child_pid);
 
       /* restore signal mask */
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
