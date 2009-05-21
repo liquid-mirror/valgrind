@@ -894,7 +894,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
    VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
              OFFSET_ppc32_GPR3, sizeof(UWord) );
    VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
-             OFFSET_ppc32_GPR3, sizeof(UWord) );
+             OFFSET_ppc32_GPR4, sizeof(UWord) );
 
 #  elif defined(VGP_ppc64_aix5)
    VexGuestPPC64State* gst = (VexGuestPPC64State*)gst_vanilla;
