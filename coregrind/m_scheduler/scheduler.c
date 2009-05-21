@@ -71,7 +71,9 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
+#if defined(VGO_darwin)
 #include "pub_core_mach.h"
+#endif
 #include "pub_core_machine.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
@@ -202,14 +204,14 @@ void VG_(acquire_BigLock)(ThreadId tid, HChar* who)
 {
    ThreadState *tst;
 
-#  if 0
+#if 0
    if (VG_(clo_trace_sched)) {
       HChar buf[100];
       vg_assert(VG_(strlen)(who) <= 100-50);
       VG_(sprintf)(buf, "waiting for lock (%s)", who);
       print_sched_event(tid, buf);
    }
-#  endif
+#endif
 
    /* First, acquire the_BigLock.  We can't do anything else safely
       prior to this point.  Even doing debug printing prior to this
@@ -316,7 +318,6 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
    vg_assert(!VG_(is_running_thread)(tid));
 
    if (VG_(threads)[tid].status == VgTs_WaitSys) {
-      __attribute__((unused)) Int r;
       if (VG_(clo_trace_signals)) {
 	 VG_(message)(Vg_DebugMsg, 
                       "get_thread_out_of_syscall zaps tid %d lwp %d",
@@ -331,21 +332,23 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
          thread_abort(VG_(threads)[tid].os_state.lwpid);
       }
 #     else
-      r = VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
-      /* JRS 2009-Mar-20: should we assert for r==0 (tkill succeeded)?
-         I'm really not sure.  Here's a race scenario which argues
-         that we shoudn't; but equally I'm not sure the scenario is
-         even possible, because of constraints caused by the question
-         of who holds the BigLock when.
+      {
+         Int r = VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
+         /* JRS 2009-Mar-20: should we assert for r==0 (tkill succeeded)?
+            I'm really not sure.  Here's a race scenario which argues
+            that we shoudn't; but equally I'm not sure the scenario is
+            even possible, because of constraints caused by the question
+            of who holds the BigLock when.
 
-         Target thread tid does sys_read on a socket and blocks.  This
-         function gets called, and we observe correctly that tid's
-         status is WaitSys but then for whatever reason this function
-         goes very slowly for a while.  Then data arrives from
-         wherever, tid's sys_read returns, tid exits.  Then we do
-         tkill on tid, but tid no longer exists; tkill returns an
-         error code and the assert fails. */
-      /* vg_assert(r == 0); */
+            Target thread tid does sys_read on a socket and blocks.  This
+            function gets called, and we observe correctly that tid's
+            status is WaitSys but then for whatever reason this function
+            goes very slowly for a while.  Then data arrives from
+            wherever, tid's sys_read returns, tid exits.  Then we do
+            tkill on tid, but tid no longer exists; tkill returns an
+            error code and the assert fails. */
+         /* vg_assert(r == 0); */
+      }
 #     endif
    }
 }
@@ -1107,6 +1110,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       case VEX_TRC_JMP_MAPFAIL:
          /* Failure of arch-specific address translation (x86/amd64
             segment override use) */
+         /* jrs 2005 03 11: is this correct? */
          VG_(synth_fault)(tid);
          break;
 
