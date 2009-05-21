@@ -333,6 +333,7 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
       }
 #     else
       {
+         __attribute__((unused))
          Int r = VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
          /* JRS 2009-Mar-20: should we assert for r==0 (tkill succeeded)?
             I'm really not sure.  Here's a race scenario which argues
