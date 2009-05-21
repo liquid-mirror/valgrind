@@ -848,10 +848,11 @@ static void sync_check_mapping_callback ( Addr addr, SizeT len, UInt prot,
    /* If a problem has already been detected, don't continue comparing
       segments, so as to avoid flooding the output with error
       messages. */
-   /* GrP fixme not
+#if !defined(VGO_darwin)
+   /* GrP fixme not */
    if (!sync_check_ok)
       return;
-   */
+#endif
    if (len == 0)
       return;
 
@@ -981,10 +982,11 @@ static void sync_check_gap_callback ( Addr addr, SizeT len )
    /* If a problem has already been detected, don't continue comparing
       segments, so as to avoid flooding the output with error
       messages. */
-   /* GrP fixme not
+#if !defined(VGO_darwin)
+   /* GrP fixme not */
    if (!sync_check_ok)
       return;
-   */
+#endif 
    if (len == 0)
       return;
 
@@ -1528,9 +1530,11 @@ static void read_maps_callback ( Addr addr, SizeT len, UInt prot,
    seg.kind = SkAnonV;
    if (dev != 0 && ino != 0) 
       seg.kind = SkFileV;
+#if defined(VGO_darwin)
    // GrP fixme no dev/ino on darwin
    if (offset != 0) 
        seg.kind = SkFileV;
+#endif
    if (filename)
       seg.fnIdx = allocate_segname( filename );
 
