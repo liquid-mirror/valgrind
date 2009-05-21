@@ -2490,6 +2490,8 @@ asm("\n"
     "\tnop\n"
     "\ttrap\n"
 );
+#else
+#  error "Unknown linux platform"
 #endif
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
@@ -2706,8 +2708,10 @@ void _start_in_C_darwin ( UWord* pArgc )
    VG_(exit)(r);
 }
 
+
 #else
-#error dont know how to call valgrind_main on this platform
+
+#  error "Unknown OS"
 #endif
 
 
