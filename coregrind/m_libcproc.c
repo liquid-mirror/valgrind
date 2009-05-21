@@ -221,6 +221,10 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
    Char* buf;
 
    // Find LD_* variables
+   // DDD: should probably conditionally compiled some of this:
+   // - LD_LIBRARY_PATH is universal?
+   // - LD_PRELOAD is on Linux, not on Darwin, not sure about AIX
+   // - DYLD_INSERT_LIBRARIES and DYLD_SHARED_REGION are Darwin-only
    for (i = 0; envp[i] != NULL; i++) {
       if (VG_(strncmp)(envp[i], "LD_PRELOAD=", 11) == 0)
          ld_preload_str = &envp[i][11];
