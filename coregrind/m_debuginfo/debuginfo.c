@@ -710,8 +710,7 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 #  if defined(VGA_x86)
    is_rx_map = seg->hasR && seg->hasX;
    is_rw_map = seg->hasR && seg->hasW;
-#  elif defined(VGA_amd64) \
-        || defined(VGA_ppc32) || defined(VGA_ppc64)
+#  elif defined(VGA_amd64) || defined(VGA_ppc32) || defined(VGA_ppc64)
    is_rx_map = seg->hasR && seg->hasX && !seg->hasW;
    is_rw_map = seg->hasR && seg->hasW && !seg->hasX;
 #  else
