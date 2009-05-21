@@ -97,7 +97,6 @@ typedef
       Int o_arg6;
       Int uu_arg7;
       Int uu_arg8;
-      Int o_retval;
 #     elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
       Int o_arg1;
       Int o_arg2;
@@ -107,7 +106,6 @@ typedef
       Int o_arg6;
       Int o_arg7;
       Int o_arg8;
-      Int o_retval;
 #     elif defined(VGP_x86_darwin)
       Int s_arg1;
       Int s_arg2;
@@ -117,8 +115,6 @@ typedef
       Int s_arg6;
       Int s_arg7;
       Int s_arg8;
-      Int o_retval_lo;
-      Int o_retval_hi;
 #     elif defined(VGP_amd64_darwin)
       Int o_arg1;
       Int o_arg2;
@@ -128,8 +124,6 @@ typedef
       Int o_arg6;
       Int s_arg7;
       Int s_arg8;
-      Int o_retval_lo;
-      Int o_retval_hi;
 #     else
 #       error "Unknown platform"
 #     endif

@@ -995,7 +995,6 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg6   = OFFSET_x86_EBP;
    layout->uu_arg7  = -1; /* impossible value */
    layout->uu_arg8  = -1; /* impossible value */
-   layout->o_retval = OFFSET_x86_EAX;
 
 #elif defined(VGP_amd64_linux)
    layout->o_sysno  = OFFSET_amd64_RAX;
@@ -1007,7 +1006,6 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg6   = OFFSET_amd64_R9;
    layout->uu_arg7  = -1; /* impossible value */
    layout->uu_arg8  = -1; /* impossible value */
-   layout->o_retval = OFFSET_amd64_RAX;
 
 #elif defined(VGP_ppc32_linux)
    layout->o_sysno  = OFFSET_ppc32_GPR0;
@@ -1019,7 +1017,6 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg6   = OFFSET_ppc32_GPR8;
    layout->uu_arg7  = -1; /* impossible value */
    layout->uu_arg8  = -1; /* impossible value */
-   layout->o_retval = OFFSET_ppc32_GPR3;
 
 #elif defined(VGP_ppc64_linux)
    layout->o_sysno  = OFFSET_ppc64_GPR0;
@@ -1031,7 +1028,6 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg6   = OFFSET_ppc64_GPR8;
    layout->uu_arg7  = -1; /* impossible value */
    layout->uu_arg8  = -1; /* impossible value */
-   layout->o_retval = OFFSET_ppc64_GPR3;
 
 #elif defined(VGP_ppc32_aix5)
    layout->o_sysno  = OFFSET_ppc32_GPR2;
@@ -1043,7 +1039,6 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg6   = OFFSET_ppc32_GPR8;
    layout->o_arg7   = OFFSET_ppc32_GPR9;
    layout->o_arg8   = OFFSET_ppc32_GPR10;
-   layout->o_retval = OFFSET_ppc32_GPR3;
 
 #elif defined(VGP_ppc64_aix5)
    layout->o_sysno  = OFFSET_ppc64_GPR2;
@@ -1055,12 +1050,9 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg6   = OFFSET_ppc64_GPR8;
    layout->o_arg7   = OFFSET_ppc64_GPR9;
    layout->o_arg8   = OFFSET_ppc64_GPR10;
-   layout->o_retval = OFFSET_ppc64_GPR3;
 
 #elif defined(VGP_x86_darwin)
    layout->o_sysno  = OFFSET_x86_EAX;
-   layout->o_retval_lo = OFFSET_x86_EAX;
-   layout->o_retval_hi = OFFSET_x86_EDX;
    // syscall parameters are on stack in C convention
    layout->s_arg1   = sizeof(UWord) * 1;
    layout->s_arg2   = sizeof(UWord) * 2;
@@ -1081,8 +1073,6 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg6   = OFFSET_amd64_R9;
    layout->s_arg7   = sizeof(UWord) * 1;
    layout->s_arg8   = sizeof(UWord) * 2;
-   layout->o_retval_lo = OFFSET_amd64_RAX;
-   layout->o_retval_hi = OFFSET_amd64_RDX;
 
 #else
 #  error "getSyscallLayout: unknown arch"
@@ -1622,7 +1612,6 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
 */
 void VG_(post_syscall) (ThreadId tid)
 {
-   //SyscallArgLayout         layout;     DDD (see below)
    SyscallInfo*             sci;
    const SyscallTableEntry* ent;
    SyscallStatus            test_status;
@@ -1670,17 +1659,6 @@ void VG_(post_syscall) (ThreadId tid)
    vg_assert(sci->args.sysno == sci->orig_args.sysno);
    sysno = sci->args.sysno;
    ent = get_syscall_entry(sysno);
-
-   // DDD: the trunk has the following code...
-#if 0
-   /* We need the arg layout .. sigh */
-   getSyscallArgLayout( &layout );
-
-   /* Tell the tool that the assignment has occurred, so it can update
-      shadow regs as necessary. */
-   VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, layout.o_retval,
-                                                  sizeof(UWord) );
-#endif
 
    /* pre: status == Complete (asserted above) */
    /* Consider either success or failure.  Now run the post handler if:
