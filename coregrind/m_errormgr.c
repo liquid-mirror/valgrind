@@ -951,7 +951,6 @@ static void load_one_suppressions_file ( Char* filename )
    Char*  supp_name;
    Char*  err_str = NULL;
    SuppLoc tmp_callers[VG_MAX_SUPP_CALLERS];
-   Bool rdar = False;
 
    sres = VG_(open)( filename, VKI_O_RDONLY, 0 );
    if (sr_isError(sres)) {
@@ -1105,22 +1104,10 @@ static void load_one_suppressions_file ( Char* filename )
          supp->callers[i] = tmp_callers[i];
       }
 
-      // GrP Display names that look like radar numbers
-      if (VG_(strstr)(supp->sname, "<rdar://")) {
-          VG_(message)(Vg_UserMsg, "IGNORING: %s", 
-                       supp->sname);
-          rdar = True;
-      }
-
       supp->next = suppressions;
       suppressions = supp;
    }
    VG_(close)(fd);
-
-   if (rdar) {
-       VG_(message)(Vg_UserMsg, "Edit %s if you are analyzing or verifying one of the bugs above.", filename);
-   }
-
    return;
 
   syntax_error:
