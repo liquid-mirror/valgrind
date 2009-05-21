@@ -51,8 +51,8 @@
 #include "pub_core_xarray.h"
 #include "pub_core_oset.h"
 #include "pub_core_stacktrace.h" // VG_(get_StackTrace) XXX: circular dependency
-
 #include "pub_core_ume.h"
+
 #include "priv_misc.h"           /* dinfo_zalloc/free */
 #include "priv_d3basics.h"       /* ML_(pp_GX) */
 #include "priv_tytypes.h"
