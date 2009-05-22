@@ -189,6 +189,9 @@ void
 ML_(notify_core_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                     UInt flags, Int fd, Off64T offset )
 {
+   // XXX: unlike the other notify_core_and_tool* functions, this one doesn't
+   // do anything with debug info (ie. it doesn't call VG_(di_notify_mmap)).
+   // Should it?  --njn
    notify_core_of_mmap(a, len, prot, flags, fd, offset);
    notify_tool_of_mmap(a, len, prot, 0/*di_handle*/);
 }
