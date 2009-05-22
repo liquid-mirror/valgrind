@@ -762,6 +762,7 @@ void init_preopened_fds_without_proc_self_fd(void)
 void VG_(init_preopened_fds)(void)
 {
 // Nb: AIX5 is handled in syswrap-aix5.c.
+// DDD: should probably use HAVE_PROC here or similar, instead.
 #if defined(VGO_linux)
    Int ret;
    struct vki_dirent d;
