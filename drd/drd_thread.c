@@ -996,8 +996,7 @@ void DRD_(thread_combine_vc)(DrdThreadId joiner, DrdThreadId joinee)
 
 /**
  * Call this function after thread 'tid' had to wait because of thread
- * synchronization until the memory accesses in the segment with vector clock
- * 'vc' finished.
+ * synchronization until the memory accesses in the segment 'sg' finished.
  */
 void DRD_(thread_combine_vc2)(DrdThreadId tid, const Segment* sg)
 {
