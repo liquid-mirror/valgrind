@@ -884,7 +884,7 @@ static void thread_merge_segments(void)
  * Every change in the vector clock of a thread may cause segments that
  * were previously ordered to this thread to become unordered. Hence,
  * it may be necessary to recalculate the conflict set if the vector clock 
- * of the current thread is updated. This function check whether such a
+ * of the current thread is updated. This function checks whether such a
  * recalculation is necessary.
  *
  * @param tid    Thread ID of the thread to which a new segment has been
@@ -892,12 +892,13 @@ static void thread_merge_segments(void)
  * @param new_sg Pointer to the most recent segment of thread tid.
  */
 static Bool conflict_set_update_needed(const DrdThreadId tid,
-                                       const Segment* const new_sg)
+                                       const VectorClock* const old_vc,
+                                       const VectorClock* const new_vc)
 {
    unsigned j;
-   const Segment* old_sg;
 
-   tl_assert(new_sg);
+   tl_assert(old_vc);
+   tl_assert(new_vc);
 
    /*
     * If a new segment has been added to another thread than the running
@@ -907,14 +908,6 @@ static Bool conflict_set_update_needed(const DrdThreadId tid,
       return True;
 
    tl_assert(tid == DRD_(g_drd_running_tid));
-
-   /*
-    * Always let the caller update the conflict set after creation of the
-    * first segment.
-    */
-   old_sg = new_sg->prev;
-   if (old_sg == 0)
-      return True;
 
    for (j = 0; j < sizeof(DRD_(g_threadinfo)) / sizeof(DRD_(g_threadinfo)[0]);
         j++)
@@ -927,11 +920,11 @@ static Bool conflict_set_update_needed(const DrdThreadId tid,
       for (q = DRD_(g_threadinfo)[j].last; q; q = q->prev)
       {
          const int included_in_old_conflict_set
-            = ! DRD_(vc_lte)(&q->vc, &old_sg->vc)
-            && ! DRD_(vc_lte)(&old_sg->vc, &q->vc);
+            = ! DRD_(vc_lte)(&q->vc, old_vc)
+            && ! DRD_(vc_lte)(old_vc, &q->vc);
          const int included_in_new_conflict_set
-            = ! DRD_(vc_lte)(&q->vc, &new_sg->vc)
-            && ! DRD_(vc_lte)(&new_sg->vc, &q->vc);
+            = ! DRD_(vc_lte)(&q->vc, new_vc)
+            && ! DRD_(vc_lte)(new_vc, &q->vc);
          if (included_in_old_conflict_set != included_in_new_conflict_set)
              return True;
       }
@@ -954,7 +947,8 @@ void DRD_(thread_new_segment)(const DrdThreadId tid)
    new_sg = DRD_(sg_new)(tid, tid);
    thread_append_segment(tid, new_sg);
 
-   if (conflict_set_update_needed(tid, new_sg))
+   if (new_sg->prev == NULL
+       || conflict_set_update_needed(tid, &new_sg->prev->vc, &new_sg->vc))
    {
       thread_compute_conflict_set(&DRD_(g_conflict_set),
                                   DRD_(g_drd_running_tid));
@@ -1010,9 +1004,16 @@ void DRD_(thread_combine_vc2)(DrdThreadId tid, const Segment* sg)
 
    if (tid != sg->tid)
    {
+      VectorClock old_vc;
+      DRD_(vc_copy)(&old_vc, &DRD_(g_threadinfo)[tid].last->vc);
       DRD_(vc_combine)(&DRD_(g_threadinfo)[tid].last->vc, vc);
-      thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
-      s_conflict_set_combine_vc_count++;
+      if (conflict_set_update_needed(tid, &old_vc,
+                                     &DRD_(g_threadinfo)[tid].last->vc))
+      {
+         thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
+         s_conflict_set_combine_vc_count++;
+      }
+      DRD_(vc_cleanup)(&old_vc);
       DRD_(thread_discard_ordered_segments)();
    }
    else
