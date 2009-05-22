@@ -70,6 +70,7 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
    int first_race_only        = -1;
    int report_signal_unlocked = -1;
    int segment_merging        = -1;
+   int segment_merge_interval = -1;
    int shared_threshold_ms    = -1;
    int show_confl_seg         = -1;
    int trace_barrier          = -1;
@@ -88,8 +89,11 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
    if      VG_BOOL_CLO(arg, "--check-stack-var",     check_stack_accesses) {}
    else if VG_BOOL_CLO(arg, "--drd-stats",           DRD_(s_print_stats)) {}
    else if VG_BOOL_CLO(arg, "--first-race-only",     first_race_only) {}
-   else if VG_BOOL_CLO(arg,"--report-signal-unlocked",report_signal_unlocked) {}
+   else if VG_BOOL_CLO(arg,"--report-signal-unlocked",report_signal_unlocked)
+   {}
    else if VG_BOOL_CLO(arg, "--segment-merging",     segment_merging) {}
+   else if VG_INT_CLO (arg, "--segment-merging-interval", segment_merge_interval)
+   {}
    else if VG_BOOL_CLO(arg, "--show-confl-seg",      show_confl_seg) {}
    else if VG_BOOL_CLO(arg, "--show-stack-usage",
                        DRD_(s_show_stack_usage)) {}
@@ -132,6 +136,8 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
    }
    if (segment_merging != -1)
       DRD_(thread_set_segment_merging)(segment_merging);
+   if (segment_merge_interval != 1)
+      DRD_(thread_set_segment_merge_interval)(segment_merge_interval);
    if (show_confl_seg != -1)
       DRD_(set_show_conflicting_segments)(show_confl_seg);
    if (trace_address)
@@ -183,6 +189,8 @@ static void DRD_(print_usage)(void)
 "        data race detection algorithm. Disabling segment merging may\n"
 "        improve the accuracy of the so-called 'other segments' displayed\n"
 "        in race reports but can also trigger an out of memory error.\n"
+"    --segment-merging-interval=<n> Perform segment merging every time n new\n"
+"        segments have been created. Default: 32.\n"
 "    --shared-threshold=<n>    Print an error message if a reader lock\n"
 "        is held longer than the specified time (in milliseconds).\n"
 "    --show-confl-seg=yes|no   Show conflicting segments in race reports [yes].\n"
@@ -582,20 +590,19 @@ static void DRD_(fini)(Int exitcode)
                    DRD_(sg_get_max_segments_alive_count)(),
                    DRD_(thread_get_discard_ordered_segments_count)());
       VG_(message)(Vg_UserMsg,
-                   "           %lld merges.",
+                   "           %lld merges",
                    DRD_(sg_get_segment_merge_count)());
       VG_(message)(Vg_UserMsg,
-                   "           (%lld m, %lld rw, %lld s, %lld b)",
+                   "           (%lld mutex, %lld rwlock, %lld semaphore,"
+                   " %lld barrier).",
                    DRD_(get_mutex_segment_creation_count)(),
                    DRD_(get_rwlock_segment_creation_count)(),
                    DRD_(get_semaphore_segment_creation_count)(),
                    DRD_(get_barrier_segment_creation_count)());
       VG_(message)(Vg_UserMsg,
-                   "  bitmaps: %lld level 1 / %lld level 2 bitmap refs",
+                   "  bitmaps: %lld level 1"
+                   " and %lld level 2 bitmaps were allocated.",
                    DRD_(bm_get_bitmap_creation_count)(),
-                   DRD_(bm_get_bitmap2_node_creation_count)());
-      VG_(message)(Vg_UserMsg,
-                   "           and %lld level 2 bitmaps were allocated.",
                    DRD_(bm_get_bitmap2_creation_count)());
       VG_(message)(Vg_UserMsg,
                    "    mutex: %lld non-recursive lock/unlock events.",

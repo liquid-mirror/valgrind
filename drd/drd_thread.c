@@ -72,6 +72,8 @@ static Bool     s_trace_context_switches = False;
 static Bool     s_trace_conflict_set = False;
 static Bool     s_trace_fork_join = False;
 static Bool     s_segment_merging = True;
+static Bool     s_new_segments_since_last_merge;
+static int      s_segment_merge_interval = 32;
 
 
 /* Function definitions. */
@@ -108,6 +110,12 @@ void DRD_(thread_set_segment_merging)(const Bool m)
 {
    tl_assert(m == False || m == True);
    s_segment_merging = m;
+}
+
+/** Set the segment merging interval. */
+void DRD_(thread_set_segment_merge_interval)(const int i)
+{
+   s_segment_merge_interval = i;
 }
 
 /**
@@ -841,6 +849,8 @@ static void thread_merge_segments(void)
 {
    unsigned i;
 
+   s_new_segments_since_last_merge = 0;
+
    for (i = 0; i < sizeof(DRD_(g_threadinfo)) / sizeof(DRD_(g_threadinfo)[0]);
         i++)
    {
@@ -957,7 +967,8 @@ void DRD_(thread_new_segment)(const DrdThreadId tid)
 
    DRD_(thread_discard_ordered_segments)();
 
-   if (s_segment_merging)
+   if (s_segment_merging
+       && ++s_new_segments_since_last_merge >= s_segment_merge_interval)
    {
       thread_merge_segments();
    }
@@ -988,16 +999,27 @@ void DRD_(thread_combine_vc)(DrdThreadId joiner, DrdThreadId joinee)
  * synchronization until the memory accesses in the segment with vector clock
  * 'vc' finished.
  */
-void DRD_(thread_combine_vc2)(DrdThreadId tid, const VectorClock* const vc)
+void DRD_(thread_combine_vc2)(DrdThreadId tid, const Segment* sg)
 {
+   const VectorClock* const vc = &sg->vc;
+
    tl_assert(0 <= (int)tid && tid < DRD_N_THREADS
              && tid != DRD_INVALID_THREADID);
    tl_assert(DRD_(g_threadinfo)[tid].last);
+   tl_assert(sg);
    tl_assert(vc);
-   DRD_(vc_combine)(&DRD_(g_threadinfo)[tid].last->vc, vc);
-   thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
-   DRD_(thread_discard_ordered_segments)();
-   s_conflict_set_combine_vc_count++;
+
+   if (tid != sg->tid)
+   {
+      DRD_(vc_combine)(&DRD_(g_threadinfo)[tid].last->vc, vc);
+      thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
+      s_conflict_set_combine_vc_count++;
+      DRD_(thread_discard_ordered_segments)();
+   }
+   else
+   {
+      tl_assert(DRD_(vc_lte)(vc, &DRD_(g_threadinfo)[tid].last->vc));
+   }
 }
 
 /**

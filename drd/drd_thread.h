@@ -116,6 +116,7 @@ void DRD_(thread_trace_conflict_set)(const Bool t);
 Bool DRD_(thread_get_trace_fork_join)(void);
 void DRD_(thread_set_trace_fork_join)(const Bool t);
 void DRD_(thread_set_segment_merging)(const Bool m);
+void DRD_(thread_set_segment_merge_interval)(const int i);
 
 DrdThreadId DRD_(VgThreadIdToDrdThreadId)(const ThreadId tid);
 DrdThreadId DRD_(NewVgThreadIdToDrdThreadId)(const ThreadId tid);
@@ -148,8 +149,7 @@ VectorClock* DRD_(thread_get_vc)(const DrdThreadId tid);
 void DRD_(thread_get_latest_segment)(Segment** sg, const DrdThreadId tid);
 void DRD_(thread_combine_vc)(const DrdThreadId joiner,
                              const DrdThreadId joinee);
-void DRD_(thread_combine_vc2)(const DrdThreadId tid,
-                              const VectorClock* const vc);
+void DRD_(thread_combine_vc2)(const DrdThreadId tid, const Segment* sg);
 
 void DRD_(thread_stop_using_mem)(const Addr a1, const Addr a2);
 void DRD_(thread_start_recording)(const DrdThreadId tid);
