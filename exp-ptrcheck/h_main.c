@@ -2113,7 +2113,8 @@ void h_post_reg_write_clientcall(ThreadId tid, PtrdiffT guest_state_offset,
 /*--- System calls                                                 ---*/
 /*--------------------------------------------------------------------*/
 
-void h_pre_syscall ( ThreadId tid, UInt sysno )
+void h_pre_syscall ( ThreadId tid, UInt sysno,
+                     UWord* args, UInt nArgs )
 {
    /* we don't do anything at the pre-syscall point */
 }
@@ -2447,7 +2448,8 @@ static void setup_post_syscall_table ( void )
 }
 
 
-void h_post_syscall ( ThreadId tid, UInt sysno, SysRes res )
+void h_post_syscall ( ThreadId tid, UInt sysno, 
+                      UWord* args, UInt nArgs, SysRes res )
 {
    Word i, n;
    UWordPair* pair;
