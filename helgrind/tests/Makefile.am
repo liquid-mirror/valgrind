@@ -91,7 +91,6 @@ check_PROGRAMS = \
 	tc17_sembar \
 	tc18_semabuse \
 	tc19_shadowmem \
-	tc20_verifywrap \
 	tc21_pthonce \
 	tc22_exit_w_lock \
 	tc23_bogus_condwait \
@@ -99,6 +98,10 @@ check_PROGRAMS = \
 
 if HAVE_PTHREAD_BARRIER
 check_PROGRAMS += bar_bad bar_trivial
+endif
+
+if HAVE_PTHREAD_MUTEX_TIMEDLOCK
+check_PROGRAMS += tc20_verifywrap
 endif
 
 AM_CFLAGS   += $(AM_FLAG_M3264_PRI)

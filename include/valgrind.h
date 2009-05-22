@@ -581,11 +581,15 @@ typedef
 /* Use these to write the name of your wrapper.  NOTE: duplicates
    VG_WRAP_FUNCTION_Z{U,Z} in pub_tool_redir.h. */
 
+/* Use an extra level of macroisation so as to ensure the soname/fnname
+   args are fully macro-expanded before pasting them together. */
+#define VG_CONCAT4(_aa,_bb,_cc,_dd) _aa##_bb##_cc##_dd
+
 #define I_WRAP_SONAME_FNNAME_ZU(soname,fnname)                    \
-   _vgwZU_##soname##_##fnname
+   VG_CONCAT4(_vgwZU_,soname,_,fnname)
 
 #define I_WRAP_SONAME_FNNAME_ZZ(soname,fnname)                    \
-   _vgwZZ_##soname##_##fnname
+   VG_CONCAT4(_vgwZZ_,soname,_,fnname)
 
 /* Use this macro from within a wrapper function to collect the
    context (address and possibly other info) of the original function.
@@ -611,6 +615,22 @@ typedef
 #define CALL_FN_v_WWW(fnptr, arg1,arg2,arg3)                      \
    do { volatile unsigned long _junk;                             \
         CALL_FN_W_WWW(_junk,fnptr,arg1,arg2,arg3); } while (0)
+
+#define CALL_FN_v_WWWW(fnptr, arg1,arg2,arg3,arg4)                \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_WWWW(_junk,fnptr,arg1,arg2,arg3,arg4); } while (0)
+
+#define CALL_FN_v_5W(fnptr, arg1,arg2,arg3,arg4,arg5)             \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_5W(_junk,fnptr,arg1,arg2,arg3,arg4,arg5); } while (0)
+
+#define CALL_FN_v_6W(fnptr, arg1,arg2,arg3,arg4,arg5,arg6)        \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_6W(_junk,fnptr,arg1,arg2,arg3,arg4,arg5,arg6); } while (0)
+
+#define CALL_FN_v_7W(fnptr, arg1,arg2,arg3,arg4,arg5,arg6,arg7)   \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_7W(_junk,fnptr,arg1,arg2,arg3,arg4,arg5,arg6,arg7); } while (0)
 
 /* ------------------------- x86-linux ------------------------- */
 

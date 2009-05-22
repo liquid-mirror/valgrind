@@ -76,15 +76,16 @@ endif
 bin_PROGRAMS = \
 	valgrind no_op_client_for_valgrind
 
+if VGCONF_OS_IS_LINUX
+valgrind_SOURCES = \
+	launcher-linux.c \
+	m_debuglog.c
+endif
 if VGCONF_OS_IS_AIX5
 valgrind_SOURCES = \
 	launcher-aix5.c \
 	m_debuglog.c \
 	m_vkiscnums.c
-else
-valgrind_SOURCES = \
-	launcher-linux.c \
-	m_debuglog.c
 endif
 
 valgrind_CPPFLAGS  = $(AM_CPPFLAGS_PRI)
@@ -102,6 +103,7 @@ no_op_client_for_valgrind_LDFLAGS   = $(AM_CFLAGS_PRI)
 
 
 noinst_HEADERS = \
+	launcher-aix5-bootblock.h \
 	pub_core_aspacehl.h	\
 	pub_core_aspacemgr.h	\
 	pub_core_basics.h	\
@@ -171,6 +173,8 @@ noinst_HEADERS = \
 	m_demangle/demangle.h	\
 	m_demangle/safe-ctype.h \
 	m_demangle/vg_libciface.h \
+	m_initimg/priv_initimg_pathscan.h \
+	m_initimg/simple_huffman.c \
 	m_scheduler/priv_sema.h \
 	m_syswrap/priv_types_n_macros.h \
 	m_syswrap/priv_syswrap-generic.h \
@@ -178,9 +182,7 @@ noinst_HEADERS = \
 	m_syswrap/priv_syswrap-linux-variants.h \
 	m_syswrap/priv_syswrap-aix5.h \
 	m_syswrap/priv_syswrap-main.h \
-	m_ume/priv_ume.h \
-	launcher-aix5-bootblock.h \
-	m_initimg/simple_huffman.c
+	m_ume/priv_ume.h
 
 BUILT_SOURCES = 
 CLEANFILES = 
@@ -237,7 +239,10 @@ COREGRIND_SOURCES_COMMON = \
 	m_replacemalloc/replacemalloc_core.c \
 	m_scheduler/scheduler.c \
 	m_scheduler/sema.c \
-	m_syswrap/syswrap-main.c
+	m_syswrap/syswrap-main.c \
+	m_ume/elf.c \
+	m_ume/main.c \
+	m_ume/script.c
 
 COREGRIND_LINUX_SOURCE = \
 	m_aspacemgr/aspacemgr-linux.c \
@@ -248,17 +253,15 @@ COREGRIND_LINUX_SOURCE = \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readpdb.c \
 	m_initimg/initimg-linux.c \
+	m_initimg/initimg-pathscan.c \
 	m_syswrap/syswrap-linux.c \
 	m_syswrap/syswrap-linux-variants.c \
-	m_syswrap/syswrap-generic.c \
-	m_ume/elf.c \
-	m_ume/main.c \
-	m_ume/script.c
+	m_syswrap/syswrap-generic.c
 
 COREGRIND_AIX5_SOURCE = \
 	m_aspacemgr/aspacemgr-aix5.c \
-	m_initimg/initimg-aix5.c \
 	m_debuginfo/readxcoff.c \
+	m_initimg/initimg-aix5.c \
 	m_syswrap/syswrap-aix5.c
 
 libcoregrind_x86_linux_a_SOURCES = \
@@ -338,28 +341,28 @@ libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
 
 libreplacemalloc_toolpreload_x86_linux_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_x86_linux_a_CPPFLAGS = $(AM_CPPFLAGS_X86_LINUX)
-libreplacemalloc_toolpreload_x86_linux_a_CFLAGS = $(AM_CFLAGS_X86_LINUX) -fpic -fno-omit-frame-pointer
+libreplacemalloc_toolpreload_x86_linux_a_CFLAGS = $(AM_CFLAGS_X86_LINUX) $(AM_CFLAGS_PIC)
 
 libreplacemalloc_toolpreload_amd64_linux_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_amd64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_LINUX)
-libreplacemalloc_toolpreload_amd64_linux_a_CFLAGS = $(AM_CFLAGS_AMD64_LINUX) -fpic -fno-omit-frame-pointer
+libreplacemalloc_toolpreload_amd64_linux_a_CFLAGS = $(AM_CFLAGS_AMD64_LINUX) $(AM_CFLAGS_PIC)
 
 libreplacemalloc_toolpreload_ppc32_linux_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_ppc32_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_LINUX)
-libreplacemalloc_toolpreload_ppc32_linux_a_CFLAGS = $(AM_CFLAGS_PPC32_LINUX) -fpic -fno-omit-frame-pointer
+libreplacemalloc_toolpreload_ppc32_linux_a_CFLAGS = $(AM_CFLAGS_PPC32_LINUX) $(AM_CFLAGS_PIC)
 
 libreplacemalloc_toolpreload_ppc64_linux_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_ppc64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_LINUX)
-libreplacemalloc_toolpreload_ppc64_linux_a_CFLAGS = $(AM_CFLAGS_PPC64_LINUX) -fpic -fno-omit-frame-pointer
+libreplacemalloc_toolpreload_ppc64_linux_a_CFLAGS = $(AM_CFLAGS_PPC64_LINUX) $(AM_CFLAGS_PIC)
 
 libreplacemalloc_toolpreload_ppc32_aix5_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_ppc32_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_AIX5)
-libreplacemalloc_toolpreload_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5) -fpic -fno-omit-frame-pointer
+libreplacemalloc_toolpreload_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5) $(AM_CFLAGS_PIC)
 libreplacemalloc_toolpreload_ppc32_aix5_a_AR = $(AR) -X32 cru
 
 libreplacemalloc_toolpreload_ppc64_aix5_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_ppc64_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_AIX5)
-libreplacemalloc_toolpreload_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5) -fpic -fno-omit-frame-pointer
+libreplacemalloc_toolpreload_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5) $(AM_CFLAGS_PIC)
 libreplacemalloc_toolpreload_ppc64_aix5_a_AR = $(AR) -X64 cru
 
 m_dispatch/dispatch-x86-linux.S:	 libvex_guest_offsets.h

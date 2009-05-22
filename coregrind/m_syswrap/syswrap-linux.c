@@ -331,7 +331,7 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
 # error Unknown platform
 #endif
 
-   if (!res.isError && res.res == 0) {
+   if (!sr_isError(res) && sr_Res(res) == 0) {
       /* child */
       VG_(do_atfork_child)(tid);
 
@@ -346,13 +346,13 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
          VG_(clo_log_fd) = -1;
    } 
    else 
-   if (!res.isError && res.res > 0) {
+   if (!sr_isError(res) && sr_Res(res) > 0) {
       /* parent */
       VG_(do_atfork_parent)(tid);
 
       if (VG_(clo_trace_syscalls))
 	  VG_(printf)("   clone(fork): process %d created child %ld\n",
-                      VG_(getpid)(), res.res);
+                      VG_(getpid)(), sr_Res(res));
 
       /* restore signal mask */
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
@@ -1273,9 +1273,9 @@ POST(sys_io_setup)
    r = *(struct vki_aio_ring **)ARG2;
    vg_assert(ML_(valid_client_addr)((Addr)r, size, tid, "io_setup"));
 
-   ML_(notify_aspacem_and_tool_of_mmap)( (Addr)r, size,
-                                         VKI_PROT_READ | VKI_PROT_WRITE,
-                                         VKI_MAP_ANONYMOUS, -1, 0 );
+   ML_(notify_core_and_tool_of_mmap)( (Addr)r, size,
+                                      VKI_PROT_READ | VKI_PROT_WRITE,
+                                      VKI_MAP_ANONYMOUS, -1, 0 );
 
    POST_MEM_WRITE( ARG2, sizeof(vki_aio_context_t) );
 }
@@ -1744,9 +1744,9 @@ static Bool linux_kernel_2_6_22(void)
 
    if (result == -1) {
       res = VG_(open)("/proc/sys/kernel/osrelease", 0, 0);
-      if (res.isError)
+      if (sr_isError(res))
          return False;
-      fd = res.res;
+      fd = sr_Res(res);
       read = VG_(read)(fd, release, sizeof(release) - 1);
       vg_assert(read >= 0);
       release[read] = 0;
@@ -2482,7 +2482,7 @@ PRE(sys_rt_sigaction)
                  struct sigaction *, oldact, vki_size_t, sigsetsize);
 
    if (ARG2 != 0) {
-      struct vki_sigaction *sa = (struct vki_sigaction *)ARG2;
+      vki_sigaction_toK_t *sa = (vki_sigaction_toK_t *)ARG2;
       PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
       PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
       PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
@@ -2490,22 +2490,22 @@ PRE(sys_rt_sigaction)
          PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
    }
    if (ARG3 != 0)
-      PRE_MEM_WRITE( "rt_sigaction(oldact)", ARG3, sizeof(struct vki_sigaction));
+      PRE_MEM_WRITE( "rt_sigaction(oldact)", ARG3, sizeof(vki_sigaction_fromK_t));
 
    // XXX: doesn't seem right to be calling do_sys_sigaction for
    // sys_rt_sigaction... perhaps this function should be renamed
    // VG_(do_sys_rt_sigaction)()  --njn
 
    SET_STATUS_from_SysRes(
-      VG_(do_sys_sigaction)(ARG1, (const struct vki_sigaction *)ARG2,
-                            (struct vki_sigaction *)ARG3)
+      VG_(do_sys_sigaction)(ARG1, (const vki_sigaction_toK_t *)ARG2,
+                            (vki_sigaction_fromK_t *)ARG3)
    );
 }
 POST(sys_rt_sigaction)
 {
    vg_assert(SUCCESS);
    if (RES == 0 && ARG3 != 0)
-      POST_MEM_WRITE( ARG3, sizeof(struct vki_sigaction));
+      POST_MEM_WRITE( ARG3, sizeof(vki_sigaction_fromK_t));
 }
 
 PRE(sys_rt_sigprocmask)
@@ -2735,8 +2735,8 @@ PRE(sys_openat)
            || VG_(strcmp)((Char *)ARG2, "/proc/self/cmdline") == 0)) {
       sres = VG_(dup)( VG_(cl_cmdline_fd) );
       SET_STATUS_from_SysRes( sres );
-      if (!sres.isError) {
-         OffT off = VG_(lseek)( sres.res, 0, VKI_SEEK_SET );
+      if (!sr_isError(sres)) {
+         OffT off = VG_(lseek)( sr_Res(sres), 0, VKI_SEEK_SET );
          if (off < 0)
             SET_STATUS_Failure( VKI_EMFILE );
       }
@@ -3198,6 +3198,11 @@ PRE(sys_fcntl)
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     struct flock64 *, lock);
+      break;
+
+   default:
+      PRINT("sys_fcntl[UNKNOWN] ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
+      I_die_here;
       break;
    }
 
@@ -4353,49 +4358,9 @@ PRE(sys_ioctl)
       }
       break;
 
-      /* We don't have any specific information on it, so
-	 try to do something reasonable based on direction and
-	 size bits.  The encoding scheme is described in
-	 /usr/include/asm/ioctl.h.  
-
-	 According to Simon Hausmann, _IOC_READ means the kernel
-	 writes a value to the ioctl value passed from the user
-	 space and the other way around with _IOC_WRITE. */
-   default: {
-      UInt dir  = _VKI_IOC_DIR(ARG2);
-      UInt size = _VKI_IOC_SIZE(ARG2);
-      if (VG_(strstr)(VG_(clo_sim_hints), "lax-ioctls") != NULL) {
-	 /* 
-	  * Be very lax about ioctl handling; the only
-	  * assumption is that the size is correct. Doesn't
-	  * require the full buffer to be initialized when
-	  * writing.  Without this, using some device
-	  * drivers with a large number of strange ioctl
-	  * commands becomes very tiresome.
-	  */
-      } else if (/* size == 0 || */ dir == _VKI_IOC_NONE) {
-	 static Int moans = 3;
-	 if (moans > 0 && !VG_(clo_xml)) {
-	    moans--;
-	    VG_(message)(Vg_UserMsg, 
-			 "Warning: noted but unhandled ioctl 0x%lx"
-			 " with no size/direction hints",
-			 ARG2); 
-	    VG_(message)(Vg_UserMsg, 
-			 "   This could cause spurious value errors"
-			 " to appear.");
-	    VG_(message)(Vg_UserMsg, 
-			 "   See README_MISSING_SYSCALL_OR_IOCTL for "
-			 "guidance on writing a proper wrapper." );
-	 }
-      } else {
-	 if ((dir & _VKI_IOC_WRITE) && size > 0)
-	    PRE_MEM_READ( "ioctl(generic)", ARG3, size);
-	 if ((dir & _VKI_IOC_READ) && size > 0)
-	    PRE_MEM_WRITE( "ioctl(generic)", ARG3, size);
-      }
+   default:
+      ML_(PRE_unknown_ioctl)(tid, ARG2, ARG3);
       break;
-   }
    }   
 }
 
@@ -5159,23 +5124,9 @@ POST(sys_ioctl)
       }
       break;
 
-      /* We don't have any specific information on it, so
-	 try to do something reasonable based on direction and
-	 size bits.  The encoding scheme is described in
-	 /usr/include/asm/ioctl.h.  
-
-	 According to Simon Hausmann, _IOC_READ means the kernel
-	 writes a value to the ioctl value passed from the user
-	 space and the other way around with _IOC_WRITE. */
-   default: {
-      UInt dir  = _VKI_IOC_DIR(ARG2);
-      UInt size = _VKI_IOC_SIZE(ARG2);
-      if (size > 0 && (dir & _VKI_IOC_READ)
-	  && RES == 0 
-	  && ARG3 != (Addr)NULL)
-	 POST_MEM_WRITE(ARG3, size);
+   default:
+      ML_(POST_unknown_ioctl)(tid, RES, ARG2, ARG3);
       break;
-   }
    }
 }
 
@@ -5217,7 +5168,7 @@ ML_(linux_POST_sys_getsockopt) ( ThreadId tid,
 {
    Addr optval_p = arg3;
    Addr optlen_p = arg4;
-   vg_assert(!res.isError); /* guaranteed by caller */
+   vg_assert(!sr_isError(res)); /* guaranteed by caller */
    if (optval_p != (Addr)NULL) {
       ML_(buf_and_len_post_check) ( tid, res, optval_p, optlen_p,
                                     "socketcall.getsockopt(optlen_out)" );

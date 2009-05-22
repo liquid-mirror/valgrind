@@ -349,7 +349,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
-   if (res.isError) {
+   if (sr_isError(res)) {
       /* clone failed */
       VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
@@ -1379,8 +1379,8 @@ void convert_sigset_to_rt(const vki_old_sigset_t *oldset, vki_sigset_t *set)
 }
 PRE(sys_sigaction)
 {
-   struct vki_sigaction new, old;
-   struct vki_sigaction *newp, *oldp;
+   vki_sigaction_toK_t   new, *newp;
+   vki_sigaction_fromK_t old, *oldp;
 
    PRINT("sys_sigaction ( %ld, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(int, "sigaction",
@@ -1710,8 +1710,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),   // 177
    LINX_(__NR_rt_sigsuspend,     sys_rt_sigsuspend),     // 178
 
-   GENXY(__NR_pread64,           sys_pread64_on32bitplat),  // 179
-   GENX_(__NR_pwrite64,          sys_pwrite64_on32bitplat), // 180
+   GENXY(__NR_pread64,           sys_pread64),           // 179
+   GENX_(__NR_pwrite64,          sys_pwrite64),          // 180
    GENX_(__NR_chown,             sys_chown),             // 181
    GENXY(__NR_getcwd,            sys_getcwd),            // 182
    LINXY(__NR_capget,            sys_capget),            // 183

@@ -645,11 +645,11 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 
    /* stat dereferences symlinks, so we don't expect it to succeed and
       yet produce something that is a symlink. */
-   vg_assert(statres.isError || ! VKI_S_ISLNK(statbuf.st_mode));
+   vg_assert(sr_isError(statres) || ! VKI_S_ISLNK(statbuf.mode));
 
    /* Don't let the stat call fail silently.  Filter out some known
       sources of noise before complaining, though. */
-   if (statres.isError) {
+   if (sr_isError(statres)) {
       DebugInfo fake_di;
       Bool quiet = VG_(strstr)(filename, "/var/run/nscd/") != NULL;
       if (!quiet && VG_(clo_verbosity) > 1) {
@@ -662,7 +662,7 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 
    /* Finally, the point of all this stattery: if it's not a regular file,
       don't try to read debug info from it. */
-   if (! VKI_S_ISREG(statbuf.st_mode))
+   if (! VKI_S_ISREG(statbuf.mode))
       return 0;
 
    /* no uses of statbuf below here. */
@@ -726,9 +726,8 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    /* object file. Ignore the file if we do not have read permission. */
    VG_(memset)(buf1k, 0, sizeof(buf1k));
    fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
-   if (fd.isError) {
-      if (fd.err != VKI_EACCES)
-      {
+   if (sr_isError(fd)) {
+      if (sr_Err(fd) != VKI_EACCES) {
          DebugInfo fake_di;
          VG_(memset)(&fake_di, 0, sizeof(fake_di));
          fake_di.filename = filename;
@@ -736,8 +735,8 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
       }
       return 0;
    }
-   nread = VG_(read)( fd.res, buf1k, sizeof(buf1k) );
-   VG_(close)( fd.res );
+   nread = VG_(read)( sr_Res(fd), buf1k, sizeof(buf1k) );
+   VG_(close)( sr_Res(fd) );
 
    if (nread == 0)
       return 0;
@@ -906,7 +905,7 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
    if (r == -1)
       goto out; /* stat failed ?! */
    vg_assert(r == 0);
-   obj_mtime = stat_buf.st_mtime;
+   obj_mtime = stat_buf.mtime;
 
    /* and get its name into exename[]. */
    vg_assert(VKI_PATH_MAX > 100); /* to ensure /proc/self/fd/%d is safe */
@@ -948,14 +947,14 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
 
    /* See if we can find it, and check it's in-dateness. */
    sres = VG_(stat)(pdbname, &stat_buf);
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       VG_(message)(Vg_UserMsg, "Warning: Missing or un-stat-able %s",
                                pdbname);
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "LOAD_PDB_DEBUGINFO: missing: %s", pdbname);
       goto out;
    }
-   pdb_mtime = stat_buf.st_mtime;
+   pdb_mtime = stat_buf.mtime;
    if (pdb_mtime < obj_mtime ) {
       /* PDB file is older than PE file - ignore it or we will either
          (a) print wrong stack traces or more likely (b) crash. */
@@ -965,17 +964,17 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
    }
 
    sres = VG_(open)(pdbname, VKI_O_RDONLY, 0);
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       VG_(message)(Vg_UserMsg, "Warning: Can't open %s", pdbname);
       goto out;
    }
 
    /* Looks promising; go on to try and read stuff from it. */
-   fd_pdbimage = sres.res;
-   n_pdbimage  = stat_buf.st_size;
+   fd_pdbimage = sr_Res(sres);
+   n_pdbimage  = stat_buf.size;
    sres = VG_(am_mmap_file_float_valgrind)( n_pdbimage, VKI_PROT_READ,
                                             fd_pdbimage, 0 );
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       VG_(close)(fd_pdbimage);
       goto out;
    }
@@ -989,7 +988,7 @@ void VG_(di_notify_pdb_debuginfo)( Int fd_obj, Addr avma_obj,
    /* dump old info for this range, if any */
    discard_syms_in_range( avma_obj, total_size );
 
-   { void* pdbimage = (void*)sres.res;
+   { void* pdbimage = (void*)sr_Res(sres);
      DebugInfo* di = find_or_create_DebugInfo_for(exename, NULL/*membername*/ );
 
      /* this di must be new, since we just nuked any old stuff in the range */

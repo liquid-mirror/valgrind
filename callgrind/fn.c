@@ -47,6 +47,7 @@ struct pattern
 /* Scan for a pattern in the code of an ELF object.
  * If found, return true and set runtime_resolve_{addr,length}
  */
+__attribute__((unused))    // Possibly;  depends on the platform.
 static Bool check_code(obj_node* obj,
 		       unsigned char code[], struct pattern* pat)
 {
@@ -102,7 +103,7 @@ static Bool check_code(obj_node* obj,
     CLG_DEBUG(1, " found nothing.\n");
     return False;
 }
-    	       
+
 
 /* _ld_runtime_resolve, located in ld.so, needs special handling:
  * The jump at end into the resolved function should not be

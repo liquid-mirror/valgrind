@@ -614,12 +614,12 @@ static Bool main_process_cmd_line_options( const HChar* toolname )
          sres = VG_(open)(logfilename, 
                           VKI_O_CREAT|VKI_O_WRONLY|VKI_O_TRUNC, 
                           VKI_S_IRUSR|VKI_S_IWUSR);
-         if (!sres.isError) {
-            tmp_log_fd = sres.res;
+         if (!sr_isError(sres)) {
+            tmp_log_fd = sr_Res(sres);
          } else {
             VG_(message)(Vg_UserMsg, 
                          "Can't create log file '%s' (%s); giving up!", 
-                         logfilename, VG_(strerror)(sres.err));
+                         logfilename, VG_(strerror)(sr_Err(sres)));
             VG_(err_bad_option)(
                "--log-file=<file> (didn't work out for some reason.)");
             /*NOTREACHED*/
@@ -903,12 +903,12 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
 
       VG_(message)(Vg_DebugMsg, "Contents of /proc/version:");
       fd = VG_(open) ( "/proc/version", VKI_O_RDONLY, 0 );
-      if (fd.isError) {
+      if (sr_isError(fd)) {
          VG_(message)(Vg_DebugMsg, "  can't open /proc/version");
       } else {
 #        define BUF_LEN    256
          Char version_buf[BUF_LEN];
-         Int n = VG_(read) ( fd.res, version_buf, BUF_LEN );
+         Int n = VG_(read) ( sr_Res(fd), version_buf, BUF_LEN );
          vg_assert(n <= BUF_LEN);
          if (n > 0) {
             version_buf[n-1] = '\0';
@@ -916,7 +916,7 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
          } else {
             VG_(message)(Vg_DebugMsg, "  (empty?)");
          }
-         VG_(close)(fd.res);
+         VG_(close)(sr_Res(fd));
 #        undef BUF_LEN
       }
 
@@ -1309,13 +1309,14 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
 
    //--------------------------------------------------------------
    // Extract the launcher name from the environment.
-   VG_(debugLog)(1, "main", "Getting stage1's name\n");
+   VG_(debugLog)(1, "main", "Getting launcher's name ...\n");
    VG_(name_of_launcher) = VG_(getenv)(VALGRIND_LAUNCHER);
    if (VG_(name_of_launcher) == NULL) {
       VG_(printf)("valgrind: You cannot run '%s' directly.\n", argv[0]);
       VG_(printf)("valgrind: You should use $prefix/bin/valgrind.\n");
       VG_(exit)(1);
    }
+   VG_(debugLog)(1, "main", "... %s\n", VG_(name_of_launcher));
 
    //--------------------------------------------------------------
    // Get the current process datasize rlimit, and set it to zero.
@@ -1464,7 +1465,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
       /* the_iicii.clstack_top    is irrelevant */
       the_iicii.toolname          = toolname;
 #     else
-#       error "Uknown platform"
+#       error "Unknown platform"
 #     endif
 
       /* NOTE: this call reads VG_(clo_main_stacksize). */
@@ -1945,6 +1946,9 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
+   /* Check that the kernel-interface signal definitions look sane */
+   VG_(vki_do_initial_consistency_checks)();
+   /* .. and go on to use them. */
    VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
@@ -2247,7 +2251,7 @@ static void final_tidyup(ThreadId tid)
 
 
 /*====================================================================*/
-/*=== Getting to main() alive: LINUX (for AIX5 see below)          ===*/
+/*=== Getting to main() alive: LINUX                               ===*/
 /*====================================================================*/
 
 #if defined(VGO_linux)
@@ -2416,7 +2420,7 @@ asm("\n"
     "\ttrap\n"
 );
 #else
-#error "_start: needs implementation on this platform"
+#  error "Unknown linux platform"
 #endif
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
@@ -2465,14 +2469,12 @@ void _start_in_C_linux ( UWord* pArgc )
    VG_(exit)(r);
 }
 
-#endif /* defined(VGO_linux) */
-
 
 /*====================================================================*/
 /*=== Getting to main() alive: AIX5                                ===*/
 /*====================================================================*/
 
-#if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+#elif defined(VGO_aix5)
 
 /* This is somewhat simpler than the Linux case.  _start_valgrind
    receives control from the magic piece of code created in this
@@ -2582,7 +2584,11 @@ void max_history_size     ( void ) { vg_assert(0); }
 void getpass_auto         ( void ) { vg_assert(0); }
 void max_pw_passlen       ( void ) { vg_assert(0); }
 
-#endif /* defined(VGP_ppc{32,64}_aix5) */
+
+#else
+
+#  error "Unknown OS"
+#endif
 
 
 /*--------------------------------------------------------------------*/

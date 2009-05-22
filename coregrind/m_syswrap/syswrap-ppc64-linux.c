@@ -379,7 +379,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
-   if (res.isError) {
+   if (sr_isError(res)) {
       /* clone failed */
       VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
@@ -1354,7 +1354,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_rt_sigtimedwait,   sys_rt_sigtimedwait),    // 176
 // _____(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),    // 177
 // _____(__NR_rt_sigsuspend,     sys_rt_sigsuspend),      // 178
-   GENXY(__NR_pread64,           sys_pread64_on64bitplat), // 179
+   GENXY(__NR_pread64,           sys_pread64),            // 179
 
 // _____(__NR_pwrite64,          sys_pwrite64),           // 180
    GENX_(__NR_chown,             sys_chown),              // 181

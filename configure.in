@@ -94,26 +94,6 @@ AC_SUBST(ASFLAGS)
 ])
 
 
-# Check we have GNU sed: some of the stuff done by "make install" relies
-# on some pretty fancy sed expressions, and AIX sed doesn't produce the
-# same results, causing install to fail
-
-AC_MSG_CHECKING([for GNU sed])
-
-[sed_firstline=`sed --version | head -n 1`]
-
-case "${sed_firstline}" in
-    GNU*)
-	AC_MSG_RESULT([ok, looks like GNU sed])
-	;;
-    *)
-	AC_MSG_RESULT([please ensure first 'sed' in your path is GNU sed])
-	AC_MSG_RESULT([note: GNU sed is only required at build/install time])
-	AC_MSG_ERROR([build/install requires that 'sed' is GNU sed])
-	;;
-esac
-
-
 # Check if 'diff' supports -u (universal diffs) and use it if possible.
 
 AC_MSG_CHECKING([for diff -u])
@@ -360,7 +340,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	VGCONF_PLATFORM_SEC_CAPS=""
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      amd64-linux)
 	if test x$vg_cv_only64bit = xyes; then
@@ -378,7 +358,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	fi
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      ppc32-linux)
         VGCONF_ARCH_PRI="ppc32"
@@ -386,7 +366,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	VGCONF_PLATFORM_SEC_CAPS=""
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      ppc64-aix5)
 	if test x$vg_cv_only64bit = xyes; then
@@ -404,7 +384,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	fi
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
      ppc64-linux)
 	if test x$vg_cv_only64bit = xyes; then
@@ -423,13 +403,13 @@ case "$ARCH_MAX-$VGCONF_OS" in
 	fi
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
-        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([ok (${ARCH_MAX}-${VGCONF_OS})])
 	;;
     *)
         VGCONF_ARCH_PRI="unknown"
 	VGCONF_PLATFORM_PRI_CAPS="UNKNOWN"
 	VGCONF_PLATFORM_SEC_CAPS="UNKNOWN"
-        AC_MSG_RESULT([no (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([no (${ARCH_MAX}-${VGCONF_OS})])
         AC_MSG_ERROR([Valgrind is platform specific. Sorry. Please consider doing a port.])
         ;;
 esac
@@ -894,7 +874,15 @@ extern int pthread_create_glibc_2_0(void*, const void*,
                                     void *(*)(void*), void*);
 __asm__(".symver pthread_create_glibc_2_0, pthread_create@GLIBC_2.0");
 ], [
+#ifdef __powerpc__
+/*
+ * Apparently on PowerPC linking this program succeeds and generates an
+ * executable with the undefined symbol pthread_create@GLIBC_2.0.
+ */
+#error This test does not work properly on PowerPC.
+#else
   pthread_create_glibc_2_0(0, 0, 0, 0);
+#endif
   return 0;
 ],
 [
