@@ -45,6 +45,7 @@ typedef struct segment
    /** Pointers to next and previous segments executed by the same thread. */
    struct segment*    next;
    struct segment*    prev;
+   DrdThreadId        tid;
    /** Reference count: number of pointers that point to this segment. */
    int                refcnt;
    /** Stack trace of the first instruction of the segment. */
