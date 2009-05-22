@@ -122,7 +122,6 @@ void DRD_(bm_report_races)(ThreadId const tid1, ThreadId const tid2,
                            struct bitmap* const bm2);
 void DRD_(bm_print)(struct bitmap* bm);
 ULong DRD_(bm_get_bitmap_creation_count)(void);
-ULong DRD_(bm_get_bitmap2_node_creation_count)(void);
 ULong DRD_(bm_get_bitmap2_creation_count)(void);
 ULong DRD_(bm_get_bitmap2_merge_count)(void);
 

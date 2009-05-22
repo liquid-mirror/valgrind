@@ -1087,11 +1087,6 @@ ULong DRD_(bm_get_bitmap_creation_count)(void)
    return s_bitmap_creation_count;
 }
 
-ULong DRD_(bm_get_bitmap2_node_creation_count)(void)
-{
-   return s_bitmap2_node_creation_count;
-}
-
 ULong DRD_(bm_get_bitmap2_creation_count)(void)
 {
    return s_bitmap2_creation_count;

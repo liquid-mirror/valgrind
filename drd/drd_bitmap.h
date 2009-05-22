@@ -66,7 +66,7 @@
 
 /** Number of bits assigned to the least significant component of an address.
  */
-#define ADDR_LSB_BITS 12
+#define ADDR_LSB_BITS 14
 
 /** Mask that has to be applied to an address of type Addr in order to
  *  compute the least significant part of an address split, after having
@@ -201,7 +201,6 @@ Addr first_address_with_higher_uword_msb(const Addr a)
 /* Local variables. */
 
 static ULong s_bitmap2_creation_count;
-static ULong s_bitmap2_node_creation_count;
 
 
 
