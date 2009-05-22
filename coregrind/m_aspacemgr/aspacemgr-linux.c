@@ -2371,11 +2371,14 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
    /* GrP fixme darwin: use advisory as a hint only, otherwise syscall in 
-      another thread can pre-empt our spot */
+      another thread can pre-empt our spot.  [At one point on the DARWIN
+      branch the VKI_MAP_FIXED was commented out;  unclear if this is
+      necessary or not given the second Darwin-only call that immediately
+      follows if this one fails.  --njn] */
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              advised, length, 
              VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC, 
-             /*VKI_MAP_FIXED|*/VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
              VM_TAG_VALGRIND, 0
           );
 #if defined(VGO_darwin)
