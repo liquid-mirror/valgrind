@@ -600,26 +600,6 @@ static inline UWord getERR ( SyscallStatus* st ) {
     POST_MEM_WRITE((UWord)&zzfield, sizeof(zzfield))
 
 
-#define PRE_timeval_READ(zzname, zzarg)                        \
-   do {                                                        \
-      struct vki_timeval *zztv = (struct vki_timeval *)zzarg;  \
-      PRE_FIELD_READ(zzname, zztv->tv_sec);                    \
-      PRE_FIELD_READ(zzname, zztv->tv_usec);                   \
-   } while (0)
-#define PRE_timeval_WRITE(zzname, zzarg)                       \
-   do {                                                        \
-      struct vki_timeval *zztv = (struct vki_timeval *)zzarg;  \
-      PRE_FIELD_WRITE(zzname, zztv->tv_sec);                   \
-      PRE_FIELD_WRITE(zzname, zztv->tv_usec);                  \
-   } while (0)
-#define POST_timeval_WRITE(zzarg)                              \
-   do {                                                        \
-      struct vki_timeval *zztv = (struct vki_timeval *)zzarg;  \
-      POST_FIELD_WRITE(zztv->tv_sec);                          \
-      POST_FIELD_WRITE(zztv->tv_usec);                         \
-   } while (0)
-
-
 #endif   // __PRIV_TYPES_N_MACROS_H
 
 /*--------------------------------------------------------------------*/
