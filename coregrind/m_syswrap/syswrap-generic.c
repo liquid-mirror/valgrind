@@ -2108,6 +2108,7 @@ PRE(sys_ni_syscall)
 {
    PRINT("unimplemented (by the kernel) syscall %ld! (ni_syscall)\n",
 // Nb: AIX5 is handled in syswrap-aix5.c.
+// DDD: make this generic
 #if defined(VGO_linux)
       SYSNO
 #elif defined(VGO_darwin)
