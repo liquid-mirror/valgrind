@@ -749,8 +749,34 @@ static void DRD_(thread_discard_ordered_segments)(void)
 }
 
 /**
- * Verify that all segments of other threads than 'tid' are ordered
- * consistently against both sg1 and sg2.
+ * An implementation of the property 'equiv(sg1, sg2)' as defined in the paper
+ * by Mark Christiaens e.a. The property equiv(sg1, sg2) holds if and only if
+ * all segments in the set CS are ordered consistently against both sg1 and
+ * sg2. The set CS is defined as the set of segments that can immediately
+ * precede future segments via inter-thread synchronization operations. In
+ * DRD the set CS consists of the latest segment of each thread combined with
+ * all segments for which the reference count is strictly greater than one.
+ * The code below is an optimized version of the following:
+ *
+ * for (i = 0; i < sizeof(DRD_(g_threadinfo)) / sizeof(DRD_(g_threadinfo)[0]);
+ *      i++)
+ * {
+ *    Segment* sg;
+ *
+ *    for (sg = DRD_(g_threadinfo)[i].first; sg; sg = sg->next)
+ *    {
+ *       if (sg == DRD_(g_threadinfo)[i].last || DRD_(sg_get_refcnt)(sg) > 1)
+ *       {
+ *          if (   DRD_(vc_lte)(&sg1->vc, &sg->vc)
+ *              != DRD_(vc_lte)(&sg2->vc, &sg->vc)
+ *              || DRD_(vc_lte)(&sg->vc, &sg1->vc)
+ *              != DRD_(vc_lte)(&sg->vc, &sg2->vc))
+ *          {
+ *             return False;
+ *          }
+ *       }
+ *    }
+ * }
  */
 static Bool thread_consistent_segment_ordering(const DrdThreadId tid,
                                                Segment* const sg1,
@@ -758,6 +784,9 @@ static Bool thread_consistent_segment_ordering(const DrdThreadId tid,
 {
    unsigned i;
 
+   tl_assert(sg1->next);
+   tl_assert(sg2->next);
+   tl_assert(sg1->next == sg2);
    tl_assert(DRD_(vc_lte)(&sg1->vc, &sg2->vc));
 
    for (i = 0; i < sizeof(DRD_(g_threadinfo)) / sizeof(DRD_(g_threadinfo)[0]);
@@ -765,22 +794,25 @@ static Bool thread_consistent_segment_ordering(const DrdThreadId tid,
    {
       Segment* sg;
 
-      if (i == tid)
-         continue;
-
       for (sg = DRD_(g_threadinfo)[i].first; sg; sg = sg->next)
       {
-         if (DRD_(vc_lte)(&sg2->vc, &sg->vc))
-            break;
-         if (DRD_(vc_lte)(&sg1->vc, &sg->vc))
-            return False;
+         if (! sg->next || DRD_(sg_get_refcnt)(sg) > 1)
+         {
+            if (DRD_(vc_lte)(&sg2->vc, &sg->vc))
+               break;
+            if (DRD_(vc_lte)(&sg1->vc, &sg->vc))
+               return False;
+         }
       }
       for (sg = DRD_(g_threadinfo)[i].last; sg; sg = sg->prev)
       {
-         if (DRD_(vc_lte)(&sg->vc, &sg1->vc))
-            break;
-         if (DRD_(vc_lte)(&sg->vc, &sg2->vc))
-            return False;
+         if (! sg->next || DRD_(sg_get_refcnt)(sg) > 1)
+         {
+            if (DRD_(vc_lte)(&sg->vc, &sg1->vc))
+               break;
+            if (DRD_(vc_lte)(&sg->vc, &sg2->vc))
+               return False;
+         }
       }
    }
    return True;
@@ -789,11 +821,21 @@ static Bool thread_consistent_segment_ordering(const DrdThreadId tid,
 /**
  * Merge all segments that may be merged without triggering false positives
  * or discarding real data races. For the theoretical background of segment
- * merging, see also the following paper:
- * Mark Christiaens, Michiel Ronsse and Koen De Bosschere.
- * Bounding the number of segment histories during data race detection.
- * Parallel Computing archive, Volume 28, Issue 9, pp 1221-1238,
- * September 2002.
+ * merging, see also the following paper: Mark Christiaens, Michiel Ronsse
+ * and Koen De Bosschere. Bounding the number of segment histories during
+ * data race detection. Parallel Computing archive, Volume 28, Issue 9,
+ * pp 1221-1238, September 2002. This paper contains a proof that merging
+ * consecutive segments for which the property equiv(s1,s2) holds can be
+ * merged without reducing the accuracy of datarace detection. Furthermore
+ * it is also proven that the total number of all segments will never grow
+ * unbounded if all segments s1, s2 for which equiv(s1, s2) holds are merged
+ * every time a new segment is created. The property equiv(s1, s2) is defined
+ * as follows: equiv(s1, s2) <=> for all segments in the set CS, the vector
+ * clocks of segments s and s1 are ordered in the same way as those of segments
+ * s and s2. The set CS is defined as the set of existing segments s that have
+ * the potential to conflict with not yet created segments, either because the
+ * segment s is the latest segment of a thread or because it can become the
+ * immediate predecessor of a new segment due to a synchronization operation.
  */
 static void thread_merge_segments(void)
 {
@@ -810,17 +852,6 @@ static void thread_merge_segments(void)
 
       for (sg = DRD_(g_threadinfo)[i].first; sg; sg = sg->next)
       {
-#if 1
-         if (DRD_(sg_get_refcnt)(sg) == 1
-             && sg->next
-             && DRD_(sg_get_refcnt)(sg->next) == 1
-             && sg->next->next)
-         {
-            /* Merge sg and sg->next into sg. */
-            DRD_(sg_merge)(sg, sg->next);
-            thread_discard_segment(i, sg->next);
-         }
-#else
          if (DRD_(sg_get_refcnt)(sg) == 1
              && sg->next
              && DRD_(sg_get_refcnt)(sg->next) == 1
@@ -831,7 +862,6 @@ static void thread_merge_segments(void)
             DRD_(sg_merge)(sg, sg->next);
             thread_discard_segment(i, sg->next);
          }
-#endif
       }
 
 #if 0
@@ -854,7 +884,6 @@ static void thread_merge_segments(void)
 static Bool conflict_set_update_needed(const DrdThreadId tid,
                                        const Segment* const new_sg)
 {
-#if 0
    unsigned j;
    const Segment* old_sg;
 
@@ -887,7 +916,6 @@ static Bool conflict_set_update_needed(const DrdThreadId tid,
 
       for (q = DRD_(g_threadinfo)[j].last; q; q = q->prev)
       {
-         /* Does not yield correct results because of segment merging. */
          const int included_in_old_conflict_set
             = ! DRD_(vc_lte)(&q->vc, &old_sg->vc)
             && ! DRD_(vc_lte)(&old_sg->vc, &q->vc);
@@ -900,9 +928,6 @@ static Bool conflict_set_update_needed(const DrdThreadId tid,
    }
 
    return False;
-#else
-   return True;
-#endif
 }
 
 /**
