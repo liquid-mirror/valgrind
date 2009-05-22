@@ -2219,8 +2219,8 @@ PRE(sys_getitimer)
    PRINT("sys_getitimer ( %ld, %#lx )", ARG1, ARG2);
    PRE_REG_READ2(long, "getitimer", int, which, struct itimerval *, value);
 
-   PRE_timeval_WRITE( "getitimer(value.it_interval)", &(value->it_interval));
-   PRE_timeval_WRITE( "getitimer(value.it_value)", &(value->it_value));
+   PRE_timeval_WRITE( "getitimer(&value->it_interval)", &(value->it_interval));
+   PRE_timeval_WRITE( "getitimer(&value->it_value)",    &(value->it_value));
 }
 
 POST(sys_getitimer)
@@ -2240,16 +2240,16 @@ PRE(sys_setitimer)
                  struct itimerval *, value, struct itimerval *, ovalue);
    if (ARG2 != (Addr)NULL) {
       struct vki_itimerval *value = (struct vki_itimerval*)ARG2;
-      PRE_timeval_READ( "setitimer(value->it_interval)",
+      PRE_timeval_READ( "setitimer(&value->it_interval)",
                          &(value->it_interval));
-      PRE_timeval_READ( "setitimer(value->it_value)",
+      PRE_timeval_READ( "setitimer(&value->it_value)",
                          &(value->it_value));
    }
    if (ARG3 != (Addr)NULL) {
       struct vki_itimerval *ovalue = (struct vki_itimerval*)ARG3;
-      PRE_timeval_WRITE( "setitimer(ovalue->it_interval)",
+      PRE_timeval_WRITE( "setitimer(&ovalue->it_interval)",
                          &(ovalue->it_interval));
-      PRE_timeval_WRITE( "setitimer(ovalue->it_value)",
+      PRE_timeval_WRITE( "setitimer(&ovalue->it_value)",
                          &(ovalue->it_value));
    }
 }
@@ -3172,12 +3172,9 @@ PRE(sys_gettimeofday)
    PRINT("sys_gettimeofday ( %#lx, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "gettimeofday",
                  struct timeval *, tv, struct timezone *, tz);
-#if defined(VGO_darwin)
-   // GrP fixme linux too? 
    // GrP fixme does darwin write to *tz anymore?
    if (ARG1 != 0)
-#endif
-   PRE_timeval_WRITE( "gettimeofday(tv)", ARG1 );
+      PRE_timeval_WRITE( "gettimeofday(tv)", ARG1 );
    if (ARG2 != 0)
       PRE_MEM_WRITE( "gettimeofday(tz)", ARG2, sizeof(struct vki_timezone) );
 }
@@ -3186,11 +3183,8 @@ POST(sys_gettimeofday)
 {
    vg_assert(SUCCESS);
    if (RES == 0) {
-#if defined(VGO_darwin)
-      // GrP fixme linux too?
       if (ARG1 != 0)
-#endif
-      POST_timeval_WRITE( ARG1 );
+         POST_timeval_WRITE( ARG1 );
       if (ARG2 != 0)
 	 POST_MEM_WRITE( ARG2, sizeof(struct vki_timezone) );
    }
@@ -3201,7 +3195,8 @@ PRE(sys_settimeofday)
    PRINT("sys_settimeofday ( %#lx, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "settimeofday",
                  struct timeval *, tv, struct timezone *, tz);
-   PRE_timeval_READ( "settimeofday(tv)", ARG1 );
+   if (ARG1 != 0)
+      PRE_timeval_READ( "settimeofday(tv)", ARG1 );
    if (ARG2 != 0) {
       PRE_MEM_READ( "settimeofday(tz)", ARG2, sizeof(struct vki_timezone) );
       /* maybe should warn if tz->tz_dsttime is non-zero? */
