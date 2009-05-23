@@ -919,9 +919,9 @@ void pre_mem_read_sockaddr ( ThreadId tid,
                              struct vki_sockaddr *sa, UInt salen )
 {
    Char *outmsg;
-   struct vki_sockaddr_un *sun = (struct vki_sockaddr_un *)sa;
-   struct vki_sockaddr_in *sin = (struct vki_sockaddr_in *)sa;
-   struct vki_sockaddr_in6 *sin6 = (struct vki_sockaddr_in6 *)sa;
+   struct vki_sockaddr_un*  sun  = (struct vki_sockaddr_un *)sa;
+   struct vki_sockaddr_in*  sin  = (struct vki_sockaddr_in *)sa;
+   struct vki_sockaddr_in6* sin6 = (struct vki_sockaddr_in6 *)sa;
 
    /* NULL/zero-length sockaddrs are legal */
    if ( sa == NULL || salen == 0 ) return;
