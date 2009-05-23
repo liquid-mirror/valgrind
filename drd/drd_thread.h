@@ -116,6 +116,7 @@ void DRD_(thread_trace_conflict_set)(const Bool t);
 Bool DRD_(thread_get_trace_fork_join)(void);
 void DRD_(thread_set_trace_fork_join)(const Bool t);
 void DRD_(thread_set_segment_merging)(const Bool m);
+int DRD_(thread_get_segment_merge_interval)(void);
 void DRD_(thread_set_segment_merge_interval)(const int i);
 
 DrdThreadId DRD_(VgThreadIdToDrdThreadId)(const ThreadId tid);

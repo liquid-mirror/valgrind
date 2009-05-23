@@ -190,7 +190,7 @@ static void DRD_(print_usage)(void)
 "        improve the accuracy of the so-called 'other segments' displayed\n"
 "        in race reports but can also trigger an out of memory error.\n"
 "    --segment-merging-interval=<n> Perform segment merging every time n new\n"
-"        segments have been created. Default: 32.\n"
+"        segments have been created. Default: %d.\n"
 "    --shared-threshold=<n>    Print an error message if a reader lock\n"
 "        is held longer than the specified time (in milliseconds).\n"
 "    --show-confl-seg=yes|no   Show conflicting segments in race reports [yes].\n"
@@ -209,7 +209,8 @@ static void DRD_(print_usage)(void)
 "    --trace-fork-join=yes|no  Trace all thread fork/join activity [no].\n"
 "    --trace-mutex=yes|no      Trace all mutex activity [no].\n"
 "    --trace-rwlock=yes|no     Trace all reader-writer lock activity[no].\n"
-"    --trace-semaphore=yes|no  Trace all semaphore activity [no].\n"
+"    --trace-semaphore=yes|no  Trace all semaphore activity [no].\n",
+DRD_(thread_get_segment_merge_interval)()
 );
    VG_(replacement_malloc_print_usage)();
 }

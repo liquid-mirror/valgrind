@@ -73,7 +73,7 @@ static Bool     s_trace_conflict_set = False;
 static Bool     s_trace_fork_join = False;
 static Bool     s_segment_merging = True;
 static Bool     s_new_segments_since_last_merge;
-static int      s_segment_merge_interval = 32;
+static int      s_segment_merge_interval = 64;
 
 
 /* Function definitions. */
@@ -110,6 +110,12 @@ void DRD_(thread_set_segment_merging)(const Bool m)
 {
    tl_assert(m == False || m == True);
    s_segment_merging = m;
+}
+
+/** Get the segment merging interval. */
+int DRD_(thread_get_segment_merge_interval)(void)
+{
+   return s_segment_merge_interval;
 }
 
 /** Set the segment merging interval. */
