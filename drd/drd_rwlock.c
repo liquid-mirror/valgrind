@@ -174,7 +174,7 @@ static void DRD_(rwlock_combine_other_vc)(struct rwlock_info* const p,
    {
       if (q->tid != tid && (readers_too || q->last_lock_was_writer_lock))
       {
-         DRD_(thread_combine_vc2)(tid, q->last_unlock_segment);
+         DRD_(thread_combine_vc_sync)(tid, q->last_unlock_segment);
       }
    }
 }

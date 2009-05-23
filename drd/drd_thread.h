@@ -147,9 +147,9 @@ int DRD_(thread_get_synchr_nesting_count)(const DrdThreadId tid);
 void DRD_(thread_new_segment)(const DrdThreadId tid);
 VectorClock* DRD_(thread_get_vc)(const DrdThreadId tid);
 void DRD_(thread_get_latest_segment)(Segment** sg, const DrdThreadId tid);
-void DRD_(thread_combine_vc)(const DrdThreadId joiner,
-                             const DrdThreadId joinee);
-void DRD_(thread_combine_vc2)(const DrdThreadId tid, const Segment* sg);
+void DRD_(thread_combine_vc_join)(const DrdThreadId joiner,
+                                  const DrdThreadId joinee);
+void DRD_(thread_combine_vc_sync)(const DrdThreadId tid, const Segment* sg);
 
 void DRD_(thread_stop_using_mem)(const Addr a1, const Addr a2);
 void DRD_(thread_start_recording)(const DrdThreadId tid);

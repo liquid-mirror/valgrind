@@ -466,7 +466,7 @@ void DRD_(barrier_post_wait)(const DrdThreadId tid, const Addr barrier,
       if (r != q)
       {
          tl_assert(r->sg[p->post_iteration]);
-         DRD_(thread_combine_vc2)(tid, r->sg[p->post_iteration]);
+         DRD_(thread_combine_vc_sync)(tid, r->sg[p->post_iteration]);
       }
    }
 

@@ -306,7 +306,7 @@ void DRD_(thread_post_join)(DrdThreadId drd_joiner, DrdThreadId drd_joinee)
    tl_assert(DRD_(IsValidDrdThreadId)(drd_joiner));
    tl_assert(DRD_(IsValidDrdThreadId)(drd_joinee));
    DRD_(thread_new_segment)(drd_joinee);
-   DRD_(thread_combine_vc)(drd_joiner, drd_joinee);
+   DRD_(thread_combine_vc_join)(drd_joiner, drd_joinee);
    DRD_(thread_new_segment)(drd_joiner);
 
    if (s_trace_fork_join)
@@ -969,7 +969,7 @@ void DRD_(thread_new_segment)(const DrdThreadId tid)
 }
 
 /** Call this function after thread 'joiner' joined thread 'joinee'. */
-void DRD_(thread_combine_vc)(DrdThreadId joiner, DrdThreadId joinee)
+void DRD_(thread_combine_vc_join)(DrdThreadId joiner, DrdThreadId joinee)
 {
    tl_assert(joiner != joinee);
    tl_assert(0 <= (int)joiner && joiner < DRD_N_THREADS
@@ -989,10 +989,12 @@ void DRD_(thread_combine_vc)(DrdThreadId joiner, DrdThreadId joinee)
 }
 
 /**
- * Call this function after thread 'tid' had to wait because of thread
- * synchronization until the memory accesses in the segment 'sg' finished.
+ * Update the vector clock of the last segment of thread tid with the
+ * the vector clock of segment sg. Call this function after thread tid had
+ * to wait because of thread synchronization until the memory accesses in the
+ * segment sg finished.
  */
-void DRD_(thread_combine_vc2)(DrdThreadId tid, const Segment* sg)
+void DRD_(thread_combine_vc_sync)(DrdThreadId tid, const Segment* sg)
 {
    const VectorClock* const vc = &sg->vc;
 
@@ -1005,6 +1007,7 @@ void DRD_(thread_combine_vc2)(DrdThreadId tid, const Segment* sg)
    if (tid != sg->tid)
    {
       VectorClock old_vc;
+
       DRD_(vc_copy)(&old_vc, &DRD_(g_threadinfo)[tid].last->vc);
       DRD_(vc_combine)(&DRD_(g_threadinfo)[tid].last->vc, vc);
       if (conflict_set_update_needed(tid, &old_vc,
