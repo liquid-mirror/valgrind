@@ -713,7 +713,7 @@ static void DRD_(thread_compute_maximum_vc)(VectorClock* vc)
  * clock of all threads -- these segments can no longer be involved in a
  * data race.
  */
-static void DRD_(thread_discard_ordered_segments)(void)
+static void thread_discard_ordered_segments(void)
 {
    unsigned i;
    VectorClock thread_vc_min;
@@ -959,7 +959,7 @@ void DRD_(thread_new_segment)(const DrdThreadId tid)
       tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));
    }
 
-   DRD_(thread_discard_ordered_segments)();
+   thread_discard_ordered_segments();
 
    if (s_segment_merging
        && ++s_new_segments_since_last_merge >= s_segment_merge_interval)
@@ -980,7 +980,7 @@ void DRD_(thread_combine_vc_join)(DrdThreadId joiner, DrdThreadId joinee)
    tl_assert(DRD_(g_threadinfo)[joinee].last);
    DRD_(vc_combine)(&DRD_(g_threadinfo)[joiner].last->vc,
                     &DRD_(g_threadinfo)[joinee].last->vc);
-   DRD_(thread_discard_ordered_segments)();
+   thread_discard_ordered_segments();
 
    if (joiner == DRD_(g_drd_running_tid))
    {
@@ -1010,18 +1010,32 @@ void DRD_(thread_combine_vc_sync)(DrdThreadId tid, const Segment* sg)
 
       DRD_(vc_copy)(&old_vc, &DRD_(g_threadinfo)[tid].last->vc);
       DRD_(vc_combine)(&DRD_(g_threadinfo)[tid].last->vc, vc);
-      if (conflict_set_update_needed(tid, &old_vc,
-                                     &DRD_(g_threadinfo)[tid].last->vc))
-      {
-         thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
-         s_conflict_set_combine_vc_count++;
-      }
+      DRD_(thread_update_cs_after_sync)(tid, &old_vc);
       DRD_(vc_cleanup)(&old_vc);
-      DRD_(thread_discard_ordered_segments)();
    }
    else
    {
       tl_assert(DRD_(vc_lte)(vc, &DRD_(g_threadinfo)[tid].last->vc));
+   }
+}
+
+/**
+ * Update the conflict set after the vector clock of thread tid has been updated
+ * from old_vc to DRD_(g_threadinfo)[tid].last->vc.
+ */
+void DRD_(thread_update_cs_after_sync)(DrdThreadId tid, VectorClock* old_vc)
+{
+   tl_assert(0 <= (int)tid && tid < DRD_N_THREADS
+             && tid != DRD_INVALID_THREADID);
+   tl_assert(old_vc);
+
+   thread_discard_ordered_segments();
+
+   if (conflict_set_update_needed(tid, old_vc,
+                                  &DRD_(g_threadinfo)[tid].last->vc))
+   {
+      thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
+      s_conflict_set_combine_vc_count++;
    }
 }
 
