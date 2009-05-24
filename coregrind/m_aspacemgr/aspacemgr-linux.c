@@ -2395,6 +2395,16 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
    if (sr_isError(sres))
       return sres;
 
+#if defined(VGO_linux)
+   if (sr_Res(sres) != advised) {
+      /* I don't think this can happen.  It means the kernel made a
+         fixed map succeed but not at the requested location.  Try to
+         repair the damage, then return saying the mapping failed. */
+      (void)ML_(am_do_munmap_NO_NOTIFY)( sr_Res(sres), length );
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   }
+#endif
+
    /* Ok, the mapping succeeded.  Now notify the interval map. */
    init_nsegment( &seg );
    seg.kind  = SkAnonV;
