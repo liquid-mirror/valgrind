@@ -3531,21 +3531,23 @@ PRE(sys_open)
       cloned fd back to the start. */
    {
       HChar  name[30];
+      Char*  arg1s = (Char*) ARG1;
       SysRes sres;
 
-   VG_(sprintf)(name, "/proc/%d/cmdline", VG_(getpid)());
-   if (ML_(safe_to_deref)( (void*)ARG1, 1 )
-       && (VG_(strcmp)((Char *)ARG1, name) == 0 
-           || VG_(strcmp)((Char *)ARG1, "/proc/self/cmdline") == 0)) {
-      sres = VG_(dup)( VG_(cl_cmdline_fd) );
-      SET_STATUS_from_SysRes( sres );
-      if (!sr_isError(sres)) {
-         OffT off = VG_(lseek)( sr_Res(sres), 0, VKI_SEEK_SET );
-         if (off < 0)
-            SET_STATUS_Failure( VKI_EMFILE );
+      VG_(sprintf)(name, "/proc/%d/cmdline", VG_(getpid)());
+      if (ML_(safe_to_deref)( arg1s, 1 ) &&
+          (VG_STREQ(arg1s, name) || VG_STREQ(arg1s, "/proc/self/cmdline"))
+         )
+      {
+         sres = VG_(dup)( VG_(cl_cmdline_fd) );
+         SET_STATUS_from_SysRes( sres );
+         if (!sr_isError(sres)) {
+            OffT off = VG_(lseek)( sr_Res(sres), 0, VKI_SEEK_SET );
+            if (off < 0)
+               SET_STATUS_Failure( VKI_EMFILE );
+         }
+         return;
       }
-      return;
-   }
    }
 #endif
 
