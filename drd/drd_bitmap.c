@@ -73,8 +73,8 @@ struct bitmap* DRD_(bm_new)()
       bm->cache[i].a1  = ~(UWord)1;
       bm->cache[i].bm2 = 0;
    }
-   bm->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), "drd.bitmap.bn.2",
-                                  VG_(free));
+   bm->oset = VG_(OSetGen_Create)(0, 0, DRD_(bm2_alloc_node),
+                                  "drd.bitmap.bn.2", DRD_(bm2_free_node));
 
    s_bitmap_creation_count++;
 
