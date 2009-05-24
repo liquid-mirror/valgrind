@@ -80,6 +80,7 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_oset.h"
+#include "pub_tool_mallocfree.h"  /* VG_(malloc), VG_(free) */
 
 /*--------------------------------------------------------------------*/
 /*--- Types and constants                                          ---*/
@@ -296,7 +297,7 @@ AvlTree* VG_(OSetGen_Create)(PtrdiffT _keyOff, OSetCmp_t _cmp,
    vg_assert(_free);
    if (!_cmp) vg_assert(0 == _keyOff);    // If no cmp, offset must be zero
 
-   t           = _alloc(_cc, sizeof(AvlTree));
+   t           = VG_(malloc)("oset", sizeof(AvlTree));
    t->keyOff   = _keyOff;
    t->cmp      = _cmp;
    t->alloc    = _alloc;
@@ -348,7 +349,7 @@ void VG_(OSetGen_Destroy)(AvlTree* t)
    vg_assert(sz == t->nElems);
 
    /* Free the AvlTree itself. */
-   t->free(t);
+   VG_(free)(t);
 }
 
 void VG_(OSetWord_Destroy)(AvlTree* t)
