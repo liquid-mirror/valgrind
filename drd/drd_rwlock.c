@@ -385,10 +385,11 @@ void DRD_(rwlock_post_rdlock)(const Addr rwlock, const Bool took_lock)
    q = DRD_(lookup_or_insert_node)(p->thread_info, drd_tid);
    if (++q->reader_nesting_count == 1)
    {
-      DRD_(rwlock_combine_other_vc)(p, drd_tid, False);
-      q->last_lock_was_writer_lock = False;
       DRD_(thread_new_segment)(drd_tid);
       DRD_(s_rwlock_segment_creation_count)++;
+
+      DRD_(rwlock_combine_other_vc)(p, drd_tid, False);
+      q->last_lock_was_writer_lock = False;
 
       p->acquiry_time_ms = VG_(read_millisecond_timer)();
       p->acquired_at     = VG_(record_ExeContext)(VG_(get_running_tid)(), 0);
