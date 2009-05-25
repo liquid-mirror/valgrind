@@ -3448,7 +3448,7 @@ PRE(sys_mprotect)
          SET_STATUS_Failure( VKI_EINVAL );
       }
    }
-#endif
+#endif   // defined(VKI_PROT_GROWSDOWN)
 }
 
 POST(sys_mprotect)
@@ -3549,7 +3549,7 @@ PRE(sys_open)
          return;
       }
    }
-#endif
+#endif // HAVE_PROC
 
    /* Otherwise handle normally */
    *flags |= SfMayBlock;
@@ -3688,7 +3688,7 @@ PRE(sys_readlink)
          SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, (UWord)name, 
                                                          ARG2, ARG3));
       } else
-#endif
+#endif // HAVE_PROC
       {
          /* Normal case */
          SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, ARG1, ARG2, ARG3));
