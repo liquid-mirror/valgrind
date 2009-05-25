@@ -126,7 +126,9 @@ clean-local:
 	rm -f libmpiwrap-.c \
 	    libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c \
 	    libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
+if VGCONF_OS_IS_DARWIN
 	rm -rf libmpiwrap-*.dSYM
+endif
 
 #
 #----------------------------------------------------------
