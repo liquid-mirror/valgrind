@@ -92,12 +92,12 @@ AM_CFLAGS    += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CXXFLAGS  += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CCASFLAGS += @FLAG_M32@
 
+if VGCONF_OS_IS_DARWIN
 # Some of the tests (bug125959_x86, bug152818_x86, insn_*) need
 # -mdynamic-no-pic.  I tried setting *_CFLAGS separately for all of them,
 # but it caused problems with the generation of insn_*.c.  So just use this
 # crude approach of setting -mdynamic-no-pic for all tests in this
 # directory.
-if VGCONF_OS_IS_DARWIN
 AM_CFLAGS += -mdynamic-no-pic
 endif
 
