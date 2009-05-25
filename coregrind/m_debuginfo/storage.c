@@ -1244,9 +1244,10 @@ static void canonicaliseSymtab ( struct _DebugInfo* di )
                 different-size */
 #endif
              ) {
+            n_merged++;
+            /* merge the two into one */
 	    di->symtab[di->symtab_used++] 
                = *prefersym(di, &di->symtab[i], &di->symtab[i+1]);
-            n_merged++;
             i++;
          } else {
             di->symtab[di->symtab_used++] = di->symtab[i];
