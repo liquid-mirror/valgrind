@@ -313,8 +313,6 @@ endif
 endif
 
 varinfo5so_so_SOURCES   = varinfo5so.c
-varinfo5so_so_LDADD     = 
-varinfo5so_so_DEPENDENCIES = 
 varinfo5so_so_CFLAGS    = $(AM_CFLAGS) -fpic -O -Wno-shadow
 if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared
