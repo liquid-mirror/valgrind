@@ -246,7 +246,7 @@ typedef
    tt_fast and tt_fastN are referred to from assembly code
    (dispatch.S).
 */
-/*global*/UInt* VG_(tt_fastN)[VG_TT_FAST_SIZE];
+/*global*/ UInt* VG_(tt_fastN)[VG_TT_FAST_SIZE];
 
 
 /* Make sure we're not used before initialisation. */

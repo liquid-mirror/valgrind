@@ -2974,7 +2974,7 @@ Bool VG_(am_relocate_nooverlap_client)( /*OUT*/Bool* need_discard,
    return True;
 }
 
-#endif
+#endif // HAVE_MREMAP
 
 
 #if HAVE_PROC
