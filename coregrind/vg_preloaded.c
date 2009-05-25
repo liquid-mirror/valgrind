@@ -52,7 +52,6 @@
    ------------------------------------------------------------------ */
 
 #if defined(VGO_linux) || defined(VGO_aix5)
-// GrP GrP fixme
 
 void VG_NOTIFY_ON_LOAD(freeres)( void );
 void VG_NOTIFY_ON_LOAD(freeres)( void )
