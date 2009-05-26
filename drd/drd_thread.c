@@ -954,17 +954,13 @@ void DRD_(thread_new_segment)(const DrdThreadId tid)
    new_sg = DRD_(sg_new)(tid, tid);
    thread_append_segment(tid, new_sg);
 
-   if (new_sg->prev == NULL
-       || conflict_set_update_needed(tid, &new_sg->prev->vc, &new_sg->vc))
-   {
-      thread_compute_conflict_set(&DRD_(g_conflict_set),
-                                  DRD_(g_drd_running_tid));
-      s_conflict_set_new_segment_count++;
-   }
-   else if (tid == DRD_(g_drd_running_tid))
-   {
-      tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));
-   }
+   /*
+    * Note: after creation of a new segment and before the conflict set has
+    * been updated the conflict set can be temporarily out of sync. The
+    * following assert statement would fail when enabled:
+    *
+    * tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));
+    */
 
    thread_discard_ordered_segments();
 
@@ -1017,32 +1013,13 @@ void DRD_(thread_combine_vc_sync)(DrdThreadId tid, const Segment* sg)
 
       DRD_(vc_copy)(&old_vc, &DRD_(g_threadinfo)[tid].last->vc);
       DRD_(vc_combine)(&DRD_(g_threadinfo)[tid].last->vc, vc);
-      DRD_(thread_update_cs_after_sync)(tid, &old_vc);
+      thread_discard_ordered_segments();
+      DRD_(thread_update_conflict_set)(tid, &old_vc);
       DRD_(vc_cleanup)(&old_vc);
    }
    else
    {
       tl_assert(DRD_(vc_lte)(vc, &DRD_(g_threadinfo)[tid].last->vc));
-   }
-}
-
-/**
- * Update the conflict set after the vector clock of thread tid has been updated
- * from old_vc to DRD_(g_threadinfo)[tid].last->vc.
- */
-void DRD_(thread_update_cs_after_sync)(DrdThreadId tid, VectorClock* old_vc)
-{
-   tl_assert(0 <= (int)tid && tid < DRD_N_THREADS
-             && tid != DRD_INVALID_THREADID);
-   tl_assert(old_vc);
-
-   thread_discard_ordered_segments();
-
-   if (conflict_set_update_needed(tid, old_vc,
-                                  &DRD_(g_threadinfo)[tid].last->vc))
-   {
-      thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
-      s_conflict_set_combine_vc_count++;
    }
 }
 
@@ -1266,8 +1243,9 @@ static Bool thread_conflict_set_up_to_date(const DrdThreadId tid)
 }
 
 /**
- * Compute a bitmap that represents the union of all memory accesses of all
- * segments that are unordered to the current segment of the thread tid.
+ * Compute the conflict set: a bitmap that represents the union of all memory
+ * accesses of all segments that are unordered to the current segment of the
+ * thread tid.
  */
 static void thread_compute_conflict_set(struct bitmap** conflict_set,
                                         const DrdThreadId tid)
@@ -1373,6 +1351,32 @@ static void thread_compute_conflict_set(struct bitmap** conflict_set,
       DRD_(bm_print)(*conflict_set);
       VG_(message)(Vg_UserMsg, "[%d] end of new conflict set.", tid);
    }
+}
+
+/**
+ * Update the conflict set after the vector clock of thread tid has been
+ * updated from old_vc to its current value, either because a new segment has
+ * been created or because of a synchronization operation.
+ */
+void DRD_(thread_update_conflict_set)(const DrdThreadId tid,
+                                      const VectorClock* const old_vc)
+{
+   const VectorClock* new_vc;
+
+   tl_assert(0 <= (int)tid && tid < DRD_N_THREADS
+             && tid != DRD_INVALID_THREADID);
+   tl_assert(old_vc);
+
+   
+   new_vc = &DRD_(g_threadinfo)[tid].last->vc;
+
+   if (conflict_set_update_needed(tid, old_vc, new_vc))
+   {
+      thread_compute_conflict_set(&DRD_(g_conflict_set), tid);
+      s_conflict_set_combine_vc_count++;
+   }
+
+   tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));
 }
 
 /** Report the number of context switches performed. */

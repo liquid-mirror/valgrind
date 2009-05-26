@@ -480,7 +480,7 @@ void DRD_(barrier_post_wait)(const DrdThreadId tid, const Addr barrier,
                              &r->sg[p->post_iteration]->vc);
          }
       }
-      DRD_(thread_update_cs_after_sync)(tid, &old_vc);
+      DRD_(thread_update_conflict_set)(tid, &old_vc);
       DRD_(vc_cleanup)(&old_vc);
    }
 

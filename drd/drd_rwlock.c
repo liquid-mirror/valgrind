@@ -180,7 +180,7 @@ static void DRD_(rwlock_combine_other_vc)(struct rwlock_info* const p,
                           &q->last_unlock_segment->vc);
       }
    }
-   DRD_(thread_update_cs_after_sync)(tid, &old_vc);
+   DRD_(thread_update_conflict_set)(tid, &old_vc);
    DRD_(vc_cleanup)(&old_vc);
 }
 
