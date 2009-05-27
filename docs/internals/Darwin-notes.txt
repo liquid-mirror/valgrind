@@ -45,6 +45,14 @@ force the pipe-based semaphore appears to work correctly.
 
 
 
+Valgrind-developer notes, things removed from the original MacOSX port
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+There was a broken debugstub implementation.  It was removed over several
+commits: r9477, which removed most of it, and r9711, r9759, and r10012,
+which cleaned up remaining bits.
+
+
+
 Valgrind-developer notes, todos re the MacOSX port
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
