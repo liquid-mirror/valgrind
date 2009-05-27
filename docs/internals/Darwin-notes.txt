@@ -51,6 +51,11 @@ There was a broken debugstub implementation.  It was removed over several
 commits: r9477, which removed most of it, and r9711, r9759, and r10012,
 which cleaned up remaining bits.
 
+There was machinery to read function names from Dwarf3 debug info.  But we
+already read function names from the symbol tables, so this was duplicated
+functionality.  Furthermore, a Darwin-specific hack was required in
+storage.c to choose between symbol table names vs. Dwarf3 names.  So this
+machinery was removed in r10155.
 
 
 Valgrind-developer notes, todos re the MacOSX port

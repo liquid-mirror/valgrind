@@ -1051,15 +1051,6 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                                       debug_abbv_img, debug_abbv_sz,
                                       debug_line_img, debug_line_sz,
                                       debug_str_img,  debug_str_sz );
-         /* Function names and ranges from debug_pubnames */
-         ML_(read_fnnames_dwarf3) ( di,
-                                    debug_info_img,   debug_info_sz,
-                                    debug_abbv_img,   debug_abbv_sz,
-                                    debug_line_img,   debug_line_sz,
-                                    debug_str_img,    debug_str_sz,
-                                    debug_ranges_img, debug_ranges_sz,
-                                    debug_loc_img,    debug_loc_sz,
-                                    debug_name_img,   debug_name_sz);
 
          /* The new reader: read the DIEs in .debug_info to acquire
             information on variable types and locations.  But only if

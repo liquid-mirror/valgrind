@@ -1234,15 +1234,7 @@ static void canonicaliseSymtab ( struct _DebugInfo* di )
       for (i = 0; i < j; i++) {
          if (i < j-1
              && di->symtab[i].addr   == di->symtab[i+1].addr
-#if !defined(VGO_darwin) 
              && di->symtab[i].size   == di->symtab[i+1].size
-#else 
-             // DDD: this can be removed if DWARF3 symbol reading is disabled.
-             // It's unclear why DWARF3 symbol reading is currently enabled
-             // alongside normal symbol table reading. --njn
-             /* darwin: use prefersym to resolve same-address but 
-                different-size */
-#endif
              ) {
             n_merged++;
             /* merge the two into one */
