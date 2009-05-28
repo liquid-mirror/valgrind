@@ -85,7 +85,7 @@ static void sg_init(Segment* const sg,
    else
       DRD_(vc_init)(&sg->vc, 0, 0);
    DRD_(vc_increment)(&sg->vc, created);
-   sg->bm = DRD_(bm_new)();
+   DRD_(bm_init)(&sg->bm);
 
    if (s_trace_segment)
    {
@@ -109,8 +109,7 @@ static void DRD_(sg_cleanup)(Segment* const sg)
    tl_assert(sg->refcnt == 0);
 
    DRD_(vc_cleanup)(&sg->vc);
-   DRD_(bm_delete)(sg->bm);
-   sg->bm = 0;
+   DRD_(bm_cleanup)(&sg->bm);
 }
 
 /** Allocate and initialize a new segment. */
@@ -148,14 +147,6 @@ static void DRD_(sg_delete)(Segment* const sg)
    tl_assert(sg);
    DRD_(sg_cleanup)(sg);
    VG_(free)(sg);
-}
-
-/** Query the reference count of the specified segment. */
-int DRD_(sg_get_refcnt)(const Segment* const sg)
-{
-   tl_assert(sg);
-
-   return sg->refcnt;
 }
 
 /** Increment the reference count of the specified segment. */
@@ -196,7 +187,7 @@ void DRD_(sg_put)(Segment* const sg)
 }
 
 /** Merge sg1 and sg2 into sg1. */
-void DRD_(sg_merge)(const Segment* const sg1, Segment* const sg2)
+void DRD_(sg_merge)(Segment* const sg1, Segment* const sg2)
 {
    tl_assert(sg1);
    tl_assert(sg1->refcnt == 1);
@@ -222,17 +213,17 @@ void DRD_(sg_merge)(const Segment* const sg1, Segment* const sg2)
    // Keep sg1->stacktrace.
    // Keep sg1->vc.
    // Merge sg2->bm into sg1->bm.
-   DRD_(bm_merge2)(sg1->bm, sg2->bm);
+   DRD_(bm_merge2)(&sg1->bm, &sg2->bm);
 }
 
 /** Print the vector clock and the bitmap of the specified segment. */
-void DRD_(sg_print)(const Segment* const sg)
+void DRD_(sg_print)(Segment* const sg)
 {
    tl_assert(sg);
    VG_(printf)("vc: ");
    DRD_(vc_print)(&sg->vc);
    VG_(printf)("\n");
-   DRD_(bm_print)(sg->bm);
+   DRD_(bm_print)(&sg->bm);
 }
 
 /** Query whether segment tracing has been enabled. */

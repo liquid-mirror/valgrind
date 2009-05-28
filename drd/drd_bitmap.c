@@ -55,7 +55,6 @@ static ULong s_bitmap2_merge_count;
 
 struct bitmap* DRD_(bm_new)()
 {
-   unsigned i;
    struct bitmap* bm;
 
    /* If this assert fails, fix the definition of BITS_PER_BITS_PER_UWORD */
@@ -63,6 +62,26 @@ struct bitmap* DRD_(bm_new)()
    tl_assert((1 << BITS_PER_BITS_PER_UWORD) == BITS_PER_UWORD);
 
    bm = VG_(malloc)("drd.bitmap.bn.1", sizeof(*bm));
+   DRD_(bm_init)(bm);
+
+   s_bitmap_creation_count++;
+
+   return bm;
+}
+
+void DRD_(bm_delete)(struct bitmap* const bm)
+{
+   tl_assert(bm);
+
+   DRD_(bm_cleanup)(bm);
+   VG_(free)(bm);
+}
+
+/** Initialize *bm. */
+void DRD_(bm_init)(struct bitmap* const bm)
+{
+   unsigned i;
+
    tl_assert(bm);
    /* Cache initialization. a1 is initialized with a value that never can
     * match any valid address: the upper (ADDR_LSB_BITS + ADDR_IGNORED_BITS)
@@ -75,18 +94,12 @@ struct bitmap* DRD_(bm_new)()
    }
    bm->oset = VG_(OSetGen_Create)(0, 0, DRD_(bm2_alloc_node),
                                   "drd.bitmap.bn.2", DRD_(bm2_free_node));
-
-   s_bitmap_creation_count++;
-
-   return bm;
 }
 
-void DRD_(bm_delete)(struct bitmap* const bm)
+/** Free the memory allocated by DRD_(bm_init)(). */
+void DRD_(bm_cleanup)(struct bitmap* const bm)
 {
-   tl_assert(bm);
-
    VG_(OSetGen_Destroy)(bm->oset);
-   VG_(free)(bm);
 }
 
 /**
@@ -465,6 +478,10 @@ Bool DRD_(bm_has_any_access)(struct bitmap* const bm,
       
          for (b0 = address_lsb(b_start); b0 <= address_lsb(b_end - 1); b0++)
          {
+            /*
+             * Note: the statement below uses a binary or instead of a logical
+             * or on purpose.
+             */
             if (bm0_is_set(p1->bm0_r, b0) | bm0_is_set(p1->bm0_w, b0))
             {
                return True;
@@ -962,14 +979,15 @@ void DRD_(bm_swap)(struct bitmap* const bm1, struct bitmap* const bm2)
 }
 
 /** Merge bitmaps *lhs and *rhs into *lhs. */
-void DRD_(bm_merge2)(struct bitmap* const lhs,
-                     struct bitmap* const rhs)
+void DRD_(bm_merge2)(struct bitmap* const lhs, struct bitmap* const rhs)
 {
    struct bitmap2* bm2l;
    struct bitmap2* bm2r;
 
-   /* It's not possible to have two independent iterators over the same OSet, */
-   /* so complain if lhs == rhs.                                              */
+   /*
+    * It's not possible to have two independent iterators over the same OSet,
+    * so complain if lhs == rhs.
+    */
    tl_assert(lhs != rhs);
 
    s_bitmap_merge_count++;
@@ -987,6 +1005,99 @@ void DRD_(bm_merge2)(struct bitmap* const lhs,
       else
       {
          bm2_insert_copy(lhs, bm2r);
+      }
+   }
+}
+
+/** Clear bitmap2::recalc. */
+void DRD_(bm_unmark)(struct bitmap* bm)
+{
+   struct bitmap2* bm2;
+
+   for (VG_(OSetGen_ResetIter)(bm->oset);
+        (bm2 = VG_(OSetGen_Next)(bm->oset)) != 0;
+        )
+   {
+      bm2->recalc = False;
+   }
+}
+
+/**
+ * Report whether bitmap2::recalc has been set for the second level bitmap
+ * corresponding to address a.
+ */
+Bool DRD_(bm_is_marked)(struct bitmap* bm, const Addr a)
+{
+   const struct bitmap2* bm2;
+
+   bm2 = bm2_lookup(bm, a);
+   return bm2 && bm2->recalc;
+}
+
+/**
+ * Set bitmap2::recalc in bml for each second level bitmap in bmr that contains
+ * at least one access.
+ *
+ * @note Any new second-level bitmaps inserted in bml by this function are
+ *       uninitialized.
+ */
+void DRD_(bm_mark)(struct bitmap* bml, struct bitmap* bmr)
+{
+   struct bitmap2* bm2l;
+   struct bitmap2* bm2r;
+
+   for (VG_(OSetGen_ResetIter)(bmr->oset);
+        (bm2r = VG_(OSetGen_Next)(bmr->oset)) != 0;
+        )
+   {
+      /*if (DRD_(bm_has_any_access(bmr, make_address(bm2r->addr, 0),
+        make_address(bm2r->addr + 1, 0))))*/
+      {
+         bm2l = bm2_lookup_or_insert(bml, bm2r->addr);
+         bm2l->recalc = True;
+      }
+   }
+}
+
+/** Clear all second-level bitmaps for which bitmap2::recalc == True. */
+void DRD_(bm_clear_marked)(struct bitmap* bm)
+{
+   struct bitmap2* bm2;
+
+   for (VG_(OSetGen_ResetIter)(bm->oset);
+        (bm2 = VG_(OSetGen_Next)(bm->oset)) != 0;
+        )
+   {
+      if (bm2->recalc)
+         bm2_clear(bm2);
+   }
+}
+
+/** Merge the second level bitmaps from *rhs into *lhs for which recalc == True. */
+void DRD_(bm_merge2_marked)(struct bitmap* const lhs, struct bitmap* const rhs)
+{
+   struct bitmap2* bm2l;
+   struct bitmap2* bm2r;
+
+   tl_assert(lhs != rhs);
+
+   /*
+    * It's not possible to have two independent iterators over the same OSet,
+    * so complain if lhs == rhs.
+    */
+   tl_assert(lhs != rhs);
+
+   s_bitmap_merge_count++;
+
+   VG_(OSetGen_ResetIter)(rhs->oset);
+
+   for ( ; (bm2r = VG_(OSetGen_Next)(rhs->oset)) != 0; )
+   {
+      bm2l = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
+      if (bm2l && bm2l->recalc)
+      {
+         tl_assert(bm2l != bm2r);
+         bm2_merge(bm2l, bm2r);
       }
    }
 }

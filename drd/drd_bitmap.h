@@ -329,22 +329,8 @@ static __inline__ UWord bm0_is_any_set(const UWord* bm0,
 struct bitmap2
 {
    Addr           addr;   ///< address_msb(...)
+   Bool           recalc;
    struct bitmap1 bm1;
-};
-
-struct bm_cache_elem
-{
-   Addr            a1;
-   struct bitmap2* bm2;
-};
-
-#define N_CACHE_ELEM 4
-
-/* Complete bitmap. */
-struct bitmap
-{
-   struct bm_cache_elem cache[N_CACHE_ELEM];
-   OSet*                oset;
 };
 
 
@@ -555,6 +541,8 @@ bm2_lookup_exclusive(struct bitmap* const bm, const UWord a1)
  *
  * @param bm bitmap pointer.
  * @param a1 client address shifted right by ADDR_LSB_BITS.
+ *
+ * @note bitmap2::recalc isn't initialized here on purpose.
  */
 static __inline__
 struct bitmap2* bm2_insert(struct bitmap* const bm, const UWord a1)
@@ -591,8 +579,8 @@ struct bitmap2* bm2_insert_copy(struct bitmap* const bm,
  * Look up the address a1 in bitmap bm, and insert it if not found.
  * The returned second level bitmap may not be modified.
  *
- * @param a1 client address shifted right by ADDR_LSB_BITS.
  * @param bm bitmap pointer.
+ * @param a1 client address shifted right by ADDR_LSB_BITS.
  */
 static __inline__
 struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
