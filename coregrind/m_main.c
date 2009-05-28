@@ -1194,6 +1194,12 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    VG_(debugLog)(1, "main", "Welcome to Valgrind version " 
                             VERSION " debug logging\n");
 
+
+   VG_UMSG("The DARWIN branch has been merged onto the trunk");
+   VG_UMSG("and is now defunct.");
+   VG_UMSG("Please check-out the trunk and use that instead.");
+   VG_(exit)(1);
+
    //--------------------------------------------------------------
    // AIX5 only: register the system call numbers
    //   p: logging
