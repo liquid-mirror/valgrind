@@ -45,6 +45,7 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
+#include "pub_core_machine.h"       // VG_(get_SP)
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
@@ -228,6 +229,7 @@ ML_(notify_core_and_tool_of_mprotect) ( Addr a, SizeT len, Int prot )
 
 
 
+#if HAVE_MREMAP
 /* Expand (or shrink) an existing mapping, potentially moving it at
    the same time (controlled by the MREMAP_MAYMOVE flag).  Nightmare.
 */
@@ -502,6 +504,7 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
 
 #  undef MIN_SIZET
 }
+#endif /* HAVE_MREMAP */
 
 
 /* ---------------------------------------------------------------------
@@ -759,6 +762,7 @@ void init_preopened_fds_without_proc_self_fd(void)
 void VG_(init_preopened_fds)(void)
 {
 // Nb: AIX5 is handled in syswrap-aix5.c.
+// DDD: should probably use HAVE_PROC here or similar, instead.
 #if defined(VGO_linux)
    Int ret;
    struct vki_dirent d;
@@ -792,6 +796,9 @@ void VG_(init_preopened_fds)(void)
 
   out:
    VG_(close)(sr_Res(f));
+
+#elif defined(VGO_darwin)
+   init_preopened_fds_without_proc_self_fd();
 
 #else
 #  error Unknown OS
@@ -905,12 +912,16 @@ static void check_cmsg_for_fds(ThreadId tid, struct vki_msghdr *msg)
    }
 }
 
+/* GrP kernel ignores sa_len (at least on Darwin); this checks the rest */
 static
 void pre_mem_read_sockaddr ( ThreadId tid,
                              Char *description,
                              struct vki_sockaddr *sa, UInt salen )
 {
    Char *outmsg;
+   struct vki_sockaddr_un*  sun  = (struct vki_sockaddr_un *)sa;
+   struct vki_sockaddr_in*  sin  = (struct vki_sockaddr_in *)sa;
+   struct vki_sockaddr_in6* sin6 = (struct vki_sockaddr_in6 *)sa;
 
    /* NULL/zero-length sockaddrs are legal */
    if ( sa == NULL || salen == 0 ) return;
@@ -918,45 +929,37 @@ void pre_mem_read_sockaddr ( ThreadId tid,
    outmsg = VG_(arena_malloc) ( VG_AR_CORE, "di.syswrap.pmr_sockaddr.1",
                                 VG_(strlen)( description ) + 30 );
 
-   VG_(sprintf) ( outmsg, description, ".sa_family" );
+   VG_(sprintf) ( outmsg, description, "sa_family" );
    PRE_MEM_READ( outmsg, (Addr) &sa->sa_family, sizeof(vki_sa_family_t));
 
    switch (sa->sa_family) {
                   
       case VKI_AF_UNIX:
-         VG_(sprintf) ( outmsg, description, ".sun_path" );
-         PRE_MEM_RASCIIZ( outmsg,
-            (Addr) ((struct vki_sockaddr_un *) sa)->sun_path);
+         VG_(sprintf) ( outmsg, description, "sun_path" );
+         PRE_MEM_RASCIIZ( outmsg, (Addr) sun->sun_path );
+         // GrP fixme max of sun_len-2? what about nul char?
          break;
                      
       case VKI_AF_INET:
-         VG_(sprintf) ( outmsg, description, ".sin_port" );
-         PRE_MEM_READ( outmsg,
-            (Addr) &((struct vki_sockaddr_in *) sa)->sin_port,
-            sizeof (((struct vki_sockaddr_in *) sa)->sin_port));
-         VG_(sprintf) ( outmsg, description, ".sin_addr" );
-         PRE_MEM_READ( outmsg,
-            (Addr) &((struct vki_sockaddr_in *) sa)->sin_addr,
-            sizeof (struct vki_in_addr));
+         VG_(sprintf) ( outmsg, description, "sin_port" );
+         PRE_MEM_READ( outmsg, (Addr) &sin->sin_port, sizeof (sin->sin_port) );
+         VG_(sprintf) ( outmsg, description, "sin_addr" );
+         PRE_MEM_READ( outmsg, (Addr) &sin->sin_addr, sizeof (sin->sin_addr) );
          break;
                            
       case VKI_AF_INET6:
-         VG_(sprintf) ( outmsg, description, ".sin6_port" );
+         VG_(sprintf) ( outmsg, description, "sin6_port" );
          PRE_MEM_READ( outmsg,
-            (Addr) &((struct vki_sockaddr_in6 *) sa)->sin6_port,
-            sizeof (((struct vki_sockaddr_in6 *) sa)->sin6_port));
-         VG_(sprintf) ( outmsg, description, ".sin6_flowinfo" );
+            (Addr) &sin6->sin6_port, sizeof (sin6->sin6_port) );
+         VG_(sprintf) ( outmsg, description, "sin6_flowinfo" );
          PRE_MEM_READ( outmsg,
-            (Addr) &((struct vki_sockaddr_in6 *) sa)->sin6_flowinfo,
-            sizeof (__vki_u32));
-         VG_(sprintf) ( outmsg, description, ".sin6_addr" );
+            (Addr) &sin6->sin6_flowinfo, sizeof (sin6->sin6_flowinfo) );
+         VG_(sprintf) ( outmsg, description, "sin6_addr" );
          PRE_MEM_READ( outmsg,
-            (Addr) &((struct vki_sockaddr_in6 *) sa)->sin6_addr,
-            sizeof (struct vki_in6_addr));
-         VG_(sprintf) ( outmsg, description, ".sin6_scope_id" );
+            (Addr) &sin6->sin6_addr, sizeof (sin6->sin6_addr) );
+         VG_(sprintf) ( outmsg, description, "sin6_scope_id" );
          PRE_MEM_READ( outmsg,
-            (Addr) &((struct vki_sockaddr_in6 *) sa)->sin6_scope_id,
-			sizeof (__vki_u32));
+            (Addr) &sin6->sin6_scope_id, sizeof (sin6->sin6_scope_id) );
          break;
                
       default:
@@ -1412,9 +1415,6 @@ ML_(generic_PRE_sys_connect) ( ThreadId tid,
 {
    /* int connect(int sockfd, 
                   struct sockaddr *serv_addr, int addrlen ); */
-   PRE_MEM_READ( "socketcall.connect(serv_addr.sa_family)",
-                 arg1, /* serv_addr */
-                 sizeof(vki_sa_family_t));
    pre_mem_read_sockaddr( tid,
                           "socketcall.connect(serv_addr.%s)",
                           (struct vki_sockaddr *) arg1, arg2);
@@ -1585,6 +1585,7 @@ ML_(generic_PRE_sys_semctl) ( ThreadId tid,
    union vki_semun arg = *(union vki_semun *)&arg3;
    UInt nsems;
    switch (arg2 /* cmd */) {
+#if defined(VKI_IPC_INFO)
    case VKI_IPC_INFO:
    case VKI_SEM_INFO:
    case VKI_IPC_INFO|VKI_IPC_64:
@@ -1592,32 +1593,51 @@ ML_(generic_PRE_sys_semctl) ( ThreadId tid,
       PRE_MEM_WRITE( "semctl(IPC_INFO, arg.buf)",
                      (Addr)arg.buf, sizeof(struct vki_seminfo) );
       break;
+#endif
+
    case VKI_IPC_STAT:
+#if defined(VKI_SEM_STAT)
    case VKI_SEM_STAT:
+#endif
       PRE_MEM_WRITE( "semctl(IPC_STAT, arg.buf)",
                      (Addr)arg.buf, sizeof(struct vki_semid_ds) );
       break;
+
+#if defined(VKI_IPC_64)
    case VKI_IPC_STAT|VKI_IPC_64:
+#if defined(VKI_SEM_STAT)
    case VKI_SEM_STAT|VKI_IPC_64:
+#endif
       PRE_MEM_WRITE( "semctl(IPC_STAT, arg.buf)",
                      (Addr)arg.buf, sizeof(struct vki_semid64_ds) );
       break;
+#endif
+
    case VKI_IPC_SET:
       PRE_MEM_READ( "semctl(IPC_SET, arg.buf)",
                     (Addr)arg.buf, sizeof(struct vki_semid_ds) );
       break;
+
+#if defined(VKI_IPC_64)
    case VKI_IPC_SET|VKI_IPC_64:
       PRE_MEM_READ( "semctl(IPC_SET, arg.buf)",
                     (Addr)arg.buf, sizeof(struct vki_semid64_ds) );
       break;
+#endif
+
    case VKI_GETALL:
+#if defined(VKI_IPC_64)
    case VKI_GETALL|VKI_IPC_64:
+#endif
       nsems = get_sem_count( arg0 );
       PRE_MEM_WRITE( "semctl(IPC_GETALL, arg.array)",
                      (Addr)arg.array, sizeof(unsigned short) * nsems );
       break;
+
    case VKI_SETALL:
+#if defined(VKI_IPC_64)
    case VKI_SETALL|VKI_IPC_64:
+#endif
       nsems = get_sem_count( arg0 );
       PRE_MEM_READ( "semctl(IPC_SETALL, arg.array)",
                     (Addr)arg.array, sizeof(unsigned short) * nsems );
@@ -1634,22 +1654,33 @@ ML_(generic_POST_sys_semctl) ( ThreadId tid,
    union vki_semun arg = *(union vki_semun *)&arg3;
    UInt nsems;
    switch (arg2 /* cmd */) {
+#if defined(VKI_IPC_INFO)
    case VKI_IPC_INFO:
    case VKI_SEM_INFO:
    case VKI_IPC_INFO|VKI_IPC_64:
    case VKI_SEM_INFO|VKI_IPC_64:
       POST_MEM_WRITE( (Addr)arg.buf, sizeof(struct vki_seminfo) );
       break;
+#endif
+
    case VKI_IPC_STAT:
+#if defined(VKI_SEM_STAT)
    case VKI_SEM_STAT:
+#endif
       POST_MEM_WRITE( (Addr)arg.buf, sizeof(struct vki_semid_ds) );
       break;
+
+#if defined(VKI_IPC_64)
    case VKI_IPC_STAT|VKI_IPC_64:
    case VKI_SEM_STAT|VKI_IPC_64:
       POST_MEM_WRITE( (Addr)arg.buf, sizeof(struct vki_semid64_ds) );
       break;
+#endif
+
    case VKI_GETALL:
+#if defined(VKI_IPC_64)
    case VKI_GETALL|VKI_IPC_64:
+#endif
       nsems = get_sem_count( arg0 );
       POST_MEM_WRITE( (Addr)arg.array, sizeof(unsigned short) * nsems );
       break;
@@ -1774,37 +1805,56 @@ ML_(generic_PRE_sys_shmctl) ( ThreadId tid,
 {
    /* int shmctl(int shmid, int cmd, struct shmid_ds *buf); */
    switch (arg1 /* cmd */) {
+#if defined(VKI_IPC_INFO)
    case VKI_IPC_INFO:
       PRE_MEM_WRITE( "shmctl(IPC_INFO, buf)",
                      arg2, sizeof(struct vki_shminfo) );
       break;
+#if defined(VKI_IPC_64)
    case VKI_IPC_INFO|VKI_IPC_64:
       PRE_MEM_WRITE( "shmctl(IPC_INFO, buf)",
                      arg2, sizeof(struct vki_shminfo64) );
       break;
+#endif
+#endif
+
+#if defined(VKI_SHM_INFO)
    case VKI_SHM_INFO:
+#if defined(VKI_IPC_64)
    case VKI_SHM_INFO|VKI_IPC_64:
+#endif
       PRE_MEM_WRITE( "shmctl(SHM_INFO, buf)",
                      arg2, sizeof(struct vki_shm_info) );
       break;
+#endif
+
    case VKI_IPC_STAT:
+#if defined(VKI_SHM_STAT)
    case VKI_SHM_STAT:
+#endif
       PRE_MEM_WRITE( "shmctl(IPC_STAT, buf)",
                      arg2, sizeof(struct vki_shmid_ds) );
       break;
+
+#if defined(VKI_IPC_64)
    case VKI_IPC_STAT|VKI_IPC_64:
    case VKI_SHM_STAT|VKI_IPC_64:
       PRE_MEM_WRITE( "shmctl(IPC_STAT, arg.buf)",
                      arg2, sizeof(struct vki_shmid64_ds) );
       break;
+#endif
+
    case VKI_IPC_SET:
       PRE_MEM_READ( "shmctl(IPC_SET, arg.buf)",
                     arg2, sizeof(struct vki_shmid_ds) );
       break;
+
+#if defined(VKI_IPC_64)
    case VKI_IPC_SET|VKI_IPC_64:
       PRE_MEM_READ( "shmctl(IPC_SET, arg.buf)",
                     arg2, sizeof(struct vki_shmid64_ds) );
       break;
+#endif
    }
 }
 
@@ -1814,24 +1864,37 @@ ML_(generic_POST_sys_shmctl) ( ThreadId tid,
                                UWord arg0, UWord arg1, UWord arg2 )
 {
    switch (arg1 /* cmd */) {
+#if defined(VKI_IPC_INFO)
    case VKI_IPC_INFO:
       POST_MEM_WRITE( arg2, sizeof(struct vki_shminfo) );
       break;
    case VKI_IPC_INFO|VKI_IPC_64:
       POST_MEM_WRITE( arg2, sizeof(struct vki_shminfo64) );
       break;
+#endif
+
+#if defined(VKI_SHM_INFO)
    case VKI_SHM_INFO:
    case VKI_SHM_INFO|VKI_IPC_64:
       POST_MEM_WRITE( arg2, sizeof(struct vki_shm_info) );
       break;
+#endif
+
    case VKI_IPC_STAT:
+#if defined(VKI_SHM_STAT)
    case VKI_SHM_STAT:
+#endif
       POST_MEM_WRITE( arg2, sizeof(struct vki_shmid_ds) );
       break;
+
+#if defined(VKI_IPC_64)
    case VKI_IPC_STAT|VKI_IPC_64:
    case VKI_SHM_STAT|VKI_IPC_64:
       POST_MEM_WRITE( arg2, sizeof(struct vki_shmid64_ds) );
       break;
+#endif
+
+
    }
 }
 
@@ -1874,6 +1937,16 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    SysRes     sres;
    MapRequest mreq;
    Bool       mreq_ok;
+
+#if defined(VGO_darwin)
+   // Nb: we can't use this on Darwin, it has races:
+   // * needs to RETRY if advisory succeeds but map fails  
+   //   (could have been some other thread in a nonblocking call)
+   // * needs to not use fixed-position mmap() on Darwin
+   //   (mmap will cheerfully smash whatever's already there, which might 
+   //   be a new mapping from some other thread in a nonblocking call)
+   VG_(core_panic)("can't use ML_(generic_PRE_sys_mmap) on Darwin");
+#endif
 
    if (arg2 == 0) {
       /* SuSV3 says: If len is zero, mmap() shall fail and no mapping
@@ -2010,8 +2083,12 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
 #define PRE(name)      DEFN_PRE_TEMPLATE(generic, name)
 #define POST(name)     DEFN_POST_TEMPLATE(generic, name)
 
+#if VG_WORDSIZE == 4
 // Combine two 32-bit values into a 64-bit value
+// Always use with low-numbered arg first (e.g. LOHI64(ARG1,ARG2) )
+// GrP fixme correct for ppc-linux?
 #define LOHI64(lo,hi)   ( ((ULong)(lo)) | (((ULong)(hi)) << 32) )
+#endif
 
 PRE(sys_exit)
 {
@@ -2029,8 +2106,17 @@ PRE(sys_exit)
 
 PRE(sys_ni_syscall)
 {
-   // Nb: AIX5 is handled in syswrap-aix5.c.
-   PRINT("non-existent syscall! (ni_syscall)");
+   PRINT("unimplemented (by the kernel) syscall %ld! (ni_syscall)\n",
+// Nb: AIX5 is handled in syswrap-aix5.c.
+// DDD: make this generic
+#if defined(VGO_linux)
+      SYSNO
+#elif defined(VGO_darwin)
+      VG_DARWIN_SYSNO_PRINT(SYSNO)
+#else
+#  error Unknown OS
+#endif
+   );
    PRE_REG_READ0(long, "ni_syscall");
    SET_STATUS_Failure( VKI_ENOSYS );
 }
@@ -2136,6 +2222,7 @@ PRE(sys_getitimer)
    PRE_timeval_WRITE( "getitimer(&value->it_interval)", &(value->it_interval));
    PRE_timeval_WRITE( "getitimer(&value->it_value)",    &(value->it_value));
 }
+
 POST(sys_getitimer)
 {
    if (ARG2 != (Addr)NULL) {
@@ -2191,6 +2278,7 @@ PRE(sys_madvise)
                  unsigned long, start, vki_size_t, length, int, advice);
 }
 
+#if HAVE_MREMAP
 PRE(sys_mremap)
 {
    // Nb: this is different to the glibc version described in the man pages,
@@ -2213,6 +2301,7 @@ PRE(sys_mremap)
       do_mremap((Addr)ARG1, ARG2, (Addr)ARG5, ARG3, ARG4, tid) 
    );
 }
+#endif /* HAVE_MREMAP */
 
 PRE(sys_nice)
 {
@@ -2817,9 +2906,17 @@ PRE(sys_fork)
 
    if (!SUCCESS) return;
 
+#if defined(VGO_linux) || defined(VGO_aix5)
    // RES is 0 for child, non-0 (the child's PID) for parent.
    is_child = ( RES == 0 ? True : False );
    child_pid = ( is_child ? -1 : RES );
+#elif defined(VGO_darwin)
+   // RES is the child's pid.  RESHI is 1 for child, 0 for parent.
+   is_child = RESHI;
+   child_pid = RES;
+#else
+#  error Unknown OS
+#endif
 
    VG_(do_atfork_pre)(tid);
 
@@ -2836,7 +2933,7 @@ PRE(sys_fork)
       if (!VG_(logging_to_socket) && VG_(clo_child_silent_after_fork))
          VG_(clo_log_fd) = -1;
 
-   } else { 
+   } else {
       VG_(do_atfork_parent)(tid);
 
       PRINT("   fork: process %d created child %d\n", VG_(getpid)(), child_pid);
@@ -2862,30 +2959,36 @@ PRE(sys_truncate)
    PRE_MEM_RASCIIZ( "truncate(path)", ARG1 );
 }
 
-// XXX: this wrapper is only suitable for 32-bit platforms
-#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
 PRE(sys_ftruncate64)
 {
    *flags |= SfMayBlock;
+#if VG_WORDSIZE == 4
    PRINT("sys_ftruncate64 ( %ld, %lld )", ARG1, LOHI64(ARG2,ARG3));
    PRE_REG_READ3(long, "ftruncate64",
                  unsigned int, fd,
-                 vki_u32, length_low32, vki_u32, length_high32);
-}
+                 UWord, length_low32, UWord, length_high32);
+#else
+   PRINT("sys_ftruncate64 ( %ld, %lld )", ARG1, (Long)ARG2);
+   PRE_REG_READ2(long, "ftruncate64",
+                 unsigned int,fd, UWord,length);
 #endif
+}
 
-// XXX: this wrapper is only suitable for 32-bit platforms
-#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
 PRE(sys_truncate64)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_truncate64 ( %#lx, %lld )", ARG1, LOHI64(ARG2, ARG3));
+#if VG_WORDSIZE == 4
+   PRINT("sys_truncate64 ( %#lx, %lld )", ARG1, (Long)LOHI64(ARG2, ARG3));
    PRE_REG_READ3(long, "truncate64",
                  const char *, path,
-                 vki_u32, length_low32, vki_u32, length_high32);
+                 UWord, length_low32, UWord, length_high32);
+#else
+   PRINT("sys_truncate64 ( %#lx, %lld )", ARG1, (Long)ARG2);
+   PRE_REG_READ2(long, "truncate64",
+                 const char *,path, UWord,length);
+#endif
    PRE_MEM_RASCIIZ( "truncate64(path)", ARG1 );
 }
-#endif
 
 PRE(sys_getdents)
 {
@@ -3002,6 +3105,12 @@ static void common_post_getrlimit(ThreadId tid, UWord a1, UWord a2)
 {
    POST_MEM_WRITE( a2, sizeof(struct vki_rlimit) );
 
+#ifdef _RLIMIT_POSIX_FLAG
+   // Darwin will sometimes set _RLIMIT_POSIX_FLAG on getrlimit calls.
+   // Unset it here to make the switch case below work correctly.
+   a1 &= ~_RLIMIT_POSIX_FLAG;
+#endif
+
    switch (a1) {
    case VKI_RLIMIT_NOFILE:
       ((struct vki_rlimit *)a2)->rlim_cur = VG_(fd_soft_limit);
@@ -3015,7 +3124,7 @@ static void common_post_getrlimit(ThreadId tid, UWord a1, UWord a2)
    case VKI_RLIMIT_STACK:
       *((struct vki_rlimit *)a2) = VG_(client_rlimit_stack);
       break;
-    }
+   }
 }
 
 PRE(sys_old_getrlimit)
@@ -3063,6 +3172,7 @@ PRE(sys_gettimeofday)
    PRINT("sys_gettimeofday ( %#lx, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "gettimeofday",
                  struct timeval *, tv, struct timezone *, tz);
+   // GrP fixme does darwin write to *tz anymore?
    if (ARG1 != 0)
       PRE_timeval_WRITE( "gettimeofday(tv)", ARG1 );
    if (ARG2 != 0)
@@ -3086,7 +3196,7 @@ PRE(sys_settimeofday)
    PRE_REG_READ2(long, "settimeofday",
                  struct timeval *, tv, struct timezone *, tz);
    if (ARG1 != 0)
-      PRE_MEM_READ( "settimeofday(tv)", ARG1, sizeof(struct vki_timeval) );
+      PRE_timeval_READ( "settimeofday(tv)", ARG1 );
    if (ARG2 != 0) {
       PRE_MEM_READ( "settimeofday(tz)", ARG2, sizeof(struct vki_timezone) );
       /* maybe should warn if tz->tz_dsttime is non-zero? */
@@ -3286,6 +3396,7 @@ PRE(sys_mprotect)
    if (!ML_(valid_client_addr)(ARG1, ARG2, tid, "mprotect")) {
       SET_STATUS_Failure( VKI_ENOMEM );
    } 
+#if defined(VKI_PROT_GROWSDOWN)
    else 
    if (ARG3 & (VKI_PROT_GROWSDOWN|VKI_PROT_GROWSUP)) {
       /* Deal with mprotects on growable stack areas.
@@ -3337,6 +3448,7 @@ PRE(sys_mprotect)
          SET_STATUS_Failure( VKI_EINVAL );
       }
    }
+#endif   // defined(VKI_PROT_GROWSDOWN)
 }
 
 POST(sys_mprotect)
@@ -3399,9 +3511,6 @@ POST(sys_nanosleep)
 
 PRE(sys_open)
 {
-   HChar  name[30];
-   SysRes sres;
-
    if (ARG2 & VKI_O_CREAT) {
       // 3-arg version
       PRINT("sys_open ( %#lx(%s), %ld, %ld )",ARG1,(char*)ARG1,ARG2,ARG3);
@@ -3415,24 +3524,32 @@ PRE(sys_open)
    }
    PRE_MEM_RASCIIZ( "open(filename)", ARG1 );
 
+#if HAVE_PROC
    /* Handle the case where the open is of /proc/self/cmdline or
       /proc/<pid>/cmdline, and just give it a copy of the fd for the
       fake file we cooked up at startup (in m_main).  Also, seek the
       cloned fd back to the start. */
+   {
+      HChar  name[30];
+      Char*  arg1s = (Char*) ARG1;
+      SysRes sres;
 
-   VG_(sprintf)(name, "/proc/%d/cmdline", VG_(getpid)());
-   if (ML_(safe_to_deref)( (void*)ARG1, 1 )
-       && (VG_(strcmp)((Char *)ARG1, name) == 0 
-           || VG_(strcmp)((Char *)ARG1, "/proc/self/cmdline") == 0)) {
-      sres = VG_(dup)( VG_(cl_cmdline_fd) );
-      SET_STATUS_from_SysRes( sres );
-      if (!sr_isError(sres)) {
-         OffT off = VG_(lseek)( sr_Res(sres), 0, VKI_SEEK_SET );
-         if (off < 0)
-            SET_STATUS_Failure( VKI_EMFILE );
+      VG_(sprintf)(name, "/proc/%d/cmdline", VG_(getpid)());
+      if (ML_(safe_to_deref)( arg1s, 1 ) &&
+          (VG_STREQ(arg1s, name) || VG_STREQ(arg1s, "/proc/self/cmdline"))
+         )
+      {
+         sres = VG_(dup)( VG_(cl_cmdline_fd) );
+         SET_STATUS_from_SysRes( sres );
+         if (!sr_isError(sres)) {
+            OffT off = VG_(lseek)( sr_Res(sres), 0, VKI_SEEK_SET );
+            if (off < 0)
+               SET_STATUS_Failure( VKI_EMFILE );
+         }
+         return;
       }
-      return;
    }
+#endif // HAVE_PROC
 
    /* Otherwise handle normally */
    *flags |= SfMayBlock;
@@ -3546,8 +3663,7 @@ POST(sys_poll)
 
 PRE(sys_readlink)
 {
-   HChar name[25];
-   Word  saved = SYSNO;
+   Word saved = SYSNO;
 
    PRINT("sys_readlink ( %#lx(%s), %#lx, %llu )", ARG1,(char*)ARG1,ARG2,(ULong)ARG3);
    PRE_REG_READ3(long, "readlink",
@@ -3555,20 +3671,28 @@ PRE(sys_readlink)
    PRE_MEM_RASCIIZ( "readlink(path)", ARG1 );
    PRE_MEM_WRITE( "readlink(buf)", ARG2,ARG3 );
 
-   /*
-    * Handle the case where readlink is looking at /proc/self/exe or
-    * /proc/<pid>/exe.
-    */
-   VG_(sprintf)(name, "/proc/%d/exe", VG_(getpid)());
-   if (ML_(safe_to_deref)((void*)ARG1, 1)
-       && (VG_(strcmp)((Char *)ARG1, name) == 0 
-           || VG_(strcmp)((Char *)ARG1, "/proc/self/exe") == 0)) {
-      VG_(sprintf)(name, "/proc/self/fd/%d", VG_(cl_exec_fd));
-      SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, (UWord)name, 
-                                                      ARG2, ARG3));
-   } else {
-      /* Normal case */
-      SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, ARG1, ARG2, ARG3));
+   {
+#if HAVE_PROC
+      /*
+       * Handle the case where readlink is looking at /proc/self/exe or
+       * /proc/<pid>/exe.
+       */
+      HChar name[25];
+      Char* arg1s = (Char*) ARG1;
+      VG_(sprintf)(name, "/proc/%d/exe", VG_(getpid)());
+      if (ML_(safe_to_deref)(arg1s, 1) &&
+          (VG_STREQ(arg1s, name) || VG_STREQ(arg1s, "/proc/self/exe"))
+         )
+      {
+         VG_(sprintf)(name, "/proc/self/fd/%d", VG_(cl_exec_fd));
+         SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, (UWord)name, 
+                                                         ARG2, ARG3));
+      } else
+#endif // HAVE_PROC
+      {
+         /* Normal case */
+         SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, ARG1, ARG2, ARG3));
+      }
    }
 
    if (SUCCESS && RES > 0)
@@ -3695,12 +3819,19 @@ PRE(sys_setreuid)
 
 PRE(sys_setrlimit)
 {
+   UWord arg1 = ARG1;
    PRINT("sys_setrlimit ( %ld, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "setrlimit",
                  unsigned int, resource, struct rlimit *, rlim);
    PRE_MEM_READ( "setrlimit(rlim)", ARG2, sizeof(struct vki_rlimit) );
 
-   if (ARG1 == VKI_RLIMIT_NOFILE) {
+#ifdef _RLIMIT_POSIX_FLAG
+   // Darwin will sometimes set _RLIMIT_POSIX_FLAG on setrlimit calls.
+   // Unset it here to make the if statements below work correctly.
+   arg1 &= ~_RLIMIT_POSIX_FLAG;
+#endif
+
+   if (arg1 == VKI_RLIMIT_NOFILE) {
       if (((struct vki_rlimit *)ARG2)->rlim_cur > VG_(fd_hard_limit) ||
           ((struct vki_rlimit *)ARG2)->rlim_max != VG_(fd_hard_limit)) {
          SET_STATUS_Failure( VKI_EPERM );
@@ -3710,7 +3841,7 @@ PRE(sys_setrlimit)
          SET_STATUS_Success( 0 );
       }
    }
-   else if (ARG1 == VKI_RLIMIT_DATA) {
+   else if (arg1 == VKI_RLIMIT_DATA) {
       if (((struct vki_rlimit *)ARG2)->rlim_cur > VG_(client_rlimit_data).rlim_max ||
           ((struct vki_rlimit *)ARG2)->rlim_max > VG_(client_rlimit_data).rlim_max) {
          SET_STATUS_Failure( VKI_EPERM );
@@ -3720,7 +3851,7 @@ PRE(sys_setrlimit)
          SET_STATUS_Success( 0 );
       }
    }
-   else if (ARG1 == VKI_RLIMIT_STACK && tid == 1) {
+   else if (arg1 == VKI_RLIMIT_STACK && tid == 1) {
       if (((struct vki_rlimit *)ARG2)->rlim_cur > VG_(client_rlimit_stack).rlim_max ||
           ((struct vki_rlimit *)ARG2)->rlim_max > VG_(client_rlimit_stack).rlim_max) {
          SET_STATUS_Failure( VKI_EPERM );
@@ -3919,7 +4050,6 @@ PRE(sys_utimes)
       PRE_timeval_READ( "utimes(tvp[0])", ARG2 );
       PRE_timeval_READ( "utimes(tvp[1])", ARG2+sizeof(struct vki_timeval) );
    }
-
 }
 
 PRE(sys_acct)
