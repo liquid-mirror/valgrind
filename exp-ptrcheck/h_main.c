@@ -2412,6 +2412,9 @@ static void setup_post_syscall_table ( void )
 #     if defined(__NR_shmget)
       ADD(1, __NR_shmget);
 #     endif
+#     if defined(__NR_ipc) && defined(VKI_SHMAT)
+      ADD(1, __NR_ipc); /* ppc{32,64}-linux horrors */
+#     endif
 
    /* --------------- AIX5 --------------- */
 
@@ -2495,14 +2498,9 @@ void h_post_syscall ( ThreadId tid, UInt sysno,
 
    /* Deal with the common case */
    pair = VG_(indexXA)( post_syscall_table, i );
-   if (pair->uw2 == 0) {
-     /* the common case */
-      VG_(set_syscall_return_shadows)( 
-         tid, /* retval */ (UWord)NONPTR, 0,
-              /* error */  (UWord)NONPTR, 0
-      );
-      return;
-   }
+   if (pair->uw2 == 0)
+      /* the common case */
+      goto res_NONPTR_err_NONPTR;
 
    /* Special handling for all remaining cases */
    tl_assert(pair->uw2 == 1);
@@ -2515,24 +2513,15 @@ void h_post_syscall ( ThreadId tid, UInt sysno,
          syscall completes. */
       post_reg_write_nonptr_or_unknown( tid, PC_OFF_FS_ZERO, 
                                              PC_SZB_FS_ZERO );
-      VG_(set_syscall_return_shadows)( 
-         tid, /* retval */ (UWord)NONPTR, 0,
-              /* error */  (UWord)NONPTR, 0
-      );
-      return;
+      goto res_NONPTR_err_NONPTR;
    }
 #  endif
 
 #  if defined(__NR_brk)
    // With brk(), result (of kernel syscall, not glibc wrapper) is a heap
    // pointer.  Make the shadow UNKNOWN.
-   if (sysno ==  __NR_brk) {
-      VG_(set_syscall_return_shadows)( 
-         tid, /* retval */ (UWord)UNKNOWN, 0,
-              /* error */  (UWord)NONPTR,  0
-      );
-      return;
-   }
+   if (sysno == __NR_brk)
+      goto res_UNKNOWN_err_NONPTR;
 #  endif
 
    // With mmap, new_mem_mmap() has already been called and added the
@@ -2551,13 +2540,9 @@ void h_post_syscall ( ThreadId tid, UInt sysno,
       ) {
       if (sr_isError(res)) {
          // mmap() had an error, return value is a small negative integer
-         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)NONPTR, 0,
-                                               /*err*/ (UWord)NONPTR, 0 );
-         if (0) VG_(printf)("ZZZZZZZ mmap res -> NONPTR\n");
+         goto res_NONPTR_err_NONPTR;
       } else {
-         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)UNKNOWN, 0,
-                                               /*err*/ (UWord)NONPTR, 0 );
-         if (0) VG_(printf)("ZZZZZZZ mmap res -> UNKNOWN\n");
+         goto res_UNKNOWN_err_NONPTR;
       }
       return;
    }
@@ -2567,24 +2552,40 @@ void h_post_syscall ( ThreadId tid, UInt sysno,
 #  if defined(__NR_shmat)
    if (sysno == __NR_shmat) {
       if (sr_isError(res)) {
-         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)NONPTR, 0,
-                                               /*err*/ (UWord)NONPTR, 0 );
-         if (0) VG_(printf)("ZZZZZZZ shmat res -> NONPTR\n");
+         goto res_NONPTR_err_NONPTR;
       } else {
-         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)UNKNOWN, 0,
-                                               /*err*/ (UWord)NONPTR, 0 );
-         if (0) VG_(printf)("ZZZZZZZ shmat res -> UNKNOWN\n");
+         goto res_UNKNOWN_err_NONPTR;
       }
-      return;
    }
 #  endif
 
 #  if defined(__NR_shmget)
-   if (sysno == __NR_shmget) {
+   if (sysno == __NR_shmget)
       // FIXME: is this correct?
-      VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)UNKNOWN, 0,
-                                            /*err*/ (UWord)NONPTR, 0 );
-      return;
+      goto res_UNKNOWN_err_NONPTR;
+#  endif
+
+#  if defined(__NR_ipc) && defined(VKI_SHMAT)
+   /* perhaps this should be further conditionalised with
+      && (defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+      Note, this just copies the behaviour of __NR_shmget above.
+
+      JRS 2009 June 02: it seems that the return value from
+      sys_ipc(VKI_SHMAT, ...) doesn't have much relationship to the
+      result returned by the originating user-level shmat call.  It's
+      different (and much lower) by a large but integral number of
+      pages.  I don't have time to chase this right now.  Observed on
+      ppc{32,64}-linux.  Result appears to be false errors from apps
+      using shmat.  Confusion though -- shouldn't be related to the
+      actual numeric values returned by the syscall, though, should
+      it?  Confused.  Maybe some bad interaction with a
+      nonpointer-or-unknown heuristic? */
+   if (sysno == __NR_ipc) {
+      if (args[0] == VKI_SHMAT) {
+         goto res_UNKNOWN_err_NONPTR;
+      } else {
+         goto res_NONPTR_err_NONPTR;
+      }
    }
 #  endif
 
@@ -2592,6 +2593,16 @@ void h_post_syscall ( ThreadId tid, UInt sysno,
       post_syscall_table has .w2 == 1, which in turn implies there
       should be special-case code for it above. */
    tl_assert(0);
+
+  res_NONPTR_err_NONPTR:
+   VG_(set_syscall_return_shadows)( tid, /* retval */ (UWord)NONPTR, 0,
+                                         /* error */  (UWord)NONPTR, 0 );
+   return;
+
+  res_UNKNOWN_err_NONPTR:
+   VG_(set_syscall_return_shadows)( tid, /* retval */ (UWord)UNKNOWN, 0,
+                                         /* error */  (UWord)NONPTR, 0 );
+   return;
 }
 
 
