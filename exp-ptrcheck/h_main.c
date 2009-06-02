@@ -2894,24 +2894,72 @@ void check_load1(Addr m, Seg* mptr_vseg)
 // ------------------ Store handlers ------------------ //
 
 /* On 32 bit targets, we will use:
-      check_store1 check_store2 check_store4_P
+      check_store1 check_store2 check_store4_P check_store4C_P
       check_store4 (for 32-bit nonpointer stores)
       check_store8_ms4B_ls4B (for 64-bit stores)
       check_store16_ms4B_4B_4B_ls4B (for xmm/altivec stores)
 
    On 64 bit targets, we will use:
-      check_store1 check_store2 check_store4 check_store8_P
+      check_store1 check_store2 check_store4 check_store4C
+      check_store8_P check_store_8C_P
       check_store8_all8B (for 64-bit nonpointer stores)
       check_store16_ms8B_ls8B (for xmm/altivec stores)
 
    A "_P" handler writes a pointer to memory, and so has an extra
    argument -- the pointer's shadow value.  That implies that
-   check_store4_P is only to be called on a 32 bit host and
-   check_store8_P is only to be called on a 64 bit host.  For all
+   check_store4{,C}_P is only to be called on a 32 bit host and
+   check_store8{,C}_P is only to be called on a 64 bit host.  For all
    other cases, and for the misaligned _P cases, the strategy is to
    let the store go through, and then snoop around with
    nonptr_or_unknown to fix up the shadow values of any affected
    words. */
+
+/* Helpers for store-conditionals.  Ugly kludge :-(
+   They all return 1 if the SC was successful and 0 if it failed. */
+static inline UWord do_store_conditional_32( Addr m/*dst*/, UInt t/*val*/ )
+{
+#  if defined(VGA_ppc32) || defined(VGA_ppc64)
+   UWord success;
+   /* If this assertion fails, the underlying IR is (semantically) ill-formed
+      as per the IR spec for IRStmt_Store. */
+   tl_assert(VG_IS_4_ALIGNED(m));
+   __asm__ __volatile__(
+      "stwcx. %2,0,%1"    "\n\t" /* data,0,addr */
+      "mfcr   %0"         "\n\t"
+      "srwi   %0,%0,29"   "\n\t" /* move relevant CR bit to LSB */
+      : /*out*/"=b"(success) 
+      : /*in*/ "b"(m), "b"( (UWord)t ) 
+      : /*trash*/ "memory", "cc"
+        /* Note: srwi is OK even on 64-bit host because the we're
+           after bit 29 (normal numbering) and we mask off all the
+           other junk just below. */
+   );
+   return success & (UWord)1;
+#  else
+   tl_assert(0); /* not implemented on other platforms */
+#  endif
+}
+
+static inline UWord do_store_conditional_64( Addr m/*dst*/, ULong t/*val*/ )
+{
+#  if defined(VGA_ppc64)
+   UWord success;
+   /* If this assertion fails, the underlying IR is (semantically) ill-formed
+      as per the IR spec for IRStmt_Store. */
+   tl_assert(VG_IS_8_ALIGNED(m));
+   __asm__ __volatile__(
+      "stdcx. %2,0,%1"    "\n\t" /* data,0,addr */
+      "mfcr   %0"         "\n\t"
+      "srdi   %0,%0,29"   "\n\t" /* move relevant CR bit to LSB */
+      : /*out*/"=b"(success) 
+      : /*in*/ "b"(m), "b"( (UWord)t ) 
+      : /*trash*/ "memory", "cc"
+   );
+   return success & (UWord)1;
+#  else
+   tl_assert(0); /* not implemented on other platforms */
+#  endif
+}
 
 /* Apply nonptr_or_unknown to all the words intersecting
    [a, a+len). */
@@ -3044,6 +3092,29 @@ void check_store8_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
    }
 }
 
+// This handles 64 bit store-conditionals on 64 bit targets.  It must
+// not be called on 32 bit targets.
+static VG_REGPARM(3)
+UWord check_store8C_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
+{
+   UWord success;
+   tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
+#  if SC_SEGS
+   checkSeg(t_vseg);
+   checkSeg(mptr_vseg);
+#  endif
+   check_load_or_store(/*is_write*/True, m, 8, mptr_vseg);
+   // Actually *do* the STORE here
+   success = do_store_conditional_64( m, t );
+   if (VG_IS_8_ALIGNED(m)) {
+      set_mem_vseg( m, t_vseg );
+   } else {
+      // straddling two words
+      nonptr_or_unknown_range(m, 8);
+   }
+   return success;
+}
+
 // This handles 32 bit stores on 32 bit targets.  It must
 // not be called on 64 bit targets.
 static VG_REGPARM(3)
@@ -3065,6 +3136,29 @@ void check_store4_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
    }
 }
 
+// This handles 32 bit store-conditionals on 32 bit targets.  It must
+// not be called on 64 bit targets.
+static VG_REGPARM(3)
+UWord check_store4C_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
+{
+   UWord success;
+   tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
+#  if SC_SEGS
+   checkSeg(t_vseg);
+   checkSeg(mptr_vseg);
+#  endif
+   check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
+   // Actually *do* the STORE here
+   success = do_store_conditional_32( m, t );
+   if (VG_IS_4_ALIGNED(m)) {
+      set_mem_vseg( m, t_vseg );
+   } else {
+      // straddling two words
+      nonptr_or_unknown_range(m, 4);
+   }
+   return success;
+}
+
 // Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(3)
 void check_store4(Addr m, Seg* mptr_vseg, UWord t)
@@ -3076,6 +3170,23 @@ void check_store4(Addr m, Seg* mptr_vseg, UWord t)
    // Actually *do* the STORE here  (Nb: cast must be to 4-byte type!)
    *(UInt*)m = t;
    nonptr_or_unknown_range(m, 4);
+}
+
+// Used for 32-bit store-conditionals on 64 bit targets only.  It must
+// not be called on 32 bit targets.
+static VG_REGPARM(3)
+UWord check_store4C(Addr m, Seg* mptr_vseg, UWord t)
+{
+   UWord success;
+   tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
+   check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
+   // Actually *do* the STORE here
+   success = do_store_conditional_32( m, t );
+   nonptr_or_unknown_range(m, 4);
+   return success;
 }
 
 // Used for both 32 bit and 64 bit targets.
@@ -4062,8 +4173,8 @@ static void gen_nonptr_or_unknown_for_III( PCEnv* pce, IntRegInfo* iii )
    }
 }
 
-/* Generate into 'ane', instrumentation for 'st'.  Also copy 'st'
-   itself into 'ane' (the caller does not do so).  This is somewhat
+/* Generate into 'pce', instrumentation for 'st'.  Also copy 'st'
+   itself into 'pce' (the caller does not do so).  This is somewhat
    complex and relies heavily on the assumption that the incoming IR
    is in flat form.
 
@@ -4225,20 +4336,25 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
             Only word-sized values are shadowed.  If this is a
             store-conditional, .resSC will denote a non-word-typed
             temp, and so we don't need to shadow it.  Assert about the
-            type, tho.
-
-            JRS 1 June 09: urr, this totally breaks with
-            store-conditional, since there's no platform-independent
-            way for the helper to do that and extract the success bit.
-            Ick.
+            type, tho.  However, since we're not re-emitting the
+            original IRStmt_Store, but rather doing it as part of the
+            helper function, we need to actually do a SC in the
+            helper, and assign the result bit to .resSC.  Ugly.
          */
          IRExpr* data  = st->Ist.Store.data;
          IRExpr* addr  = st->Ist.Store.addr;
          IRType  d_ty  = typeOfIRExpr(pce->bb->tyenv, data);
          IRExpr* addrv = schemeEw_Atom( pce, addr );
-         if (st->Ist.Store.resSC != IRTemp_INVALID) {
-            tl_assert(typeOfIRTemp(pce->bb->tyenv, st->Ist.Store.resSC) 
-                      == Ity_I1); /* viz, not something we want to shadow */
+         IRTemp  resSC = st->Ist.Store.resSC;
+         if (resSC != IRTemp_INVALID) {
+            tl_assert(typeOfIRTemp(pce->bb->tyenv, resSC) == Ity_I1);
+            /* viz, not something we want to shadow */
+            /* also, throw out all store-conditional cases that
+               we can't handle */
+            if (pce->gWordTy == Ity_I32 && d_ty != Ity_I32)
+               goto unhandled;
+            if (pce->gWordTy == Ity_I64 && d_ty != Ity_I32 && d_ty != Ity_I64)
+               goto unhandled;
          }
          if (pce->gWordTy == Ity_I32) {
             /* ------ 32 bit host/guest (cough, cough) ------ */
@@ -4246,9 +4362,24 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                /* Integer word case */
                case Ity_I32: {
                   IRExpr* datav = schemeEw_Atom( pce, data );
-                  gen_dirty_v_WWWW( pce,
-                                    &check_store4_P, "check_store4_P",
-                                    addr, addrv, data, datav );
+                  if (resSC == IRTemp_INVALID) {
+                     /* "normal" store */
+                     gen_dirty_v_WWWW( pce,
+                                       &check_store4_P, "check_store4_P",
+                                       addr, addrv, data, datav );
+                  } else {
+                     /* store-conditional; need to snarf the success bit */
+                     IRTemp resSC32
+                         = gen_dirty_W_WWWW( pce,
+                                             &check_store4C_P,
+                                             "check_store4C_P",
+                                             addr, addrv, data, datav );
+                     /* presumably resSC32 will really be Ity_I32.  In
+                        any case we'll get jumped by the IR sanity
+                        checker if it's not, when it sees the
+                        following statement. */
+                     assign( 'I', pce, resSC, unop(Iop_32to1, mkexpr(resSC32)) );
+                  }
                   break;
                }
                /* Integer subword cases */
@@ -4337,17 +4468,39 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                /* Integer word case */
                case Ity_I64: {
                   IRExpr* datav = schemeEw_Atom( pce, data );
-                  gen_dirty_v_WWWW( pce,
-                                    &check_store8_P, "check_store8_P",
-                                    addr, addrv, data, datav );
+                  if (resSC == IRTemp_INVALID) {
+                     /* "normal" store */
+                     gen_dirty_v_WWWW( pce,
+                                       &check_store8_P, "check_store8_P",
+                                       addr, addrv, data, datav );
+                  } else {
+                     IRTemp resSC64
+                         = gen_dirty_W_WWWW( pce,
+                                             &check_store8C_P,
+                                             "check_store8C_P",
+                                             addr, addrv, data, datav );
+                     assign( 'I', pce, resSC, unop(Iop_64to1, mkexpr(resSC64)) );
+                  }
                   break;
                }
                /* Integer subword cases */
                case Ity_I32:
-                  gen_dirty_v_WWW( pce,
-                                   &check_store4, "check_store4",
-                                   addr, addrv,
-                                   uwiden_to_host_word( pce, data ));
+                  if (resSC == IRTemp_INVALID) {
+                     /* "normal" store */
+                     gen_dirty_v_WWW( pce,
+                                      &check_store4, "check_store4",
+                                      addr, addrv,
+                                      uwiden_to_host_word( pce, data ));
+                  } else {
+                     /* store-conditional; need to snarf the success bit */
+                     IRTemp resSC64
+                         = gen_dirty_W_WWW( pce,
+                                            &check_store4C,
+                                            "check_store4C",
+                                            addr, addrv,
+                                            uwiden_to_host_word( pce, data ));
+                     assign( 'I', pce, resSC, unop(Iop_64to1, mkexpr(resSC64)) );
+                  }
                   break;
                case Ity_I16:
                   gen_dirty_v_WWW( pce,
