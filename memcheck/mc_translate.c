@@ -4179,6 +4179,32 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
                                    st->Ist.Store.data,
                                    NULL /* shadow data */,
                                    NULL/*guard*/ );
+            /* If this is a store conditional, it writes to .resSC a
+               value indicating whether or not the store succeeded.
+               Just claim this value is always defined.  In the
+               PowerPC interpretation of store-conditional,
+               definedness of the success indication depends on
+               whether the address of the store matches the
+               reservation address.  But we can't tell that here (and
+               anyway, we're not being PowerPC-specific).  At least we
+               are guarantted that the definedness of the store
+               address, and its addressibility, will be checked as per
+               normal.  So it seems pretty safe to just say that the
+               success indication is always defined.
+
+               In schemeS, for origin tracking, we must
+               correspondingly set a no-origin value for the origin
+               shadow of resSC.
+            */
+            if (st->Ist.Store.resSC != IRTemp_INVALID) {
+               assign( 'V', &mce,
+                       findShadowTmpV(&mce, st->Ist.Store.resSC),
+                       definedOfType(
+                          shadowTypeV(
+                             typeOfIRTemp(mce.sb->tyenv,
+                                          st->Ist.Store.resSC)
+                     )));
+            }
             break;
 
          case Ist_Exit:
@@ -4899,6 +4925,14 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
          dataB = schemeE( mce, st->Ist.Store.data );
          gen_store_b( mce, dszB, st->Ist.Store.addr, 0/*offset*/, dataB,
                       NULL/*guard*/ );
+         /* For the rationale behind this, see comments at the place
+            where the V-shadow for .resSC is constructed, in the main
+            loop in MC_(instrument).  In short, wee regard .resSc as
+            always-defined. */
+         if (st->Ist.Store.resSC != IRTemp_INVALID) {
+            assign( 'B', mce, findShadowTmpB(mce, st->Ist.Store.resSC),
+                    mkU32(0) );
+         }
          break;
       }
       case Ist_Put: {

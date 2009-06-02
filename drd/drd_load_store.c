@@ -449,7 +449,6 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
    IRSB*    bb;
    IRExpr** argv;
    Bool     instrument = True;
-   Bool     bus_locked = False;
 
    /* Set up BB */
    bb           = emptyIRSB();
@@ -483,16 +482,6 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
          {
          case Imbe_Fence:
             break; /* not interesting */
-         case Imbe_BusLock:
-         case Imbe_SnoopedStoreBegin:
-            tl_assert(! bus_locked);
-            bus_locked = True;
-            break;
-         case Imbe_BusUnlock:
-         case Imbe_SnoopedStoreEnd:
-            tl_assert(bus_locked);
-            bus_locked = False;
-            break;
          default:
             tl_assert(0);
          }
@@ -500,7 +489,8 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
          break;
 
       case Ist_Store:
-         if (instrument && ! bus_locked)
+         if (instrument && /* ignore stores resulting from st{d,w}cx. */
+                           st->Ist.Store.resSC == IRTemp_INVALID)
          {
             instrument_store(bb,
                              st->Ist.Store.addr,
@@ -546,8 +536,7 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
                           argv);
                   addStmtToIRSB(bb, IRStmt_Dirty(di));
                }
-               if ((mFx == Ifx_Write || mFx == Ifx_Modify)
-                   && ! bus_locked)
+               if (mFx == Ifx_Write || mFx == Ifx_Modify)
                {
                   di = unsafeIRDirty_0_N(
                           /*regparms*/2,
@@ -569,8 +558,6 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
          break;
       }
    }
-
-   tl_assert(! bus_locked);
 
    return bb;
 }

@@ -1536,7 +1536,6 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(CTR)       && is4) goto exactly1;
    if (o == GOF(CIA)       && is4) goto none;
    if (o == GOF(IP_AT_SYSCALL) && is4) goto none;
-   if (o == GOF(RESVN)     && is4) goto none;
    if (o == GOF(TISTART)   && is4) goto none;
    if (o == GOF(TILEN)     && is4) goto none;
    if (o == GOF(REDIR_SP)  && is4) goto none;
@@ -1700,7 +1699,6 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(CTR)       && is8) goto exactly1;
    if (o == GOF(CIA)       && is8) goto none;
    if (o == GOF(IP_AT_SYSCALL) && is8) goto none;
-   if (o == GOF(RESVN)     && is8) goto none;
    if (o == GOF(TISTART)   && is8) goto none;
    if (o == GOF(TILEN)     && is8) goto none;
    if (o == GOF(REDIR_SP)  && is8) goto none;
@@ -4223,11 +4221,25 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
             the post-hoc ugly hack of inspecting and "improving" the
             shadow data after the store, in the case where it isn't an
             aligned word store.
+
+            Only word-sized values are shadowed.  If this is a
+            store-conditional, .resSC will denote a non-word-typed
+            temp, and so we don't need to shadow it.  Assert about the
+            type, tho.
+
+            JRS 1 June 09: urr, this totally breaks with
+            store-conditional, since there's no platform-independent
+            way for the helper to do that and extract the success bit.
+            Ick.
          */
          IRExpr* data  = st->Ist.Store.data;
          IRExpr* addr  = st->Ist.Store.addr;
          IRType  d_ty  = typeOfIRExpr(pce->bb->tyenv, data);
          IRExpr* addrv = schemeEw_Atom( pce, addr );
+         if (st->Ist.Store.resSC != IRTemp_INVALID) {
+            tl_assert(typeOfIRTemp(pce->bb->tyenv, st->Ist.Store.resSC) 
+                      == Ity_I1); /* viz, not something we want to shadow */
+         }
          if (pce->gWordTy == Ity_I32) {
             /* ------ 32 bit host/guest (cough, cough) ------ */
             switch (d_ty) {

@@ -483,8 +483,14 @@ void collectStatementInfo(IRTypeEnv* tyenv, IRStmt* st,
 static
 void addConstMemStoreStmt( IRSB* bbOut, UWord addr, UInt val, IRType hWordTy)
 {
+    /* JRS 2009june01: re IRTemp_INVALID, am assuming that this
+       function is used only to create instrumentation, and not to
+       copy/reconstruct IRStmt_Stores that were in the incoming IR
+       superblock.  If that is not a correct assumption, then things
+       will break badly on PowerPC, esp w/ threaded apps. */
     addStmtToIRSB( bbOut,
 		   IRStmt_Store(CLGEndness,
+                                IRTemp_INVALID,
 				IRExpr_Const(hWordTy == Ity_I32 ?
 					     IRConst_U32( addr ) :
 					     IRConst_U64( addr )),

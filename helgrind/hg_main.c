@@ -3601,40 +3601,6 @@ static void instrument_mem_access ( IRSB*   bbOut,
 }
 
 
-//static void instrument_memory_bus_event ( IRSB* bbOut, IRMBusEvent event )
-//{
-//   switch (event) {
-//      case Imbe_SnoopedStoreBegin:
-//      case Imbe_SnoopedStoreEnd:
-//         /* These arise from ppc stwcx. insns.  They should perhaps be
-//            handled better. */
-//         break;
-//      case Imbe_Fence:
-//         break; /* not interesting */
-//      case Imbe_BusLock:
-//      case Imbe_BusUnlock:
-//         addStmtToIRSB(
-//            bbOut,
-//            IRStmt_Dirty(
-//               unsafeIRDirty_0_N( 
-//                  0/*regparms*/, 
-//                  event == Imbe_BusLock ? "evh__bus_lock"
-//                                        : "evh__bus_unlock",
-//                  VG_(fnptr_to_fnentry)(
-//                     event == Imbe_BusLock ? &evh__bus_lock 
-//                                           : &evh__bus_unlock 
-//                  ),
-//                  mkIRExprVec_0() 
-//               )
-//            )
-//         );
-//         break;
-//      default:
-//         tl_assert(0);
-//   }
-//}
-
-
 static
 IRSB* hg_instrument ( VgCallbackClosure* closure,
                       IRSB* bbIn,
@@ -3644,7 +3610,6 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
 {
    Int     i;
    IRSB*   bbOut;
-   Bool    isSnoopedStore = False;
    Addr64  cia; /* address of current insn */
    IRStmt* st;
 
@@ -3697,22 +3662,6 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
             switch (st->Ist.MBE.event) {
                case Imbe_Fence:
                   break; /* not interesting */
-               /* Imbe_Bus{Lock,Unlock} arise from x86/amd64 LOCK
-                  prefixed instructions. */
-               case Imbe_BusLock:
-                  break;
-               case Imbe_BusUnlock:
-                  break;
-                  /* Imbe_SnoopedStore{Begin,End} arise from ppc
-                     stwcx. instructions. */
-               case Imbe_SnoopedStoreBegin:
-                  tl_assert(isSnoopedStore == False);
-                  isSnoopedStore = True;
-                  break;
-               case Imbe_SnoopedStoreEnd:
-                  tl_assert(isSnoopedStore == True);
-                  isSnoopedStore = False;
-                  break;
                default:
                   goto unhandled;
             }
@@ -3721,8 +3670,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
          case Ist_CAS: {
             /* Atomic read-modify-write cycle.  Just pretend it's a
                read. */
-            IRCAS*     cas     = st->Ist.CAS.details;
-            tl_assert(!isSnoopedStore);
+            IRCAS* cas = st->Ist.CAS.details;
             /* FIXME: handle DCAS ! */
             if (cas->oldHi != IRTemp_INVALID || cas->expdHi || cas->dataHi)
                goto unhandled;
@@ -3737,7 +3685,9 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
          }
 
          case Ist_Store:
-            if (!isSnoopedStore)
+            /* It seems we pretend that store-conditionals don't
+               exist, viz, just ignore them ... */
+            if (st->Ist.Store.resSC == IRTemp_INVALID)
                instrument_mem_access( 
                   bbOut, 
                   st->Ist.Store.addr, 
@@ -3745,9 +3695,11 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                   True/*isStore*/,
                   sizeofIRType(hWordTy)
                );
-               break;
+            break;
 
          case Ist_WrTmp: {
+            /* ... whereas here we don't care whether a load is a
+               vanilla one or a load-linked. */
             IRExpr* data = st->Ist.WrTmp.data;
             if (data->tag == Iex_Load) {
                instrument_mem_access(
@@ -3776,11 +3728,6 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                      sizeofIRType(hWordTy)
                   );
                }
-               /* This isn't really correct.  Really the
-                  instrumentation should be only added when
-                  !isSnoopedStore, just like with
-                  Ist_Store.  Still, I don't think this is
-                  particularly important. */
                if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
                   instrument_mem_access( 
                      bbOut, d->mAddr, dataSize, True/*isStore*/,
