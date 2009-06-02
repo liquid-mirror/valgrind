@@ -36,6 +36,7 @@
 #include "pub_core_machine.h"
 #include "pub_core_cpuid.h"
 #include "pub_core_libcsignal.h"   // for ppc32 messing with SIGILL and SIGFPE
+#include "pub_core_debuglog.h"
 
 
 #define INSTR_PTR(regs)    ((regs).vex.VG_INSTR_PTR)
@@ -582,7 +583,6 @@ Bool VG_(machine_get_hwcaps)( void )
 
      VG_(sigaction)(VKI_SIGFPE, NULL, &saved_sigfpe_act);
      tmp_sigfpe_act = saved_sigfpe_act;
-
 
      /* NODEFER: signal handler does not return (from the kernel's point of
         view), hence if it is to successfully catch a signal more than once,
