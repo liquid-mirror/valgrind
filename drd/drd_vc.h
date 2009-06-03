@@ -50,6 +50,9 @@
 #include "pub_tool_basics.h"    // Addr, SizeT
 
 
+#define VC_PREALLOCATED 8
+
+
 /** Vector clock element. */
 typedef struct
 {
@@ -62,6 +65,7 @@ typedef struct
    unsigned capacity; /**< number of elements allocated for array vc. */
    unsigned size;     /**< number of elements used of array vc. */
    VCElem*  vc;       /**< vector clock elements. */
+   VCElem   preallocated[VC_PREALLOCATED];
 } VectorClock;
 
 

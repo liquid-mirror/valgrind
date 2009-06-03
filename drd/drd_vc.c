@@ -338,25 +338,64 @@ static
 void DRD_(vc_reserve)(VectorClock* const vc, const unsigned new_capacity)
 {
    tl_assert(vc);
+   tl_assert(vc->capacity > VC_PREALLOCATED
+             || vc->vc == 0
+             || vc->vc == vc->preallocated);
+
    if (new_capacity > vc->capacity)
    {
-      if (vc->vc)
+      if (vc->vc && vc->capacity > VC_PREALLOCATED)
       {
+         tl_assert(vc->vc
+                   && vc->vc != vc->preallocated
+                   && vc->capacity > VC_PREALLOCATED);
          vc->vc = VG_(realloc)("drd.vc.vr.1",
                                vc->vc, new_capacity * sizeof(vc->vc[0]));
       }
-      else if (new_capacity > 0)
+      else if (vc->vc && new_capacity > VC_PREALLOCATED)
       {
+         tl_assert((vc->vc == 0 || vc->vc == vc->preallocated)
+                   && new_capacity > VC_PREALLOCATED
+                   && vc->capacity <= VC_PREALLOCATED);
          vc->vc = VG_(malloc)("drd.vc.vr.2",
+                              new_capacity * sizeof(vc->vc[0]));
+         VG_(memcpy)(vc->vc, vc->preallocated,
+                     vc->capacity * sizeof(vc->vc[0]));
+      }
+      else if (vc->vc)
+      {
+         tl_assert(vc->vc == vc->preallocated
+                   && new_capacity <= VC_PREALLOCATED
+                   && vc->capacity <= VC_PREALLOCATED);
+      }
+      else if (new_capacity > VC_PREALLOCATED)
+      {
+         tl_assert(vc->vc == 0
+                   && new_capacity > VC_PREALLOCATED
+                   && vc->capacity == 0);
+         vc->vc = VG_(malloc)("drd.vc.vr.3",
                               new_capacity * sizeof(vc->vc[0]));
       }
       else
       {
-         tl_assert(vc->vc == 0 && new_capacity == 0);
+         tl_assert(vc->vc == 0
+                   && new_capacity <= VC_PREALLOCATED
+                   && vc->capacity == 0);
+         vc->vc = vc->preallocated;
       }
       vc->capacity = new_capacity;
    }
+   else if (new_capacity == 0 && vc->vc)
+   {
+      if (vc->capacity > VC_PREALLOCATED)
+         VG_(free)(vc->vc);
+      vc->vc = 0;
+   }
+
    tl_assert(new_capacity == 0 || vc->vc != 0);
+   tl_assert(vc->capacity > VC_PREALLOCATED
+             || vc->vc == 0
+             || vc->vc == vc->preallocated);
 }
 
 #if 0
