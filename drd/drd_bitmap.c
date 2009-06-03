@@ -87,19 +87,19 @@ void DRD_(bm_init)(struct bitmap* const bm)
     * match any valid address: the upper (ADDR_LSB_BITS + ADDR_IGNORED_BITS)
     * bits of a1 are always zero for a valid cache entry.
     */
-   for (i = 0; i < N_CACHE_ELEM; i++)
+   for (i = 0; i < DRD_BITMAP_N_CACHE_ELEM; i++)
    {
       bm->cache[i].a1  = ~(UWord)1;
       bm->cache[i].bm2 = 0;
    }
-   bm->oset = VG_(OSetGen_Create)(0, 0, DRD_(bm2_alloc_node),
-                                  "drd.bitmap.bn.2", DRD_(bm2_free_node));
+   VG_(OSetGen_Initialize)(&bm->oset, 0, 0, DRD_(bm2_alloc_node),
+                           "drd.bitmap.bn.2", DRD_(bm2_free_node));
 }
 
 /** Free the memory allocated by DRD_(bm_init)(). */
 void DRD_(bm_cleanup)(struct bitmap* const bm)
 {
-   VG_(OSetGen_Destroy)(bm->oset);
+   VG_(OSetGen_Cleanup)(&bm->oset);
 }
 
 /**
@@ -916,17 +916,17 @@ Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs)
    /* so complain if lhs == rhs.                                              */
    tl_assert(lhs != rhs);
 
-   VG_(OSetGen_ResetIter)(lhs->oset);
-   VG_(OSetGen_ResetIter)(rhs->oset);
+   VG_(OSetGen_ResetIter)(&lhs->oset);
+   VG_(OSetGen_ResetIter)(&rhs->oset);
 
-   for ( ; (bm2l = VG_(OSetGen_Next)(lhs->oset)) != 0; )
+   for ( ; (bm2l = VG_(OSetGen_Next)(&lhs->oset)) != 0; )
    {
       while (bm2l
              && ! DRD_(bm_has_any_access)(lhs,
                                           make_address(bm2l->addr, 0),
                                           make_address(bm2l->addr + 1, 0)))
       {
-         bm2l = VG_(OSetGen_Next)(lhs->oset);
+         bm2l = VG_(OSetGen_Next)(&lhs->oset);
       }
       if (bm2l == 0)
          break;
@@ -934,7 +934,7 @@ Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs)
 
       do
       {
-         bm2r = VG_(OSetGen_Next)(rhs->oset);
+         bm2r = VG_(OSetGen_Next)(&rhs->oset);
          if (bm2r == 0)
             return False;
       }
@@ -957,7 +957,7 @@ Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs)
 
    do
    {
-      bm2r = VG_(OSetGen_Next)(rhs->oset);
+      bm2r = VG_(OSetGen_Next)(&rhs->oset);
    } while (bm2r && ! DRD_(bm_has_any_access)(rhs,
                                               make_address(bm2r->addr, 0),
                                               make_address(bm2r->addr + 1, 0)));
@@ -973,7 +973,7 @@ Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs)
 
 void DRD_(bm_swap)(struct bitmap* const bm1, struct bitmap* const bm2)
 {
-   OSet* const tmp = bm1->oset;
+   OSet const tmp = bm1->oset;
    bm1->oset = bm2->oset;
    bm2->oset = tmp;
 }
@@ -992,11 +992,11 @@ void DRD_(bm_merge2)(struct bitmap* const lhs, struct bitmap* const rhs)
 
    s_bitmap_merge_count++;
 
-   VG_(OSetGen_ResetIter)(rhs->oset);
+   VG_(OSetGen_ResetIter)(&rhs->oset);
 
-   for ( ; (bm2r = VG_(OSetGen_Next)(rhs->oset)) != 0; )
+   for ( ; (bm2r = VG_(OSetGen_Next)(&rhs->oset)) != 0; )
    {
-      bm2l = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
+      bm2l = VG_(OSetGen_Lookup)(&lhs->oset, &bm2r->addr);
       if (bm2l)
       {
          tl_assert(bm2l != bm2r);
@@ -1014,8 +1014,8 @@ void DRD_(bm_unmark)(struct bitmap* bm)
 {
    struct bitmap2* bm2;
 
-   for (VG_(OSetGen_ResetIter)(bm->oset);
-        (bm2 = VG_(OSetGen_Next)(bm->oset)) != 0;
+   for (VG_(OSetGen_ResetIter)(&bm->oset);
+        (bm2 = VG_(OSetGen_Next)(&bm->oset)) != 0;
         )
    {
       bm2->recalc = False;
@@ -1046,8 +1046,8 @@ void DRD_(bm_mark)(struct bitmap* bml, struct bitmap* bmr)
    struct bitmap2* bm2l;
    struct bitmap2* bm2r;
 
-   for (VG_(OSetGen_ResetIter)(bmr->oset);
-        (bm2r = VG_(OSetGen_Next)(bmr->oset)) != 0;
+   for (VG_(OSetGen_ResetIter)(&bmr->oset);
+        (bm2r = VG_(OSetGen_Next)(&bmr->oset)) != 0;
         )
    {
       /*if (DRD_(bm_has_any_access(bmr, make_address(bm2r->addr, 0),
@@ -1064,8 +1064,8 @@ void DRD_(bm_clear_marked)(struct bitmap* bm)
 {
    struct bitmap2* bm2;
 
-   for (VG_(OSetGen_ResetIter)(bm->oset);
-        (bm2 = VG_(OSetGen_Next)(bm->oset)) != 0;
+   for (VG_(OSetGen_ResetIter)(&bm->oset);
+        (bm2 = VG_(OSetGen_Next)(&bm->oset)) != 0;
         )
    {
       if (bm2->recalc)
@@ -1089,11 +1089,11 @@ void DRD_(bm_merge2_marked)(struct bitmap* const lhs, struct bitmap* const rhs)
 
    s_bitmap_merge_count++;
 
-   VG_(OSetGen_ResetIter)(rhs->oset);
+   VG_(OSetGen_ResetIter)(&rhs->oset);
 
-   for ( ; (bm2r = VG_(OSetGen_Next)(rhs->oset)) != 0; )
+   for ( ; (bm2r = VG_(OSetGen_Next)(&rhs->oset)) != 0; )
    {
-      bm2l = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
+      bm2l = VG_(OSetGen_Lookup)(&lhs->oset, &bm2r->addr);
       if (bm2l && bm2l->recalc)
       {
          tl_assert(bm2l != bm2r);
@@ -1110,8 +1110,8 @@ void DRD_(bm_merge2_marked)(struct bitmap* const lhs, struct bitmap* const rhs)
  */
 int DRD_(bm_has_races)(struct bitmap* const lhs, struct bitmap* const rhs)
 {
-   VG_(OSetGen_ResetIter)(lhs->oset);
-   VG_(OSetGen_ResetIter)(rhs->oset);
+   VG_(OSetGen_ResetIter)(&lhs->oset);
+   VG_(OSetGen_ResetIter)(&rhs->oset);
 
    for (;;)
    {
@@ -1121,14 +1121,14 @@ int DRD_(bm_has_races)(struct bitmap* const lhs, struct bitmap* const rhs)
       const struct bitmap1* bm1r;
       unsigned k;
 
-      bm2l = VG_(OSetGen_Next)(lhs->oset);
-      bm2r = VG_(OSetGen_Next)(rhs->oset);
+      bm2l = VG_(OSetGen_Next)(&lhs->oset);
+      bm2r = VG_(OSetGen_Next)(&rhs->oset);
       while (bm2l && bm2r && bm2l->addr != bm2r->addr)
       {
          if (bm2l->addr < bm2r->addr)
-            bm2l = VG_(OSetGen_Next)(lhs->oset);
+            bm2l = VG_(OSetGen_Next)(&lhs->oset);
          else
-            bm2r = VG_(OSetGen_Next)(rhs->oset);
+            bm2r = VG_(OSetGen_Next)(&rhs->oset);
       }
       if (bm2l == 0 || bm2r == 0)
          break;
@@ -1161,8 +1161,8 @@ void DRD_(bm_print)(struct bitmap* const bm)
 {
    struct bitmap2* bm2;
 
-   for (VG_(OSetGen_ResetIter)(bm->oset);
-        (bm2 = VG_(OSetGen_Next)(bm->oset)) != 0;
+   for (VG_(OSetGen_ResetIter)(&bm->oset);
+        (bm2 = VG_(OSetGen_Next)(&bm->oset)) != 0;
         )
    {
       bm2_print(bm2);

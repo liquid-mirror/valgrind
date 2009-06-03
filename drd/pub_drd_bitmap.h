@@ -34,8 +34,9 @@
 #define __PUB_DRD_BITMAP_H
 
 
-#include "drd_basics.h"  /* DRD_() */
+#include "drd_basics.h"      /* DRD_() */
 #include "pub_tool_basics.h" /* Addr, SizeT */
+#include "pub_tool_oset.h"   /* struct _OSet */
 
 
 /* Defines. */
@@ -63,13 +64,13 @@ struct bm_cache_elem
    struct bitmap2* bm2;
 };
 
-#define N_CACHE_ELEM 4
+#define DRD_BITMAP_N_CACHE_ELEM 4
 
 /* Complete bitmap. */
 struct bitmap
 {
-   struct bm_cache_elem cache[N_CACHE_ELEM];
-   struct _OSet*        oset;
+   struct bm_cache_elem cache[DRD_BITMAP_N_CACHE_ELEM];
+   struct _OSet         oset;
 };
 
 

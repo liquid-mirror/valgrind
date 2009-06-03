@@ -380,24 +380,24 @@ Bool bm_cache_lookup(struct bitmap* const bm, const UWord a1,
    tl_assert(bm2);
 #endif
 
-#if N_CACHE_ELEM > 8
+#if DRD_BITMAP_N_CACHE_ELEM > 8
 #error Please update the code below.
 #endif
-#if N_CACHE_ELEM >= 1
+#if DRD_BITMAP_N_CACHE_ELEM >= 1
    if (a1 == bm->cache[0].a1)
    {
       *bm2 = bm->cache[0].bm2;
       return True;
    }
 #endif
-#if N_CACHE_ELEM >= 2
+#if DRD_BITMAP_N_CACHE_ELEM >= 2
    if (a1 == bm->cache[1].a1)
    {
       *bm2 = bm->cache[1].bm2;
       return True;
    }
 #endif
-#if N_CACHE_ELEM >= 3
+#if DRD_BITMAP_N_CACHE_ELEM >= 3
    if (a1 == bm->cache[2].a1)
    {
       *bm2 = bm->cache[2].bm2;
@@ -405,7 +405,7 @@ Bool bm_cache_lookup(struct bitmap* const bm, const UWord a1,
       return True;
    }
 #endif
-#if N_CACHE_ELEM >= 4
+#if DRD_BITMAP_N_CACHE_ELEM >= 4
    if (a1 == bm->cache[3].a1)
    {
       *bm2 = bm->cache[3].bm2;
@@ -413,7 +413,7 @@ Bool bm_cache_lookup(struct bitmap* const bm, const UWord a1,
       return True;
    }
 #endif
-#if N_CACHE_ELEM >= 5
+#if DRD_BITMAP_N_CACHE_ELEM >= 5
    if (a1 == bm->cache[4].a1)
    {
       *bm2 = bm->cache[4].bm2;
@@ -421,7 +421,7 @@ Bool bm_cache_lookup(struct bitmap* const bm, const UWord a1,
       return True;
    }
 #endif
-#if N_CACHE_ELEM >= 6
+#if DRD_BITMAP_N_CACHE_ELEM >= 6
    if (a1 == bm->cache[5].a1)
    {
       *bm2 = bm->cache[5].bm2;
@@ -429,7 +429,7 @@ Bool bm_cache_lookup(struct bitmap* const bm, const UWord a1,
       return True;
    }
 #endif
-#if N_CACHE_ELEM >= 7
+#if DRD_BITMAP_N_CACHE_ELEM >= 7
    if (a1 == bm->cache[6].a1)
    {
       *bm2 = bm->cache[6].bm2;
@@ -437,7 +437,7 @@ Bool bm_cache_lookup(struct bitmap* const bm, const UWord a1,
       return True;
    }
 #endif
-#if N_CACHE_ELEM >= 8
+#if DRD_BITMAP_N_CACHE_ELEM >= 8
    if (a1 == bm->cache[7].a1)
    {
       *bm2 = bm->cache[7].bm2;
@@ -458,28 +458,28 @@ void bm_update_cache(struct bitmap* const bm,
    tl_assert(bm);
 #endif
 
-#if N_CACHE_ELEM > 8
+#if DRD_BITMAP_N_CACHE_ELEM > 8
 #error Please update the code below.
 #endif
-#if N_CACHE_ELEM >= 8
+#if DRD_BITMAP_N_CACHE_ELEM >= 8
    bm->cache[7] = bm->cache[6];
 #endif
-#if N_CACHE_ELEM >= 7
+#if DRD_BITMAP_N_CACHE_ELEM >= 7
    bm->cache[6] = bm->cache[5];
 #endif
-#if N_CACHE_ELEM >= 6
+#if DRD_BITMAP_N_CACHE_ELEM >= 6
    bm->cache[5] = bm->cache[4];
 #endif
-#if N_CACHE_ELEM >= 5
+#if DRD_BITMAP_N_CACHE_ELEM >= 5
    bm->cache[4] = bm->cache[3];
 #endif
-#if N_CACHE_ELEM >= 4
+#if DRD_BITMAP_N_CACHE_ELEM >= 4
    bm->cache[3] = bm->cache[2];
 #endif
-#if N_CACHE_ELEM >= 3
+#if DRD_BITMAP_N_CACHE_ELEM >= 3
    bm->cache[2] = bm->cache[1];
 #endif
-#if N_CACHE_ELEM >= 2
+#if DRD_BITMAP_N_CACHE_ELEM >= 2
    bm->cache[1] = bm->cache[0];
 #endif
    bm->cache[0].a1  = a1;
@@ -505,7 +505,7 @@ const struct bitmap2* bm2_lookup(struct bitmap* const bm, const UWord a1)
 
    if (! bm_cache_lookup(bm, a1, &bm2))
    {
-      bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
+      bm2 = VG_(OSetGen_Lookup)(&bm->oset, &a1);
       bm_update_cache(bm, a1, bm2);
    }
    return bm2;
@@ -530,7 +530,7 @@ bm2_lookup_exclusive(struct bitmap* const bm, const UWord a1)
 
    if (! bm_cache_lookup(bm, a1, &bm2))
    {
-      bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
+      bm2 = VG_(OSetGen_Lookup)(&bm->oset, &a1);
    }
 
    return bm2;
@@ -555,9 +555,9 @@ struct bitmap2* bm2_insert(struct bitmap* const bm, const UWord a1)
 
    s_bitmap2_creation_count++;
 
-   bm2 = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2));
+   bm2 = VG_(OSetGen_AllocNode)(&bm->oset, sizeof(*bm2));
    bm2->addr = a1;
-   VG_(OSetGen_Insert)(bm->oset, bm2);
+   VG_(OSetGen_Insert)(&bm->oset, bm2);
 
    bm_update_cache(bm, a1, bm2);
 
@@ -601,7 +601,7 @@ struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
    }
    else
    {
-      bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
+      bm2 = VG_(OSetGen_Lookup)(&bm->oset, &a1);
       if (! bm2)
       {
          bm2 = bm2_insert(bm, a1);

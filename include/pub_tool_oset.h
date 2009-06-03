@@ -70,6 +70,8 @@
 /*--- Types                                                        ---*/
 /*--------------------------------------------------------------------*/
 
+#define OSET_STACK_MAX   32   // At most 2**32 entries can be iterated over
+
 typedef struct _OSet     OSet;
 
 // - Cmp:   returns -1, 0 or 1 if key is <, == or > elem.
@@ -79,6 +81,24 @@ typedef struct _OSet     OSet;
 typedef Word  (*OSetCmp_t)         ( const void* key, const void* elem );
 typedef void* (*OSetAlloc_t)       ( HChar* ec, SizeT szB );
 typedef void  (*OSetFree_t)        ( void* p );
+
+// An OSet (AVL tree).  If cmp is NULL, the key must be a UWord, and must
+// be the first word in the element.  If cmp is set, arbitrary keys in
+// arbitrary positions can be used. Do not access the members of this
+// structure directly -- use the VG_(OSetGen_*)() functions instead.
+struct _OSet {
+   SizeT       keyOff;     // key offset
+   OSetCmp_t   cmp;        // compare a key and an element, or NULL
+   OSetAlloc_t alloc;      // allocator
+   HChar*      cc;         // cc for allocator
+   OSetFree_t  free;       // deallocator
+   Word        nElems;     // number of elements in the tree
+   struct _OSetNode* root; // root node
+
+   struct _OSetNode* nodeStack[OSET_STACK_MAX];   // Iterator node stack
+   Int         numStack[OSET_STACK_MAX];   // Iterator num stack
+   Int         stackTop;    // Iterator stack pointer, one past end
+};
 
 /*--------------------------------------------------------------------*/
 /*--- Creating and destroying OSets (UWord)                        ---*/
@@ -171,6 +191,11 @@ extern Bool  VG_(OSetWord_Next)         ( OSet* os, /*OUT*/UWord* val );
 //   to allow the destruction of any attached resources;  if NULL it is not
 //   called.
 //
+// * Initialize: initialize allocated memory as an OSet.
+//
+// * Cleanup: frees all nodes in the table but not the memory used by the
+//   table itself.
+//
 // * AllocNode: Allocate and zero memory for a node to go into the OSet.
 //   Uses the alloc function given to VG_(OSetGen_Create)() to allocated a
 //   node which is big enough for both an element and the OSet metadata.
@@ -187,6 +212,10 @@ extern OSet* VG_(OSetGen_Create)    ( PtrdiffT keyOff, OSetCmp_t cmp,
                                       OSetAlloc_t alloc, HChar* ec,
                                       OSetFree_t _free );
 extern void  VG_(OSetGen_Destroy)   ( OSet* os );
+extern OSet* VG_(OSetGen_Initialize)( OSet* os, PtrdiffT keyOff, OSetCmp_t cmp,
+                                      OSetAlloc_t alloc, HChar* ec,
+                                      OSetFree_t _free );
+extern void  VG_(OSetGen_Cleanup)   ( OSet* os );
 extern void* VG_(OSetGen_AllocNode) ( OSet* os, SizeT elemSize );
 extern void  VG_(OSetGen_FreeNode)  ( OSet* os, void* elem );
 
