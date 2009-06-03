@@ -51,8 +51,10 @@
 #include <stdio.h>
 #include <limits.h>   // INT_MAX
 
-#ifdef OS_MACOSX
+#ifdef _APPLE_
 #include <libkern/OSAtomic.h>
+#define NO_BARRIER
+#define NO_TLS
 #endif
 
 #include <string>
@@ -61,7 +63,10 @@ using namespace std;
 #include <sys/time.h>
 #include <time.h>
 
-#include "dynamic_annotations.h"
+#include "../../drd/drd.h"
+#define ANNOTATE_NO_OP(arg) do { } while(0)
+#define ANNOTATE_EXPECT_RACE(addr, descr) DRDCL_(ignore_range)(addr, 4)
+static inline bool RunningOnValgrind() { return RUNNING_ON_VALGRIND; }
 
 #include <assert.h>
 #ifdef NDEBUG
@@ -100,7 +105,7 @@ class CondVar;
 #ifndef NO_SPINLOCK
 /// helgrind does not (yet) support spin locks, so we annotate them.
 
-#ifndef OS_MACOSX
+#ifndef _APPLE_
 class SpinLock {
  public:
   SpinLock() {
@@ -145,7 +150,7 @@ class SpinLock {
  private:
   OSSpinLock mu_;
 };
-#endif // OS_MACOSX
+#endif // _APPLE_
 
 #endif // NO_SPINLOCK
 
@@ -505,7 +510,7 @@ class ThreadPool {
 
   //! Start all threads. 
   void StartWorkers() {
-    for (int i = 0; i < workers_.size(); i++) {
+    for (size_t i = 0; i < workers_.size(); i++) {
       workers_[i]->Start();
     }
   }
@@ -519,10 +524,10 @@ class ThreadPool {
 
   //! Wait workers to finish, then join all threads.
   ~ThreadPool() {
-    for (int i = 0; i < workers_.size(); i++) {
+    for (size_t i = 0; i < workers_.size(); i++) {
       Add(NULL);
     }
-    for (int i = 0; i < workers_.size(); i++) {
+    for (size_t i = 0; i < workers_.size(); i++) {
       workers_[i]->Join();
       delete workers_[i];
     }
@@ -569,6 +574,7 @@ class BlockingCounter {
   bool DecrementCount() {
     MutexLock lock(&mu_);
     count_--;
+    return count_ == 0;
   }
   void Wait() {
     mu_.LockWhen(Condition(&IsZero, &count_));
@@ -582,7 +588,7 @@ class BlockingCounter {
 
 int AtomicIncrement(volatile int *value, int increment);
 
-#ifndef OS_MACOSX
+#ifndef _APPLE_
 inline int AtomicIncrement(volatile int *value, int increment) {
   return __sync_add_and_fetch(value, increment);
 }
@@ -601,7 +607,7 @@ int posix_memalign(void **out, size_t al, size_t size) {
   *out = memalign(al, size);
   return (*out == 0);
 }
-#endif // OS_MACOSX
+#endif // _APPLE_
 
 #endif // THREAD_WRAPPERS_PTHREAD_H
 // vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=marker

@@ -34,14 +34,14 @@ valgrind_listener_LDFLAGS   = $(AM_CFLAGS_PRI)
 #
 # This is really horrible.
 #
-# Don't let automake install this, since it puts the .so's in the
-# wrong place.  Instead install them ourselves in the right
-# place using the install-exec-local target below.
-#
-# Also, automake isn't good at supporting non-$(CC) compilers.
+# automake isn't good at supporting non-$(CC) compilers.
 # But we need to use $(MPI_CC) here.  Hence the nasty hack of
 # directly saying how to build libmpiwrap-*.so, instead of
 # using automake's standard gunk.
+#
+# XXX: if we put the MPI stuff in its own directory and manually added
+# "CC = $(MPI_CC)" then I think the usual automake approach would work.
+# --njn
 #
 if VGCONF_OS_IS_AIX5
  HACKY_FLAGS_PRI = -g -O -bE:libmpiwrap_aix5.exp -bM:SRE -bnoentry \
@@ -117,7 +117,7 @@ libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c:
 	rm -f libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
 	touch libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
 
-if VGCONF_HAVE_PLATFORM_SEC_CAPS
+if VGCONF_HAVE_PLATFORM_SEC
 libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c:
 	rm -f libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
 	touch libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c

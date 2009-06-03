@@ -73,7 +73,7 @@
 #include <vector>
 #include <string>
 #include <map>
-#include <ext/hash_map>
+#include <queue>
 #include <algorithm>
 #include <cstring>      // strlen(), index(), rindex()
 #include <ctime>
@@ -86,7 +86,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 
-#ifndef OS_MACOSX
+#ifndef _APPLE_
 #include <malloc.h>
 #endif
 
@@ -208,7 +208,7 @@ static bool ArgIsTrue(bool *arg) { return *arg == true; };
     ANNOTATE_EXPECT_RACE_FOR_MACHINE(mem, descr, "MSM_THREAD_SANITIZER")
 
 inline bool Tsan_PureHappensBefore() {
-  return getenv("TSAN_PURE_HAPPENS_BEFORE") != NULL;
+  return true;
 }
 
 inline bool Tsan_FastMode()           {
@@ -337,7 +337,8 @@ void Run() {
   ANNOTATE_TRACE_MEMORY(&GLOB);
   printf("test01: positive\n");
   Parent();
-  printf("\tGLOB=%d\n", GLOB);
+  const int tmp = GLOB;
+  printf("\tGLOB=%d\n", tmp);
 }
 REGISTER_TEST(Run, 1);
 }  // namespace test01
@@ -356,7 +357,7 @@ int     GLOB = 0;
 //                              b. MU.Lock()
 //                              c. COND = 1
 //                         /--- d. CV.Signal()
-//  4. while(COND)        /     e. MU.Unock()
+//  4. while(COND)        /     e. MU.Unlock()
 //       CV.Wait(MU) <---/
 //  5. MU.Unlock()
 //  6. write(GLOB)
@@ -486,7 +487,7 @@ int     GLOB = 0;
 //                                          b. MU.Lock()
 //                                          c. COND = 1
 //                                          d. CV.Signal()
-//  4. while(COND)                          e. MU.Unock()
+//  4. while(COND)                          e. MU.Unlock()
 //       CV.Wait(MU) <<< not called   
 //  5. MU.Unlock()      
 //  6. write(GLOB)      
@@ -536,7 +537,7 @@ int     GLOB = 0;
 //                                                    b. MU.Lock()
 //                                                    c. COND = 1
 //                                           /------- d. CV.Signal()
-//  4. while(COND)                          /         e. MU.Unock()
+//  4. while(COND)                          /         e. MU.Unlock()
 //       CV.Wait(MU) <<< not called        /
 //  6. ANNOTATE_CONDVAR_WAIT(CV, MU) <----/
 //  5. MU.Unlock()      
@@ -1486,7 +1487,7 @@ namespace test30 {
 //
 // Writer:                                 Reader1, Reader2, ..., ReaderN: 
 // 1. write(GLOB[i]: i >= BOUNDARY)        a. n = BOUNDARY
-// 2. ANNOTATE_SIGNAL(BOUNDARY+1) -------> b. ANNOTATE_WAIT(n)
+// 2. HAPPENS_BEFORE(BOUNDARY+1)  -------> b. HAPPENS_AFTER(n)
 // 3. BOUNDARY++;                          c. read(GLOB[i]: i < n)
 //
 // Here we have a 'safe' race on accesses to BOUNDARY and 
@@ -1499,10 +1500,6 @@ namespace test30 {
 // are free to rearrange memory operations. 
 // I am actually sure that this scheme is wrong unless we use 
 // some smart memory fencing... 
-//
-// For this unit test we use ANNOTATE_CONDVAR_WAIT/ANNOTATE_CONDVAR_SIGNAL 
-// but for real life we will need separate annotations 
-// (if we ever want to annotate this synchronization scheme at all). 
 
 
 const int N = 48;
@@ -1515,7 +1512,7 @@ void Writer() {
     for (int j = i; j < N; j++) {
       GLOB[j] = j;
     }
-    ANNOTATE_CONDVAR_SIGNAL(reinterpret_cast<void*>(BOUNDARY+1));
+    ANNOTATE_HAPPENS_BEFORE(reinterpret_cast<void*>(BOUNDARY+1));
     BOUNDARY++;
     usleep(1000);
   }
@@ -1526,7 +1523,7 @@ void Reader() {
   do {
     n = BOUNDARY;
     if (n == 0) continue; 
-    ANNOTATE_CONDVAR_WAIT(reinterpret_cast<void*>(n));
+    ANNOTATE_HAPPENS_AFTER(reinterpret_cast<void*>(n));
     for (int i = 0; i < n; i++) {
       CHECK(GLOB[i] == i);
     }
@@ -1554,7 +1551,7 @@ namespace test31 {
 //
 // Writer1:                                Writer2 
 // 1. write(GLOB[i]: i >= BOUNDARY)        a. n = BOUNDARY
-// 2. ANNOTATE_SIGNAL(BOUNDARY+1) -------> b. ANNOTATE_WAIT(n)
+// 2. HAPPENS_BEFORE(BOUNDARY+1)  -------> b. HAPPENS_AFTER(n)
 // 3. BOUNDARY++;                          c. write(GLOB[i]: i < n)
 //
 
@@ -1568,7 +1565,7 @@ void Writer1() {
     for (int j = i; j < N; j++) {
       GLOB[j] = j;
     }
-    ANNOTATE_CONDVAR_SIGNAL(reinterpret_cast<void*>(BOUNDARY+1));
+    ANNOTATE_HAPPENS_BEFORE(reinterpret_cast<void*>(BOUNDARY+1));
     BOUNDARY++;
     usleep(1000);
   }
@@ -1579,7 +1576,7 @@ void Writer2() {
   do {
     n = BOUNDARY;
     if (n == 0) continue; 
-    ANNOTATE_CONDVAR_WAIT(reinterpret_cast<void*>(n));
+    ANNOTATE_HAPPENS_AFTER(reinterpret_cast<void*>(n));
     for (int i = 0; i < n; i++) {
       if(GLOB[i] == i) {
         GLOB[i]++;
@@ -1796,7 +1793,7 @@ void Run() {
   for (int i = 0; i < N_free; i++) delete ARR[i];
   delete [] ARR;
   
-  for (int i = 0; i < mus.size(); i++) {
+  for (size_t i = 0; i < mus.size(); i++) {
     delete mus[i];
   }
 }
@@ -2431,7 +2428,7 @@ Mutex   MU;
 //                              b. MU.Lock()
 //                              c. COND = 1
 //                         /--- d. CV.Signal()
-//  4. while(COND != 1)   /     e. MU.Unock()
+//  4. while(COND != 1)   /     e. MU.Unlock()
 //       CV.Wait(MU) <---/
 //  5. MU.Unlock()
 //  6. write(GLOB)              f. MU.Lock()
@@ -2500,7 +2497,7 @@ Mutex   MU;
 //                       \      b. MU.Lock()
 //                        \     c. COND = 1
 //                         \--- d. CV.Signal()
-//                              e. MU.Unock()
+//                              e. MU.Unlock()
 //                              
 //                              f. write(GLOB)
 //                              
@@ -2570,7 +2567,7 @@ Mutex   MU;
 //                              b. MU.Lock()
 //                              c. COND = 1
 //                    LOST<---- d. CV.Signal()
-//                              e. MU.Unock()
+//                              e. MU.Unlock()
 //                              
 // 2. MU.Lock()       
 // 3. while(COND)               
@@ -3816,15 +3813,20 @@ REGISTER_TEST(Run, 78)
 
 // test79 TN. Swap. {{{1
 namespace test79 {
-__gnu_cxx::hash_map<int, int> MAP;
+#if 0
+typedef __gnu_cxx::hash_map<int, int> map_t;
+#else
+typedef std::map<int, int> map_t;
+#endif
+map_t   MAP;
 Mutex   MU; 
 
-// Here we use swap to pass hash_map between threads.
+// Here we use swap to pass MAP between threads.
 // The synchronization is correct, but w/o ANNOTATE_MUTEX_IS_USED_AS_CONDVAR
 // Helgrind will complain.
 
 void Worker1() {
-  __gnu_cxx::hash_map<int, int> tmp;
+  map_t tmp;
   MU.Lock();
   // We swap the new empty map 'tmp' with 'MAP'.
   MAP.swap(tmp); 
@@ -4468,7 +4470,7 @@ namespace test92 {
 // 4. MU1.Unlock()                       \           .
 //                                        \          a. MU1.Lock()
 //                                         \         b. Get GLOB
-//                                          \        c. MU1.Lock()
+//                                          \        c. MU1.Unlock()
 //                                           \-->    d. Access GLOB
 //
 //  A happens-before arc is created between ANNOTATE_PUBLISH_MEMORY_RANGE and 
@@ -6228,9 +6230,14 @@ REGISTER_TEST(Run, 133);
 
 // test134 TN. Swap. Variant of test79. {{{1
 namespace test134 {
-__gnu_cxx::hash_map<int, int> map;
+#if 0
+typedef __gnu_cxx::hash_map<int, int> map_t;
+#else
+typedef std::map<int, int> map_t;
+#endif
+map_t   map;
 Mutex   mu;
-// Here we use swap to pass hash_map between threads.
+// Here we use swap to pass map between threads.
 // The synchronization is correct, but w/o the annotation
 // any hybrid detector will complain.
 
@@ -6242,7 +6249,7 @@ Mutex   mu;
 // These arcs can be created by HAPPENS_{BEFORE,AFTER} annotations, but it is
 // much simpler to apply pure-happens-before mode to the mutex mu.
 void Swapper() {
-  __gnu_cxx::hash_map<int, int> tmp;
+  map_t tmp;
   MutexLock lock(&mu);
   ANNOTATE_HAPPENS_AFTER(&map);
   // We swap the new empty map 'tmp' with 'map'.
@@ -6410,8 +6417,11 @@ REGISTER_TEST2(Run, 139, FEATURE)
 
 // test140 TN. Swap. Variant of test79 and test134. {{{1
 namespace test140 {
-//typedef std::map<int,int>             Container;
- typedef __gnu_cxx::hash_map<int, int> Container;
+#if 0
+typedef __gnu_cxx::hash_map<int, int> Container;
+#else
+typedef std::map<int,int>             Container;
+#endif
 Mutex mu;
 static Container container;
 
@@ -6518,13 +6528,13 @@ void Run() {
   FAST_MODE_INIT(&GLOB2);
   printf("test141: FP. unlink/fopen, rmdir/opendir.\n");
 
-  dir_name = tempnam("/tmp", NULL);
-  mkdir(dir_name, 0700);
+  dir_name = strdup("/tmp/tsan-XXXXXX");
+  mkdtemp(dir_name);
 
-  filename = tempnam(dir_name, NULL);
-  FILE *fp = fopen(filename, "w");
-  CHECK(fp);
-  fclose(fp);
+  filename = strdup((std::string() + dir_name + "/XXXXXX").c_str());
+  const int fd = mkstemp(filename);
+  CHECK(fd >= 0);
+  close(fd);
 
   MyThreadArray mta1(Waker1, Waiter1);
   mta1.Start();
@@ -6533,9 +6543,124 @@ void Run() {
   MyThreadArray mta2(Waker2, Waiter2);
   mta2.Start();
   mta2.Join();
+  free(filename);
+  filename = 0;
+  free(dir_name);
+  dir_name = 0;
 }
 REGISTER_TEST(Run, 141)
 }  // namespace test141
+
+
+// Simple FIFO queue annotated with PCQ annotations. {{{1
+class FifoMessageQueue {
+ public:
+  FifoMessageQueue() { ANNOTATE_PCQ_CREATE(this); }
+  ~FifoMessageQueue() { ANNOTATE_PCQ_DESTROY(this); }
+  // Send a message. 'message' should be positive.
+  void Put(int message) {
+    CHECK(message);
+    MutexLock lock(&mu_);
+    ANNOTATE_PCQ_PUT(this);
+    q_.push(message);
+  }
+  // Return the message from the queue and pop it 
+  // or return 0 if there are no messages.
+  int Get() {
+    MutexLock lock(&mu_);
+    if (q_.empty()) return 0;
+    int res = q_.front();
+    q_.pop();
+    ANNOTATE_PCQ_GET(this);
+    return res;
+  }
+ private:
+  Mutex mu_;
+  queue<int> q_;
+};
+
+
+// test142: TN. Check PCQ_* annotations. {{{1
+namespace test142 {
+// Putter writes to array[i] and sends a message 'i'.
+// Getters receive messages and read array[message].
+// PCQ_* annotations calm down the hybrid detectors.
+
+const int N = 1000;
+int array[N+1];
+
+FifoMessageQueue q;
+
+void Putter() {
+  for (int i = 1; i <= N; i++) {
+    array[i] = i*i;
+    q.Put(i);
+    usleep(1000);
+  }
+}
+
+void Getter() {
+  int non_zero_received  = 0;
+  for (int i = 1; i <= N; i++) {
+    int res = q.Get();
+    if (res > 0) {
+      CHECK(array[res] = res * res);
+      non_zero_received++;
+    }
+    usleep(1000);
+  }
+  printf("T=%d: non_zero_received=%d\n", 
+         (int)pthread_self(), non_zero_received);
+} 
+
+void Run() {
+  printf("test142: tests PCQ annotations\n");
+  MyThreadArray t(Putter, Getter, Getter);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 142)
+}  // namespace test142
+
+
+// test143: TP. Check PCQ_* annotations. {{{1
+namespace test143 {
+// True positive.
+// We have a race on GLOB between Putter and one of the Getters.
+// Pure h-b will not see it.
+// If FifoMessageQueue was annotated using HAPPENS_BEFORE/AFTER, the race would
+// be missed too.
+// PCQ_* annotations do not hide this race.
+int     GLOB = 0;
+
+FifoMessageQueue q;
+
+void Putter() {
+  GLOB = 1;
+  q.Put(1);
+}
+
+void Getter() {
+  usleep(10000);
+  q.Get();
+  CHECK(GLOB == 1);  // Race here
+}
+
+void Run() {
+  q.Put(1);
+  if (!Tsan_PureHappensBefore()) {
+    ANNOTATE_EXPECT_RACE_FOR_TSAN(&GLOB, "true races");
+  }
+  printf("test143: tests PCQ annotations (true positive)\n");
+  MyThreadArray t(Putter, Getter, Getter);
+  t.Start();
+  t.Join();
+}
+REGISTER_TEST(Run, 143);
+}  // namespace test143
+
+
+
 
 // test300: {{{1
 namespace test300 {
