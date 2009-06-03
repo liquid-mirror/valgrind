@@ -927,21 +927,20 @@ static void thread_merge_segments(void)
  */
 void DRD_(thread_new_segment)(const DrdThreadId tid)
 {
+   Segment* last_sg;
    Segment* new_sg;
 
    tl_assert(0 <= (int)tid && tid < DRD_N_THREADS
              && tid != DRD_INVALID_THREADID);
+   tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));
 
+   last_sg = DRD_(g_threadinfo)[tid].last;
    new_sg = DRD_(sg_new)(tid, tid);
    thread_append_segment(tid, new_sg);
+   if (tid == DRD_(g_drd_running_tid) && last_sg)
+      DRD_(thread_update_conflict_set)(tid, &last_sg->vc);
 
-   /*
-    * Note: after creation of a new segment and before the conflict set has
-    * been updated the conflict set can be temporarily out of sync. The
-    * following assert statement would fail when enabled:
-    *
-    * tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));
-    */
+   tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));
 
    if (s_segment_merging
        && ++s_new_segments_since_last_merge >= s_segment_merge_interval)
