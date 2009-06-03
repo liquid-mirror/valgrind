@@ -1102,6 +1102,25 @@ void DRD_(bm_merge2_marked)(struct bitmap* const lhs, struct bitmap* const rhs)
    }
 }
 
+/** Remove all marked second-level bitmaps that do not contain any access. */
+void DRD_(bm_remove_cleared_marked)(struct bitmap* bm)
+{
+   struct bitmap2* bm2;
+
+   VG_(OSetGen_ResetIter)(&bm->oset);
+   for ( ; (bm2 = VG_(OSetGen_Next)(&bm->oset)) != 0; )
+   {
+      const UWord a1 = bm2->addr;
+      if (bm2->recalc
+          && ! DRD_(bm_has_any_access(bm, make_address(a1, 0),
+                                      make_address(a1 + 1, 0))))
+      {
+         bm2_remove(bm, a1);
+         VG_(OSetGen_ResetIterAt)(&bm->oset, &a1);
+      }
+   }
+}
+
 /**
  * Report whether there are any RW / WR / WW patterns in lhs and rhs.
  * @param lhs First bitmap.

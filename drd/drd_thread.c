@@ -1394,6 +1394,8 @@ void DRD_(thread_update_conflict_set)(const DrdThreadId tid,
       }
    }
 
+   DRD_(bm_remove_cleared_marked)(DRD_(g_conflict_set));
+
    s_conflict_set_combine_vc_count++;
 
    tl_assert(thread_conflict_set_up_to_date(DRD_(g_drd_running_tid)));

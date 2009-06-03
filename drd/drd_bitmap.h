@@ -627,6 +627,21 @@ struct bitmap2* bm2_lookup_or_insert_exclusive(struct bitmap* const bm,
 }
 
 static __inline__
+void bm2_remove(struct bitmap* const bm, const UWord a1)
+{
+   struct bitmap2* bm2;
+
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+   tl_assert(bm);
+#endif
+
+   bm2 = VG_(OSetGen_Remove)(&bm->oset, &a1);
+   VG_(OSetGen_FreeNode)(&bm->oset, bm2);
+
+   bm_update_cache(bm, a1, NULL);
+}
+
+static __inline__
 void bm_access_aligned_load(struct bitmap* const bm,
                             const Addr a1, const SizeT size)
 {

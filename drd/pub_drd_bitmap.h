@@ -137,6 +137,7 @@ Bool DRD_(bm_is_marked)(struct bitmap* bm, const Addr a);
 void DRD_(bm_mark)(struct bitmap* bm1, struct bitmap* bm2);
 void DRD_(bm_clear_marked)(struct bitmap* bm);
 void DRD_(bm_merge2_marked)(struct bitmap* const lhs, struct bitmap* const rhs);
+void DRD_(bm_remove_cleared_marked)(struct bitmap* bm);
 int DRD_(bm_has_races)(struct bitmap* const bm1,
                        struct bitmap* const bm2);
 void DRD_(bm_report_races)(ThreadId const tid1, ThreadId const tid2,
