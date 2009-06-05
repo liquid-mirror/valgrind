@@ -237,17 +237,48 @@ void DRD_(vc_combine)(VectorClock* const result, const VectorClock* const rhs)
 /** Print the contents of vector clock 'vc'. */
 void DRD_(vc_print)(const VectorClock* const vc)
 {
+   char* str;
+
+   if ((str = DRD_(vc_aprint)(vc)) != NULL)
+   {
+      VG_(printf)("%s", str);
+      VG_(free)(str);
+   }
+}
+
+/**
+ * Print the contents of vector clock 'vc' to a newly allocated string.
+ * The caller must call VG_(free)() on the return value of this function.
+ */
+char* DRD_(vc_aprint)(const VectorClock* const vc)
+{
    unsigned i;
+   unsigned len;
+   char* str = 0;
 
    tl_assert(vc);
-   VG_(printf)("[");
+   len = 64;
+   str = VG_(realloc)("drd.vc.aprint.1", str, len);
+   if (! str)
+      return str;
+   VG_(snprintf)(str, len, "[");
    for (i = 0; i < vc->size; i++)
    {
       tl_assert(vc->vc);
-      VG_(printf)("%s %d: %d", i > 0 ? "," : "",
-                  vc->vc[i].threadid, vc->vc[i].count);
+      if (VG_(strlen)(str) + 32 > len)
+      {
+         len *= 2;
+         str = VG_(realloc)("drd.vc.aprint.2", str, len);
+         if (! str)
+            return str;
+      }
+      VG_(snprintf)(str + VG_(strlen)(str), len - VG_(strlen)(str),
+                    "%s %d: %d", i > 0 ? "," : "",
+                    vc->vc[i].threadid, vc->vc[i].count);
    }
-   VG_(printf)(" ]");
+   VG_(snprintf)(str + VG_(strlen)(str), len - VG_(strlen)(str), " ]");
+
+   return str;
 }
 
 /**
@@ -357,6 +388,7 @@ void DRD_(vc_reserve)(VectorClock* const vc, const unsigned new_capacity)
       if (vc->capacity > VC_PREALLOCATED)
          VG_(free)(vc->vc);
       vc->vc = 0;
+      vc->capacity = 0;
    }
 
    tl_assert(new_capacity == 0 || vc->vc != 0);
@@ -364,49 +396,3 @@ void DRD_(vc_reserve)(VectorClock* const vc, const unsigned new_capacity)
              || vc->vc == 0
              || vc->vc == vc->preallocated);
 }
-
-#if 0
-/**
- * Unit test.
- */
-void DRD_(vc_test)(void)
-{
-   VectorClock vc1;
-   VCElem vc1elem[] = { { 3, 7 }, { 5, 8 }, };
-   VectorClock vc2;
-   VCElem vc2elem[] = { { 1, 4 }, { 3, 9 }, };
-   VectorClock vc3;
-   VCElem vc4elem[] = { { 1, 3 }, { 2, 1 }, };
-   VectorClock vc4;
-   VCElem vc5elem[] = { { 1, 4 }, };
-   VectorClock vc5;
-
-   vc_init(&vc1, vc1elem, sizeof(vc1elem)/sizeof(vc1elem[0]));
-   vc_init(&vc2, vc2elem, sizeof(vc2elem)/sizeof(vc2elem[0]));
-   vc_init(&vc3, 0, 0);
-   vc_init(&vc4, vc4elem, sizeof(vc4elem)/sizeof(vc4elem[0]));
-   vc_init(&vc5, vc5elem, sizeof(vc5elem)/sizeof(vc5elem[0]));
-
-   vc_combine(&vc3, &vc1);
-   vc_combine(&vc3, &vc2);
-
-   VG_(printf)("vc1: ");
-   vc_print(&vc1);
-   VG_(printf)("\nvc2: ");
-   vc_print(&vc2);
-   VG_(printf)("\nvc3: ");
-   vc_print(&vc3);
-   VG_(printf)("\n");
-   VG_(printf)("vc_lte(vc1, vc2) = %d, vc_lte(vc1, vc3) = %d,"
-               " vc_lte(vc2, vc3) = %d, vc_lte(",
-               vc_lte(&vc1, &vc2), vc_lte(&vc1, &vc3), vc_lte(&vc2, &vc3));
-   vc_print(&vc4);
-   VG_(printf)(", ");
-   vc_print(&vc5);
-   VG_(printf)(") = %d sw %d\n", vc_lte(&vc4, &vc5), vc_lte(&vc5, &vc4));
-              
-   vc_cleanup(&vc1);
-   vc_cleanup(&vc2);
-   vc_cleanup(&vc3);
-}
-#endif

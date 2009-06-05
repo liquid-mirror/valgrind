@@ -47,7 +47,9 @@
  */
 
 
-#include "pub_tool_basics.h"    // Addr, SizeT
+#include "pub_tool_basics.h"     /* Addr, SizeT */
+#include "drd_basics.h"          /* DrdThreadId */
+#include "pub_tool_libcassert.h" /* tl_assert() */
 
 
 #define VC_PREALLOCATED 8
@@ -86,6 +88,7 @@ void DRD_(vc_min)(VectorClock* const result,
 void DRD_(vc_combine)(VectorClock* const result,
                       const VectorClock* const rhs);
 void DRD_(vc_print)(const VectorClock* const vc);
+char* DRD_(vc_aprint)(const VectorClock* const vc);
 void DRD_(vc_snprint)(Char* const str, const Int size,
                       const VectorClock* const vc);
 void DRD_(vc_check)(const VectorClock* const vc);
