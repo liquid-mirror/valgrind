@@ -85,9 +85,6 @@ void DRD_(vc_min)(VectorClock* const result,
                   const VectorClock* const rhs);
 void DRD_(vc_combine)(VectorClock* const result,
                       const VectorClock* const rhs);
-Bool DRD_(vc_combine2)(VectorClock* const result,
-                       const VectorClock* const rhs,
-                       const DrdThreadId tid);
 void DRD_(vc_print)(const VectorClock* const vc);
 void DRD_(vc_snprint)(Char* const str, const Int size,
                       const VectorClock* const vc);
