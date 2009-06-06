@@ -79,6 +79,7 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
    int trace_csw              = -1;
    int trace_fork_join        = -1;
    int trace_conflict_set     = -1;
+   int trace_conflict_set_bm  = -1;
    int trace_mutex            = -1;
    int trace_rwlock           = -1;
    int trace_segment          = -1;
@@ -101,6 +102,7 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
    else if VG_BOOL_CLO(arg, "--trace-clientobj",     trace_clientobj) {}
    else if VG_BOOL_CLO(arg, "--trace-cond",          trace_cond) {}
    else if VG_BOOL_CLO(arg, "--trace-conflict-set",  trace_conflict_set) {}
+   else if VG_BOOL_CLO(arg, "--trace-conflict-set-bm", trace_conflict_set_bm){}
    else if VG_BOOL_CLO(arg, "--trace-csw",           trace_csw) {}
    else if VG_BOOL_CLO(arg, "--trace-fork-join",     trace_fork_join) {}
    else if VG_BOOL_CLO(arg, "--trace-mutex",         trace_mutex) {}
@@ -157,6 +159,8 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
       DRD_(thread_set_trace_fork_join)(trace_fork_join);
    if (trace_conflict_set != -1)
       DRD_(thread_trace_conflict_set)(trace_conflict_set);
+   if (trace_conflict_set_bm != -1)
+      DRD_(thread_trace_conflict_set_bm)(trace_conflict_set_bm);
    if (trace_mutex != -1)
       DRD_(mutex_set_trace)(trace_mutex);
    if (trace_rwlock != -1)
@@ -222,6 +226,9 @@ static void DRD_(print_debug_usage)(void)
 "    --trace-clientobj=yes|no  Trace all client object activity [no].\n"
 "    --trace-csw=yes|no        Trace all scheduler context switches [no].\n"
 "    --trace-conflict-set=yes|no Trace all conflict set updates [no].\n"
+"    --trace-conflict-set-bm=yes|no Trace all conflict set bitmap\n"
+"                              updates [no]. Note: enabling this option\n"
+"                              will generate a lot of output !\n"
 "    --trace-segment=yes|no    Trace segment actions [no].\n"
 "    --trace-suppr=yes|no      Trace all address suppression actions [no].\n"
 );

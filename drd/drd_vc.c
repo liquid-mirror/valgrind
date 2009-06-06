@@ -253,58 +253,34 @@ void DRD_(vc_print)(const VectorClock* const vc)
 char* DRD_(vc_aprint)(const VectorClock* const vc)
 {
    unsigned i;
-   unsigned len;
+   unsigned reserved;
+   unsigned size;
    char* str = 0;
 
    tl_assert(vc);
-   len = 64;
-   str = VG_(realloc)("drd.vc.aprint.1", str, len);
+   reserved = 64;
+   size = 0;
+   str = VG_(realloc)("drd.vc.aprint.1", str, reserved);
    if (! str)
       return str;
-   VG_(snprintf)(str, len, "[");
+   size += VG_(snprintf)(str, reserved, "[");
    for (i = 0; i < vc->size; i++)
    {
       tl_assert(vc->vc);
-      if (VG_(strlen)(str) + 32 > len)
+      if (VG_(strlen)(str) + 32 > reserved)
       {
-         len *= 2;
-         str = VG_(realloc)("drd.vc.aprint.2", str, len);
+         reserved *= 2;
+         str = VG_(realloc)("drd.vc.aprint.2", str, reserved);
          if (! str)
             return str;
       }
-      VG_(snprintf)(str + VG_(strlen)(str), len - VG_(strlen)(str),
-                    "%s %d: %d", i > 0 ? "," : "",
-                    vc->vc[i].threadid, vc->vc[i].count);
+      size += VG_(snprintf)(str + size, reserved - size,
+                            "%s %d: %d", i > 0 ? "," : "",
+                            vc->vc[i].threadid, vc->vc[i].count);
    }
-   VG_(snprintf)(str + VG_(strlen)(str), len - VG_(strlen)(str), " ]");
+   size += VG_(snprintf)(str + size, reserved - size, " ]");
 
    return str;
-}
-
-/**
- * Print the contents of vector clock 'vc' to the character array 'str' that
- * has 'size' elements.
- */
-void DRD_(vc_snprint)(Char* const str, const Int size,
-                      const VectorClock* const vc)
-{
-   unsigned i;
-   unsigned j = 1;
-
-   tl_assert(vc);
-   VG_(snprintf)(str, size, "[");
-   for (i = 0; i < vc->size; i++)
-   {
-      tl_assert(vc->vc);
-      for ( ; j <= vc->vc[i].threadid; j++)
-      {
-         VG_(snprintf)(str + VG_(strlen)(str), size - VG_(strlen)(str),
-                       "%s %d",
-                       i > 0 ? "," : "",
-                       (j == vc->vc[i].threadid) ? vc->vc[i].count : 0);
-      }
-   }
-   VG_(snprintf)(str + VG_(strlen)(str), size - VG_(strlen)(str), " ]");
 }
 
 /**

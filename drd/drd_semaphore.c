@@ -332,11 +332,11 @@ void DRD_(semaphore_pre_post)(const DrdThreadId tid, const Addr semaphore)
    }
 
    p->last_sem_post_tid = tid;
-   DRD_(thread_new_segment)(tid);
    sg = 0;
    DRD_(thread_get_latest_segment)(&sg, tid);
    tl_assert(sg);
    DRD_(segment_push)(p, sg);
+   DRD_(thread_new_segment)(tid);
    s_semaphore_segment_creation_count++;
 }
 

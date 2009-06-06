@@ -116,6 +116,7 @@ extern struct bitmap* DRD_(g_conflict_set);
 
 void DRD_(thread_trace_context_switches)(const Bool t);
 void DRD_(thread_trace_conflict_set)(const Bool t);
+void DRD_(thread_trace_conflict_set_bm)(const Bool t);
 Bool DRD_(thread_get_trace_fork_join)(void);
 void DRD_(thread_set_trace_fork_join)(const Bool t);
 void DRD_(thread_set_segment_merging)(const Bool m);
