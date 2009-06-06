@@ -60,13 +60,13 @@
 // Helgrind memory usage testing stuff
 // If not present in dynamic_annotations.h/.cc - ignore
 #ifndef ANNOTATE_RESET_STATS
-#define ANNOTATE_RESET_STATS()
+#define ANNOTATE_RESET_STATS() do { } while(0)
 #endif
 #ifndef ANNOTATE_PRINT_STATS
-#define ANNOTATE_PRINT_STATS()
+#define ANNOTATE_PRINT_STATS() do { } while(0)
 #endif
 #ifndef ANNOTATE_PRINT_MEMORY_USAGE
-#define ANNOTATE_PRINT_MEMORY_USAGE(a)
+#define ANNOTATE_PRINT_MEMORY_USAGE(a) do { } while(0)
 #endif
 //
 
@@ -1691,7 +1691,7 @@ void Run() {
 
   std::vector<MyThread*> vec(Nlog);
 
-  for (int i = 0; i < N_iter; i++) {
+  for (int j = 0; j < N_iter; j++) {
     // Create and start Nlog threads
     for (int i = 0; i < Nlog; i++) {
       vec[i] = new MyThread(Worker);
@@ -2833,14 +2833,16 @@ int     FLAG2 = 0;
 void Worker2() {
   FLAG1=GLOB2;
 
-  while(!FLAG2);
+  while(!FLAG2)
+    ;
   GLOB2=FLAG2;
 }
 
 void Worker1() {
   FLAG2=GLOB1;
 
-  while(!FLAG1);
+  while(!FLAG1)
+    ;
   GLOB1=FLAG1;
 }
 
@@ -5411,11 +5413,11 @@ void Run() {
 
   // do few more random publishes.
   for (int i = 0; i < 20; i++) {
-    int beg = rand() % N;
-    int size = (rand() % (N - beg)) + 1;
+    const int begin = rand() % N;
+    const int size = (rand() % (N - begin)) + 1;
     CHECK(size > 0);
-    CHECK(beg + size <= N);
-    PublishRange(beg, beg + size);
+    CHECK(begin + size <= N);
+    PublishRange(begin, begin + size);
   }
 
   printf("GLOB = %d\n", (int)GLOB[0]);
