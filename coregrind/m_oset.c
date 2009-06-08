@@ -80,7 +80,6 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_oset.h"
-#include "pub_tool_mallocfree.h"  /* VG_(malloc), VG_(free) */
 
 /*--------------------------------------------------------------------*/
 /*--- Types and constants                                          ---*/
@@ -103,7 +102,25 @@ struct _OSetNode {
    Short    magic;
 };
 
+#define STACK_MAX    32    // At most 2**32 entries can be iterated over
 #define OSET_MAGIC   0x5b1f
+
+// An OSet (AVL tree).  If cmp is NULL, the key must be a UWord, and must
+// be the first word in the element.  If cmp is set, arbitrary keys in
+// arbitrary positions can be used.
+struct _OSet {
+   SizeT       keyOff;     // key offset
+   OSetCmp_t   cmp;        // compare a key and an element, or NULL
+   OSetAlloc_t alloc;      // allocator
+   HChar* cc;              // cc for allocator
+   OSetFree_t  free;       // deallocator
+   Word        nElems;     // number of elements in the tree
+   AvlNode*    root;       // root node
+
+   AvlNode*    nodeStack[STACK_MAX];   // Iterator node stack
+   Int          numStack[STACK_MAX];   // Iterator num stack
+   Int         stackTop;               // Iterator stack pointer, one past end
+};
 
 /*--------------------------------------------------------------------*/
 /*--- Helper operations                                            ---*/
@@ -225,7 +242,7 @@ static void stackClear(AvlTree* t)
 {
    Int i;
    vg_assert(t);
-   for (i = 0; i < OSET_STACK_MAX; i++) {
+   for (i = 0; i < STACK_MAX; i++) {
       t->nodeStack[i] = NULL;
       t->numStack[i]  = 0;
    }
@@ -235,7 +252,7 @@ static void stackClear(AvlTree* t)
 // Push onto the iterator stack.
 static inline void stackPush(AvlTree* t, AvlNode* n, Int i)
 {
-   vg_assert(t->stackTop < OSET_STACK_MAX);
+   vg_assert(t->stackTop < STACK_MAX);
    vg_assert(1 <= i && i <= 3);
    t->nodeStack[t->stackTop] = n;
    t-> numStack[t->stackTop] = i;
@@ -245,7 +262,7 @@ static inline void stackPush(AvlTree* t, AvlNode* n, Int i)
 // Pop from the iterator stack.
 static inline Bool stackPop(AvlTree* t, AvlNode** n, Int* i)
 {
-   vg_assert(t->stackTop <= OSET_STACK_MAX);
+   vg_assert(t->stackTop <= STACK_MAX);
 
    if (t->stackTop > 0) {
       t->stackTop--;
@@ -280,13 +297,6 @@ AvlTree* VG_(OSetGen_Create)(PtrdiffT _keyOff, OSetCmp_t _cmp,
    if (!_cmp) vg_assert(0 == _keyOff);    // If no cmp, offset must be zero
 
    t           = _alloc(_cc, sizeof(AvlTree));
-   return VG_(OSetGen_Initialize)(t, _keyOff, _cmp, _alloc, _cc, _free);
-}
-
-OSet* VG_(OSetGen_Initialize)(AvlTree* t, PtrdiffT _keyOff, OSetCmp_t _cmp,
-                              OSetAlloc_t _alloc, HChar* _cc,
-                              OSetFree_t _free)
-  {
    t->keyOff   = _keyOff;
    t->cmp      = _cmp;
    t->alloc    = _alloc;
@@ -305,7 +315,8 @@ AvlTree* VG_(OSetWord_Create)(OSetAlloc_t _alloc, HChar* _cc,
    return VG_(OSetGen_Create)(/*keyOff*/0, /*cmp*/NULL, _alloc, _cc, _free);
 }
 
-void VG_(OSetGen_Cleanup)(AvlTree* t)
+// Destructor, frees up all memory held by remaining nodes.
+void VG_(OSetGen_Destroy)(AvlTree* t)
 {
    AvlNode* n = NULL;
    Int i = 0;
@@ -335,12 +346,6 @@ void VG_(OSetGen_Cleanup)(AvlTree* t)
       }
    }
    vg_assert(sz == t->nElems);
-}
-
-// Destructor, frees up all memory held by remaining nodes.
-void VG_(OSetGen_Destroy)(AvlTree* t)
-{
-   VG_(OSetGen_Cleanup)(t);
 
    /* Free the AvlTree itself. */
    t->free(t);

@@ -70,7 +70,7 @@ struct bm_cache_elem
 struct bitmap
 {
    struct bm_cache_elem cache[DRD_BITMAP_N_CACHE_ELEM];
-   struct _OSet         oset;
+   OSet*                oset;
 };
 
 

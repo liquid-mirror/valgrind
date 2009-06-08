@@ -505,7 +505,7 @@ const struct bitmap2* bm2_lookup(struct bitmap* const bm, const UWord a1)
 
    if (! bm_cache_lookup(bm, a1, &bm2))
    {
-      bm2 = VG_(OSetGen_Lookup)(&bm->oset, &a1);
+      bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
       bm_update_cache(bm, a1, bm2);
    }
    return bm2;
@@ -530,7 +530,7 @@ bm2_lookup_exclusive(struct bitmap* const bm, const UWord a1)
 
    if (! bm_cache_lookup(bm, a1, &bm2))
    {
-      bm2 = VG_(OSetGen_Lookup)(&bm->oset, &a1);
+      bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
    }
 
    return bm2;
@@ -555,9 +555,9 @@ struct bitmap2* bm2_insert(struct bitmap* const bm, const UWord a1)
 
    s_bitmap2_creation_count++;
 
-   bm2 = VG_(OSetGen_AllocNode)(&bm->oset, sizeof(*bm2));
+   bm2 = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2));
    bm2->addr = a1;
-   VG_(OSetGen_Insert)(&bm->oset, bm2);
+   VG_(OSetGen_Insert)(bm->oset, bm2);
 
    bm_update_cache(bm, a1, bm2);
 
@@ -601,7 +601,7 @@ struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
    }
    else
    {
-      bm2 = VG_(OSetGen_Lookup)(&bm->oset, &a1);
+      bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
       if (! bm2)
       {
          bm2 = bm2_insert(bm, a1);
@@ -635,8 +635,8 @@ void bm2_remove(struct bitmap* const bm, const UWord a1)
    tl_assert(bm);
 #endif
 
-   bm2 = VG_(OSetGen_Remove)(&bm->oset, &a1);
-   VG_(OSetGen_FreeNode)(&bm->oset, bm2);
+   bm2 = VG_(OSetGen_Remove)(bm->oset, &a1);
+   VG_(OSetGen_FreeNode)(bm->oset, bm2);
 
    bm_update_cache(bm, a1, NULL);
 }
