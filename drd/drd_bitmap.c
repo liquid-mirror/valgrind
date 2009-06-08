@@ -92,8 +92,13 @@ void DRD_(bm_init)(struct bitmap* const bm)
       bm->cache[i].a1  = ~(UWord)1;
       bm->cache[i].bm2 = 0;
    }
-   VG_(OSetGen_Initialize)(&bm->oset, 0, 0, DRD_(bm2_alloc_node),
-                           "drd.bitmap.bn.2", DRD_(bm2_free_node));
+#if 1
+   VG_(OSetGen_Initialize)(&bm->oset, 0, 0, VG_(malloc),
+                           "Drd.bitmap.bn.2", VG_(free));
+#else
+   bm->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), "drd.bitmap.bn.2",
+                                  VG_(free));
+#endif
 }
 
 /** Free the memory allocated by DRD_(bm_init)(). */
