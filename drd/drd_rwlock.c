@@ -391,8 +391,6 @@ void DRD_(rwlock_post_rdlock)(const Addr rwlock, const RwLockT rwlock_type,
       DRD_(s_rwlock_segment_creation_count)++;
       DRD_(rwlock_combine_other_vc)(p, drd_tid, False);
 
-      DRD_(rwlock_combine_other_vc)(p, drd_tid, False);
-
       p->acquiry_time_ms = VG_(read_millisecond_timer)();
       p->acquired_at     = VG_(record_ExeContext)(VG_(get_running_tid)(), 0);
    }
