@@ -33,12 +33,10 @@ endif
 CALLGRIND_SOURCES_COMMON = main.c events.c bb.c clo.c \
                            costs.c bbcc.c command.c debug.c fn.c \
                            sim.c callstack.c context.c dump.c jumps.c \
-                           threads.c
-
-CALLGRIND_SOURCES_X86 = ../cachegrind/cg-x86.c
-CALLGRIND_SOURCES_AMD64 = ../cachegrind/cg-amd64.c
-CALLGRIND_SOURCES_PPC32 = ../cachegrind/cg-ppc32.c
-CALLGRIND_SOURCES_PPC64 = ../cachegrind/cg-ppc64.c
+                           threads.c \
+                           ../cachegrind/cg-x86-amd64.c \
+                           ../cachegrind/cg-ppc32.c \
+                           ../cachegrind/cg-ppc64.c
 
 CALLGRIND_CFLAGS_COMMON = -I$(top_srcdir)/cachegrind
 
