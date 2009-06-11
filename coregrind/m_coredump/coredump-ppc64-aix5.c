@@ -33,6 +33,8 @@
    without prior written permission.
 */
 
+#if defined(VGP_ppc64_aix5)
+
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
 #include "pub_core_libcassert.h"
@@ -42,6 +44,8 @@ void VG_(make_coredump)(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
 {
    /* not implemented */
 }
+
+#endif // defined(VGP_ppc64_aix5)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

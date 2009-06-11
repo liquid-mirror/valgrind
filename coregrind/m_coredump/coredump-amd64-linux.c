@@ -28,6 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#if defined(VGP_amd64_linux)
+
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
 #include "pub_core_libcbase.h"
@@ -84,6 +86,8 @@ void ML_(fill_elffpregs_from_tst)(vki_elf_fpregset_t* fpu,
 
    VG_(memset)(fpu->padding, 0, sizeof(fpu->padding));
 }
+
+#endif // defined(VGP_amd64_linux)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
