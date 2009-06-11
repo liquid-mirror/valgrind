@@ -73,19 +73,19 @@ CLEANFILES     = default.supp
 
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 BUILT_SOURCES += valt_load_address_x86_linux.lds
-CLEANFILES += valt_load_address_x86_linux.lds
+CLEANFILES    += valt_load_address_x86_linux.lds
 endif
 if VGCONF_PLATFORMS_INCLUDE_AMD64_LINUX
 BUILT_SOURCES += valt_load_address_amd64_linux.lds
-CLEANFILES += valt_load_address_amd64_linux.lds
+CLEANFILES    += valt_load_address_amd64_linux.lds
 endif
 if VGCONF_PLATFORMS_INCLUDE_PPC32_LINUX
 BUILT_SOURCES += valt_load_address_ppc32_linux.lds
-CLEANFILES += valt_load_address_ppc32_linux.lds
+CLEANFILES    += valt_load_address_ppc32_linux.lds
 endif
 if VGCONF_PLATFORMS_INCLUDE_PPC64_LINUX
 BUILT_SOURCES += valt_load_address_ppc64_linux.lds
-CLEANFILES += valt_load_address_ppc64_linux.lds
+CLEANFILES    += valt_load_address_ppc64_linux.lds
 endif
 if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
 # No need to generate valt_load_address*.lds; the final executables
