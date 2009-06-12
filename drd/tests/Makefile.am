@@ -24,8 +24,7 @@ EXTRA_DIST =                                        \
 	annotate_ignore_read.vgtest		    \
 	annotate_trace_memory.stderr.exp	    \
 	annotate_trace_memory.vgtest		    \
-	atomic_var.stderr.exp-with-atomic-builtins  \
-	atomic_var.stderr.exp-without-atomic-builtins \
+	atomic_var.stderr.exp 			    \
 	atomic_var.vgtest			    \
 	bar_bad.stderr.exp			    \
 	bar_bad.vgtest				    \
@@ -34,8 +33,7 @@ EXTRA_DIST =                                        \
 	bar_trivial.vgtest			    \
 	boost_thread.stderr.exp			    \
 	boost_thread.vgtest			    \
-	circular_buffer.stderr.exp-with-atomic-builtins		\
-	circular_buffer.stderr.exp-without-atomic-builtins	\
+	circular_buffer.stderr.exp 		    \
 	circular_buffer.vgtest			    \
 	custom_alloc.stderr.exp			    \
 	custom_alloc.vgtest			    \

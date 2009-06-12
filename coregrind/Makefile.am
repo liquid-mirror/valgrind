@@ -25,46 +25,10 @@ endif
 
 default.supp: $(SUPP_FILES)
 
-
-pkglib_LIBRARIES =
-
-if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
-pkglib_LIBRARIES += libcoregrind-x86-linux.a
-endif
-
-if VGCONF_PLATFORMS_INCLUDE_AMD64_LINUX
-pkglib_LIBRARIES += libcoregrind-amd64-linux.a
-endif
-
-if VGCONF_PLATFORMS_INCLUDE_PPC32_LINUX
-pkglib_LIBRARIES += libcoregrind-ppc32-linux.a
-endif
-
-if VGCONF_PLATFORMS_INCLUDE_PPC64_LINUX
-pkglib_LIBRARIES += libcoregrind-ppc64-linux.a
-endif
-
-if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
-pkglib_LIBRARIES += libcoregrind-ppc32-aix5.a
-endif
-
-if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
-pkglib_LIBRARIES += libcoregrind-ppc64-aix5.a
-endif
-
-if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
-pkglib_LIBRARIES += libcoregrind-x86-darwin.a
-endif
-
-if VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
-pkglib_LIBRARIES += libcoregrind-amd64-darwin.a
-endif
-
 #----------------------------------------------------------------------------
-# The launcher
+# The launcher.  Built for the primary target only.
 #----------------------------------------------------------------------------
-# Build the launcher (valgrind) for the primary target only.
-#
+
 bin_PROGRAMS = \
 	valgrind no_op_client_for_valgrind
 
@@ -117,30 +81,41 @@ no_op_client_for_valgrind_LDFLAGS   = $(AM_CFLAGS_PRI)
 #	processor.defs \
 #	processor_set.defs \
 #
-if VGCONF_OS_IS_DARWIN
-mach_defs = \
-	mach_vm.defs \
-	task.defs \
-	thread_act.defs \
-	vm_map.defs
-else
+mach_user_srcs =
+mach_server_srcs =
+mach_hdrs =
 mach_defs =
+if VGCONF_OS_IS_DARWIN
+mach_user_srcs += \
+	m_mach/mach_vmUser.c \
+        m_mach/taskUser.c \
+        m_mach/thread_actUser.c \
+        m_mach/vm_mapUser.c
+mach_server_srcs += \
+	m_mach/mach_vmServer.c \
+        m_mach/taskServer.c \
+        m_mach/thread_actServer.c \
+        m_mach/vm_mapServer.c
+mach_hdrs += \
+	m_mach/mach_vm.h \
+        m_mach/task.h \
+        m_mach/thread_act.h \
+        m_mach/vm_map.h
+mach_defs += \
+	/usr/include/mach/mach_vm.defs \
+        /usr/include/mach/task.defs \
+        /usr/include/mach/thread_act.defs \
+        /usr/include/mach/vm_map.defs
 endif
 
-mach_srcs = $(addprefix m_mach/,$(mach_defs:.defs=User.c))
-mach_server_srcs = $(addprefix m_mach/,$(mach_defs:.defs=Server.c))
-mach_hdrs = $(addprefix m_mach/,$(mach_defs:.defs=.h))
-mach_files = $(addprefix /usr/include/mach/,$(mach_defs))
-
-$(mach_srcs) $(mach_hdrs): $(mach_files)
-	(cd m_mach && mig $(mach_files))
+$(mach_user_srcs) $(mach_hdrs): $(mach_defs)
+	(cd m_mach && mig $(mach_defs))
 
 #----------------------------------------------------------------------------
 # Headers
 #----------------------------------------------------------------------------
 
 noinst_HEADERS = \
-	$(mach_hdrs) \
 	launcher-aix5-bootblock.h \
 	pub_core_aspacehl.h	\
 	pub_core_aspacemgr.h	\
@@ -228,11 +203,12 @@ noinst_HEADERS = \
 # libcoregrind_<platform>.so
 #----------------------------------------------------------------------------
 
-BUILT_SOURCES = 
-CLEANFILES = 
-if VGCONF_OS_IS_DARWIN
-BUILT_SOURCES += $(COREGRIND_DARWIN_BUILT_SOURCES)
-CLEANFILES    += $(COREGRIND_DARWIN_BUILT_SOURCES)
+BUILT_SOURCES = $(mach_user_srcs)
+CLEANFILES    = $(mach_user_srcs) $(mach_server_srcs) $(mach_hdrs)
+
+pkglib_LIBRARIES  = libcoregrind-@VGCONF_ARCH_PRI@-@VGCONF_OS@.a
+if VGCONF_HAVE_PLATFORM_SEC
+pkglib_LIBRARIES += libcoregrind-@VGCONF_ARCH_SEC@-@VGCONF_OS@.a
 endif
 
 COREGRIND_SOURCES_COMMON = \
@@ -351,75 +327,40 @@ COREGRIND_SOURCES_COMMON = \
 	m_ume/main.c \
 	m_ume/script.c
 
-    # These are generated using 'mig' from $mach_defs above.
-COREGRIND_DARWIN_BUILT_SOURCES = \
-	m_mach/mach_vmUser.c \
-	m_mach/taskUser.c \
-	m_mach/thread_actUser.c \
-	m_mach/vm_mapUser.c
+libcoregrind_@VGCONF_ARCH_PRI@_@VGCONF_OS@_a_SOURCES = \
+    $(COREGRIND_SOURCES_COMMON)
+nodist_libcoregrind_@VGCONF_ARCH_PRI@_@VGCONF_OS@_a_SOURCES = \
+    $(BUILT_SOURCES)
+libcoregrind_@VGCONF_ARCH_PRI@_@VGCONF_OS@_a_CPPFLAGS = \
+    $(AM_CPPFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
+libcoregrind_@VGCONF_ARCH_PRI@_@VGCONF_OS@_a_CFLAGS = \
+    $(AM_CFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
+libcoregrind_@VGCONF_ARCH_PRI@_@VGCONF_OS@_a_CCASFLAGS = \
+    $(AM_CCASFLAGS_@VGCONF_PLATFORM_PRI_CAPS@)
+if VGCONF_HAVE_PLATFORM_SEC
+libcoregrind_@VGCONF_ARCH_SEC@_@VGCONF_OS@_a_SOURCES = \
+    $(COREGRIND_SOURCES_COMMON)
+nodist_libcoregrind_@VGCONF_ARCH_SEC@_@VGCONF_OS@_a_SOURCES = \
+    $(BUILT_SOURCES)
+libcoregrind_@VGCONF_ARCH_SEC@_@VGCONF_OS@_a_CPPFLAGS = \
+    $(AM_CPPFLAGS_@VGCONF_PLATFORM_SEC_CAPS@)
+libcoregrind_@VGCONF_ARCH_SEC@_@VGCONF_OS@_a_CFLAGS = \
+    $(AM_CFLAGS_@VGCONF_PLATFORM_SEC_CAPS@)
+libcoregrind_@VGCONF_ARCH_SEC@_@VGCONF_OS@_a_CCASFLAGS = \
+    $(AM_CCASFLAGS_@VGCONF_PLATFORM_SEC_CAPS@)
+endif
 
-libcoregrind_x86_linux_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-libcoregrind_x86_linux_a_CPPFLAGS = $(AM_CPPFLAGS_X86_LINUX)
-libcoregrind_x86_linux_a_CFLAGS = $(AM_CFLAGS_X86_LINUX)
-libcoregrind_x86_linux_a_CCASFLAGS = $(AM_CCASFLAGS_X86_LINUX)
-
-libcoregrind_amd64_linux_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-libcoregrind_amd64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_LINUX)
-libcoregrind_amd64_linux_a_CFLAGS = $(AM_CFLAGS_AMD64_LINUX)
-libcoregrind_amd64_linux_a_CCASFLAGS = $(AM_CCASFLAGS_AMD64_LINUX)
-
-libcoregrind_ppc32_linux_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-libcoregrind_ppc32_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_LINUX)
-libcoregrind_ppc32_linux_a_CFLAGS = $(AM_CFLAGS_PPC32_LINUX)
-libcoregrind_ppc32_linux_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_LINUX)
-
-libcoregrind_ppc64_linux_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-libcoregrind_ppc64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_LINUX)
-libcoregrind_ppc64_linux_a_CFLAGS = $(AM_CFLAGS_PPC64_LINUX)
-libcoregrind_ppc64_linux_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_LINUX)
-
-libcoregrind_ppc32_aix5_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-libcoregrind_ppc32_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_AIX5)
-libcoregrind_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5)
-libcoregrind_ppc32_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_AR = $(AR) -X32 cru
-
-libcoregrind_ppc64_aix5_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-libcoregrind_ppc64_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_AIX5)
-libcoregrind_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5)
-libcoregrind_ppc64_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
 
-libcoregrind_x86_darwin_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-nodist_libcoregrind_x86_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
-libcoregrind_x86_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_X86_DARWIN)
-libcoregrind_x86_darwin_a_CFLAGS = $(AM_CFLAGS_X86_DARWIN)
-libcoregrind_x86_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_X86_DARWIN)
 
-libcoregrind_amd64_darwin_a_SOURCES = $(COREGRIND_SOURCES_COMMON)
-nodist_libcoregrind_amd64_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
-libcoregrind_amd64_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_DARWIN)
-libcoregrind_amd64_darwin_a_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN)
-libcoregrind_amd64_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_AMD64_DARWIN)
-
-
-m_dispatch/dispatch-x86-linux.S:	 libvex_guest_offsets.h
-m_dispatch/dispatch-amd64-linux.S:	 libvex_guest_offsets.h
-m_dispatch/dispatch-ppc32-linux.S:	 libvex_guest_offsets.h
-m_dispatch/dispatch-ppc64-linux.S:	 libvex_guest_offsets.h
-m_dispatch/dispatch-ppc32-aix5.S:	 libvex_guest_offsets.h
-m_dispatch/dispatch-ppc64-aix5.S:	 libvex_guest_offsets.h
-m_dispatch/dispatch-x86-darwin.S:	 libvex_guest_offsets.h
-m_dispatch/dispatch-amd64-darwin.S:	 libvex_guest_offsets.h
-m_syswrap/syscall-x86-linux.S:		 libvex_guest_offsets.h
-m_syswrap/syscall-amd64-linux.S:	 libvex_guest_offsets.h
-m_syswrap/syscall-ppc32-linux.S:	 libvex_guest_offsets.h
-m_syswrap/syscall-ppc64-linux.S:	 libvex_guest_offsets.h
-m_syswrap/syscall-ppc32-aix5.S:		 libvex_guest_offsets.h
-m_syswrap/syscall-ppc64-aix5.S:		 libvex_guest_offsets.h
-m_syswrap/syscall-x86-darwin.S:		 libvex_guest_offsets.h
-m_syswrap/syscall-amd64-darwin.S:	 libvex_guest_offsets.h
-m_syswrap/syswrap-main.c: 		 libvex_guest_offsets.h
+m_syswrap/syswrap-main.c: 		 	     libvex_guest_offsets.h
+m_dispatch/dispatch-@VGCONF_ARCH_PRI@-@VGCONF_OS@.S: libvex_guest_offsets.h
+m_syswrap/syscall-@VGCONF_ARCH_PRI@-@VGCONF_OS@.S:   libvex_guest_offsets.h
+if VGCONF_HAVE_PLATFORM_SEC
+m_dispatch/dispatch-@VGCONF_ARCH_SEC@-@VGCONF_OS@.S: libvex_guest_offsets.h
+m_syswrap/syscall-@VGCONF_ARCH_SEC@-@VGCONF_OS@.S:   libvex_guest_offsets.h
+endif
 
 libvex_guest_offsets.h:
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" pub/libvex_guest_offsets.h
@@ -490,7 +431,6 @@ all-local: inplace-noinst_PROGRAMS inplace-noinst_DSYMS
 
 clean-local: clean-noinst_DSYMS
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" clean
-	rm -f $(mach_srcs) $(mach_server_srcs) $(mach_hdrs)
 
 LIBVEX  = libvex-@VGCONF_ARCH_PRI@-@VGCONF_OS@.a
 if VGCONF_HAVE_PLATFORM_SEC
