@@ -40,8 +40,7 @@ CALLGRIND_SOURCES_COMMON = main.c events.c bb.c clo.c \
 
 CALLGRIND_CFLAGS_COMMON = -I$(top_srcdir)/cachegrind
 
-clincludedir = $(includedir)/valgrind
-clinclude_HEADERS = \
+pkginclude_HEADERS = \
 	callgrind.h
 
 callgrind_x86_linux_SOURCES      = $(CALLGRIND_SOURCES_COMMON) $(CALLGRIND_SOURCES_X86)

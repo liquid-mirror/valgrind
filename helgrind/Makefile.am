@@ -155,9 +155,7 @@ helgrind_amd64_darwin_DEPENDENCIES = $(COREGRIND_LIBS_AMD64_DARWIN)
 helgrind_amd64_darwin_LDADD        = $(TOOL_LDADD_AMD64_DARWIN)
 helgrind_amd64_darwin_LDFLAGS      = $(TOOL_LDFLAGS_AMD64_DARWIN)
 
-hgincludedir = $(includedir)/valgrind
-
-hginclude_HEADERS = helgrind.h
+pkginclude_HEADERS = helgrind.h
 
 noinst_HEADERS = \
 	hg_basics.h hg_lock_n_thread.h hg_errors.h hg_wordset.h \

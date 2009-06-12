@@ -131,9 +131,7 @@ DRD_SOURCES =           \
   drd_semaphore.c       \
   drd_suppression.c
 
-drdincludedir = $(includedir)/valgrind
-
-drdinclude_HEADERS = drd.h
+pkginclude_HEADERS = drd.h
 
 noinst_HEADERS =        \
   drd_barrier.h         \
