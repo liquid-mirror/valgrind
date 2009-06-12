@@ -132,7 +132,7 @@ _semaphore_wait_signal:
 	syscall
 	ret
 
-#endif defined(VGP_amd64_darwin)
+#endif // defined(VGP_amd64_darwin)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

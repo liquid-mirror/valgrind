@@ -29,10 +29,11 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-/* The files syswrap-generic.c, syswrap-linux.c, syswrap-x86-linux.c,
-   syswrap-amd64-linux.c and syswrap-ppc32-linux.c, and associated
-   vki*.h header files, constitute Valgrind's model of how a vanilla
-   Linux kernel behaves with respect to syscalls.
+#if defined(VGO_linux)
+
+/* The files syswrap-generic.c, syswrap-linux.c, syswrap-*-linux.c,
+   and associated vki*.h header files, constitute Valgrind's model of how a
+   vanilla Linux kernel behaves with respect to syscalls.
 
    On a few occasions, it is useful to run with a kernel that has some
    (minor) extensions to the vanilla model, either due to running on a
@@ -85,6 +86,8 @@ void ML_(linux_variant_POST_sys_bproc)( UWord arg1, UWord arg2,
                                         UWord arg5, UWord arg6 )
 {
 }
+
+#endif // defined(VGO_linux)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

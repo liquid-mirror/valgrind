@@ -275,6 +275,8 @@ COREGRIND_SOURCES_COMMON = \
 	m_xarray.c \
 	m_aspacehl.c \
 	m_aspacemgr/aspacemgr-common.c \
+	m_aspacemgr/aspacemgr-linux.c \
+	m_aspacemgr/aspacemgr-aix5.c \
 	m_coredump/coredump-x86-linux.c \
 	m_coredump/coredump-amd64-linux.c \
 	m_coredump/coredump-ppc32-linux.c \
@@ -301,7 +303,10 @@ COREGRIND_SOURCES_COMMON = \
 	m_dispatch/dispatch-ppc64-aix5.S \
 	m_dispatch/dispatch-x86-darwin.S \
 	m_dispatch/dispatch-amd64-darwin.S \
+	m_initimg/initimg-linux.c \
+	m_initimg/initimg-aix5.c \
 	m_initimg/initimg-darwin.c \
+	m_initimg/initimg-pathscan.c \
 	m_mach/mach_basics.c \
 	m_mach/mach_msg.c \
 	m_mach/mach_traps-x86-darwin.S \
@@ -328,6 +333,11 @@ COREGRIND_SOURCES_COMMON = \
 	m_syswrap/syscall-x86-darwin.S \
 	m_syswrap/syscall-amd64-darwin.S \
 	m_syswrap/syswrap-main.c \
+	m_syswrap/syswrap-generic.c \
+	m_syswrap/syswrap-linux.c \
+	m_syswrap/syswrap-linux-variants.c \
+	m_syswrap/syswrap-aix5.c \
+	m_syswrap/syswrap-darwin.c \
 	m_syswrap/syswrap-x86-linux.c \
 	m_syswrap/syswrap-amd64-linux.c \
 	m_syswrap/syswrap-ppc32-linux.c \
@@ -342,35 +352,22 @@ COREGRIND_SOURCES_COMMON = \
 	m_ume/script.c
 
 COREGRIND_LINUX_SOURCE = \
-	m_aspacemgr/aspacemgr-linux.c \
 	m_coredump/coredump-elf.c \
 	m_debuginfo/readelf.c \
 	m_debuginfo/readdwarf.c \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
-	m_debuginfo/readpdb.c \
-	m_initimg/initimg-linux.c \
-	m_initimg/initimg-pathscan.c \
-	m_syswrap/syswrap-linux.c \
-	m_syswrap/syswrap-linux-variants.c \
-	m_syswrap/syswrap-generic.c
+	m_debuginfo/readpdb.c
 
 COREGRIND_AIX5_SOURCE = \
-	m_aspacemgr/aspacemgr-aix5.c \
-	m_debuginfo/readxcoff.c \
-	m_initimg/initimg-aix5.c \
-	m_syswrap/syswrap-aix5.c
+	m_debuginfo/readxcoff.c
 
 COREGRIND_DARWIN_SOURCE = \
-	m_aspacemgr/aspacemgr-linux.c \
 	m_debuginfo/readdwarf.c \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readmacho.c \
-	m_debuginfo/readpdb.c \
-	m_initimg/initimg-pathscan.c \
-	m_syswrap/syswrap-darwin.c \
-	m_syswrap/syswrap-generic.c
+	m_debuginfo/readpdb.c
 
     # These are generated using 'mig' from $mach_defs above.
 COREGRIND_DARWIN_BUILT_SOURCES = \
