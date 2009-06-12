@@ -158,7 +158,7 @@ ML_(blksys_finished):  .long 5b
 /* Let the linker know we don't need an executable stack */
 .section .note.GNU-stack,"",@progbits
 
-#endif defined(VGP_ppc32_linux)
+#endif // defined(VGP_ppc32_linux)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

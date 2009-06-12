@@ -321,6 +321,14 @@ COREGRIND_SOURCES_COMMON = \
 	m_syswrap/syscall-x86-darwin.S \
 	m_syswrap/syscall-amd64-darwin.S \
 	m_syswrap/syswrap-main.c \
+	m_syswrap/syswrap-x86-linux.c \
+	m_syswrap/syswrap-amd64-linux.c \
+	m_syswrap/syswrap-ppc32-linux.c \
+	m_syswrap/syswrap-ppc64-linux.c \
+	m_syswrap/syswrap-ppc32-aix5.c \
+	m_syswrap/syswrap-ppc64-aix5.c \
+	m_syswrap/syswrap-x86-darwin.c \
+	m_syswrap/syswrap-amd64-darwin.c \
 	m_ume/elf.c \
 	m_ume/macho.c \
 	m_ume/main.c \
@@ -370,40 +378,35 @@ COREGRIND_DARWIN_BUILT_SOURCES = \
 
 libcoregrind_x86_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_LINUX_SOURCE) \
-	m_syswrap/syswrap-x86-linux.c
+	$(COREGRIND_LINUX_SOURCE)
 libcoregrind_x86_linux_a_CPPFLAGS = $(AM_CPPFLAGS_X86_LINUX)
 libcoregrind_x86_linux_a_CFLAGS = $(AM_CFLAGS_X86_LINUX)
 libcoregrind_x86_linux_a_CCASFLAGS = $(AM_CCASFLAGS_X86_LINUX)
 
 libcoregrind_amd64_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_LINUX_SOURCE) \
-	m_syswrap/syswrap-amd64-linux.c
+	$(COREGRIND_LINUX_SOURCE)
 libcoregrind_amd64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_LINUX)
 libcoregrind_amd64_linux_a_CFLAGS = $(AM_CFLAGS_AMD64_LINUX)
 libcoregrind_amd64_linux_a_CCASFLAGS = $(AM_CCASFLAGS_AMD64_LINUX)
 
 libcoregrind_ppc32_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_LINUX_SOURCE) \
-	m_syswrap/syswrap-ppc32-linux.c
+	$(COREGRIND_LINUX_SOURCE)
 libcoregrind_ppc32_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_LINUX)
 libcoregrind_ppc32_linux_a_CFLAGS = $(AM_CFLAGS_PPC32_LINUX)
 libcoregrind_ppc32_linux_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_LINUX)
 
 libcoregrind_ppc64_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_LINUX_SOURCE) \
-	m_syswrap/syswrap-ppc64-linux.c
+	$(COREGRIND_LINUX_SOURCE)
 libcoregrind_ppc64_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_LINUX)
 libcoregrind_ppc64_linux_a_CFLAGS = $(AM_CFLAGS_PPC64_LINUX)
 libcoregrind_ppc64_linux_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_LINUX)
 
 libcoregrind_ppc32_aix5_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_AIX5_SOURCE) \
-	m_syswrap/syswrap-ppc32-aix5.c
+	$(COREGRIND_AIX5_SOURCE)
 libcoregrind_ppc32_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_AIX5)
@@ -411,8 +414,7 @@ libcoregrind_ppc32_aix5_a_AR = $(AR) -X32 cru
 
 libcoregrind_ppc64_aix5_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_AIX5_SOURCE) \
-	m_syswrap/syswrap-ppc64-aix5.c
+	$(COREGRIND_AIX5_SOURCE)
 libcoregrind_ppc64_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_AIX5)
@@ -422,20 +424,17 @@ libcoregrind_x86_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_DARWIN_SOURCE) \
 	m_mach/mach_traps-x86-darwin.S \
-	m_start-x86-darwin.S \
-	m_syswrap/syswrap-x86-darwin.c
+	m_start-x86-darwin.S
 nodist_libcoregrind_x86_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_x86_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CFLAGS = $(AM_CFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_X86_DARWIN)
 
-
 libcoregrind_amd64_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_DARWIN_SOURCE) \
 	m_mach/mach_traps-amd64-darwin.S \
-	m_start-amd64-darwin.S \
-	m_syswrap/syswrap-amd64-darwin.c
+	m_start-amd64-darwin.S
 nodist_libcoregrind_amd64_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_amd64_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_DARWIN)
 libcoregrind_amd64_darwin_a_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN)
