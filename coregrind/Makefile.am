@@ -287,8 +287,15 @@ COREGRIND_SOURCES_COMMON = \
 	m_coredump/coredump-amd64-darwin.c \
 	m_debuginfo/misc.c \
 	m_debuginfo/d3basics.c \
-	m_debuginfo/storage.c \
 	m_debuginfo/debuginfo.c \
+	m_debuginfo/readdwarf.c \
+	m_debuginfo/readdwarf3.c \
+	m_debuginfo/readelf.c \
+	m_debuginfo/readmacho.c \
+	m_debuginfo/readpdb.c \
+	m_debuginfo/readstabs.c \
+	m_debuginfo/readxcoff.c \
+	m_debuginfo/storage.c \
 	m_debuginfo/tytypes.c \
 	m_demangle/cp-demangle.c \
 	m_demangle/cplus-dem.c \
@@ -352,22 +359,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_ume/script.c
 
 COREGRIND_LINUX_SOURCE = \
-	m_coredump/coredump-elf.c \
-	m_debuginfo/readelf.c \
-	m_debuginfo/readdwarf.c \
-	m_debuginfo/readdwarf3.c \
-	m_debuginfo/readstabs.c \
-	m_debuginfo/readpdb.c
-
-COREGRIND_AIX5_SOURCE = \
-	m_debuginfo/readxcoff.c
-
-COREGRIND_DARWIN_SOURCE = \
-	m_debuginfo/readdwarf.c \
-	m_debuginfo/readdwarf3.c \
-	m_debuginfo/readstabs.c \
-	m_debuginfo/readmacho.c \
-	m_debuginfo/readpdb.c
+	m_coredump/coredump-elf.c
 
     # These are generated using 'mig' from $mach_defs above.
 COREGRIND_DARWIN_BUILT_SOURCES = \
@@ -405,32 +397,28 @@ libcoregrind_ppc64_linux_a_CFLAGS = $(AM_CFLAGS_PPC64_LINUX)
 libcoregrind_ppc64_linux_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_LINUX)
 
 libcoregrind_ppc32_aix5_a_SOURCES = \
-	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_AIX5_SOURCE)
+	$(COREGRIND_SOURCES_COMMON)
 libcoregrind_ppc32_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_AR = $(AR) -X32 cru
 
 libcoregrind_ppc64_aix5_a_SOURCES = \
-	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_AIX5_SOURCE)
+	$(COREGRIND_SOURCES_COMMON)
 libcoregrind_ppc64_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
 
 libcoregrind_x86_darwin_a_SOURCES = \
-	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_DARWIN_SOURCE)
+	$(COREGRIND_SOURCES_COMMON)
 nodist_libcoregrind_x86_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_x86_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CFLAGS = $(AM_CFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_X86_DARWIN)
 
 libcoregrind_amd64_darwin_a_SOURCES = \
-	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_DARWIN_SOURCE)
+	$(COREGRIND_SOURCES_COMMON)
 nodist_libcoregrind_amd64_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_amd64_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_DARWIN)
 libcoregrind_amd64_darwin_a_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN)
