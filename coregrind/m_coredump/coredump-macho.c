@@ -28,7 +28,7 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#if defined(VGP_darwin)
+#if defined(VGO_darwin)
 
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
@@ -40,7 +40,7 @@ void VG_(make_coredump)(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
    // DDD: #warning GrP fixme coredump
 }
 
-#endif // defined(VGP_darwin)
+#endif // defined(VGO_darwin)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
