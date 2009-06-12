@@ -167,7 +167,7 @@ noinst_HEADERS = \
 	pub_core_libcprint.h	\
 	pub_core_libcproc.h	\
 	pub_core_libcsignal.h	\
-	pub_core_mach.h	\
+	pub_core_mach.h		\
 	pub_core_machine.h	\
 	pub_core_mallocfree.h	\
 	pub_core_options.h	\
@@ -301,6 +301,11 @@ COREGRIND_SOURCES_COMMON = \
 	m_dispatch/dispatch-ppc64-aix5.S \
 	m_dispatch/dispatch-x86-darwin.S \
 	m_dispatch/dispatch-amd64-darwin.S \
+	m_initimg/initimg-darwin.c \
+	m_mach/mach_basics.c \
+	m_mach/mach_msg.c \
+	m_mach/mach_traps-x86-darwin.S \
+	m_mach/mach_traps-amd64-darwin.S \
 	m_replacemalloc/replacemalloc_core.c \
 	m_scheduler/scheduler.c \
 	m_scheduler/sema.c \
@@ -312,6 +317,8 @@ COREGRIND_SOURCES_COMMON = \
 	m_sigframe/sigframe-ppc64-aix5.c \
 	m_sigframe/sigframe-x86-darwin.c \
 	m_sigframe/sigframe-amd64-darwin.c \
+	m_start-x86-darwin.S \
+	m_start-amd64-darwin.S \
 	m_syswrap/syscall-x86-linux.S \
 	m_syswrap/syscall-amd64-linux.S \
 	m_syswrap/syscall-ppc32-linux.S \
@@ -354,8 +361,6 @@ COREGRIND_AIX5_SOURCE = \
 	m_initimg/initimg-aix5.c \
 	m_syswrap/syswrap-aix5.c
 
-    # Note that the *User.c files are generated using 'mig' from $mach_defs
-    # above.
 COREGRIND_DARWIN_SOURCE = \
 	m_aspacemgr/aspacemgr-linux.c \
 	m_debuginfo/readdwarf.c \
@@ -363,13 +368,11 @@ COREGRIND_DARWIN_SOURCE = \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readmacho.c \
 	m_debuginfo/readpdb.c \
-	m_mach/mach_basics.c \
-	m_mach/mach_msg.c \
-	m_initimg/initimg-darwin.c \
 	m_initimg/initimg-pathscan.c \
 	m_syswrap/syswrap-darwin.c \
 	m_syswrap/syswrap-generic.c
 
+    # These are generated using 'mig' from $mach_defs above.
 COREGRIND_DARWIN_BUILT_SOURCES = \
 	m_mach/mach_vmUser.c \
 	m_mach/taskUser.c \
@@ -422,9 +425,7 @@ libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
 
 libcoregrind_x86_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_DARWIN_SOURCE) \
-	m_mach/mach_traps-x86-darwin.S \
-	m_start-x86-darwin.S
+	$(COREGRIND_DARWIN_SOURCE)
 nodist_libcoregrind_x86_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_x86_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CFLAGS = $(AM_CFLAGS_X86_DARWIN)
@@ -432,9 +433,7 @@ libcoregrind_x86_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_X86_DARWIN)
 
 libcoregrind_amd64_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
-	$(COREGRIND_DARWIN_SOURCE) \
-	m_mach/mach_traps-amd64-darwin.S \
-	m_start-amd64-darwin.S
+	$(COREGRIND_DARWIN_SOURCE)
 nodist_libcoregrind_amd64_darwin_a_SOURCES = $(COREGRIND_DARWIN_BUILT_SOURCES)
 libcoregrind_amd64_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_DARWIN)
 libcoregrind_amd64_darwin_a_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN)
