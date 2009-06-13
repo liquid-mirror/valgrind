@@ -2,36 +2,43 @@ include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.flags.am
 include $(top_srcdir)/Makefile.core-tool.am
 
+noinst_SCRIPTS = \
+	gen-mdg \
+	gsl16test \
+	gsl19test \
+	posixtestsuite-1.5.1-diff-results
+
+EXTRA_DIST = $(noinst_SCRIPTS) \
+	DotToScc.hs \
+	Merge3Way.hs \
+	aix5_VKI_info.c \
+	aix5_proc_self_sysent.c \
+	gsl16-badfree.patch \
+	gsl16-wavelet.patch \
+	libmpiwrap.c \
+	libmpiwrap_aix5.exp \
+	mpiwrap_type_test.c \
+	posixtestsuite-1.5.1-diff.txt \
+	ppcfround.c \
+	ppc64shifts.c \
+	primes.c
+
+#----------------------------------------------------------------------------
+# valgrind_listener (built for the primary target only)
+#----------------------------------------------------------------------------
+
 bin_PROGRAMS = valgrind-listener
 
-noinst_SCRIPTS = gen-mdg DotToScc.hs Merge3Way.hs primes.c \
-		gsl16test gsl16-badfree.patch gsl16-wavelet.patch \
-		gsl19test \
-		ppcfround.c ppc64shifts.c libmpiwrap.c mpiwrap_type_test.c \
-		aix5_VKI_info.c libmpiwrap_aix5.exp \
-		aix5_proc_self_sysent.c \
-		posixtestsuite-1.5.1-diff-results \
-		posixtestsuite-1.5.1-diff.txt
-
-EXTRA_DIST = $(noinst_SCRIPTS)
-
-
-#------------------------- listener -----------------------
-# Build valgrind_listener for the primary target only.
-#
 valgrind_listener_SOURCES = valgrind-listener.c
-
 valgrind_listener_CPPFLAGS  = $(AM_CPPFLAGS_PRI) -I$(top_srcdir)/coregrind
 valgrind_listener_CFLAGS    = $(AM_CFLAGS_PRI)
 valgrind_listener_CCASFLAGS = $(AM_CCASFLAGS_PRI)
 valgrind_listener_LDFLAGS   = $(AM_CFLAGS_PRI)
-#
-#----------------------------------------------------------
 
-#------------------------- mpi wrappers -----------------------
-# Build libmpiwrap.so for the primary target, and for the secondary
-# target if relevant.
-#
+#----------------------------------------------------------------------------
+# libmpiwrap-<platform>.so
+#----------------------------------------------------------------------------
+
 # This is really horrible.
 #
 # automake isn't good at supporting non-$(CC) compilers.
@@ -42,7 +49,7 @@ valgrind_listener_LDFLAGS   = $(AM_CFLAGS_PRI)
 # XXX: if we put the MPI stuff in its own directory and manually added
 # "CC = $(MPI_CC)" then I think the usual automake approach would work.
 # --njn
-#
+
 if VGCONF_OS_IS_AIX5
  HACKY_FLAGS_PRI = -g -O -bE:libmpiwrap_aix5.exp -bM:SRE -bnoentry \
 			-qflag=w:w -qlanglvl=extended \
@@ -90,18 +97,6 @@ libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.so: libmpiwrap.c
 		-o libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.so libmpiwrap.c
 endif
 
-
-## And here we say how to install them.
-##
-# The following install hack is serialised by "libmpiwrap.so".
-# Hence force -j 1.
-.NOTPARALLEL:
-
-clean-local: clean-noinst_DSYMS
-
-install-exec-local: install-noinst_PROGRAMS install-noinst_DSYMS
-
-
 ## And some hacks to keep 'make dist' happy.
 ## It would seem that using nodist_SOURCES is the right fix, but
 ## I can't figure out how to do it.
@@ -122,6 +117,20 @@ libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c:
 	rm -f libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
 	touch libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
 endif
+
+
+#----------------------------------------------------------------------------
+# General stuff
+#----------------------------------------------------------------------------
+
+# The following install hack is serialised by "libmpiwrap.so".
+# Hence force -j 1.  [XXX: I don't understand that comment. --njn]
+.NOTPARALLEL:
+
+clean-local: clean-noinst_DSYMS
+
+install-exec-local: install-noinst_PROGRAMS install-noinst_DSYMS
+
 
 #
 #----------------------------------------------------------

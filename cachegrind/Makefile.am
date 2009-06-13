@@ -1,5 +1,9 @@
 include $(top_srcdir)/Makefile.tool.am
 
+#----------------------------------------------------------------------------
+# Headers, etc
+#----------------------------------------------------------------------------
+
 bin_SCRIPTS = cg_annotate
 
 noinst_HEADERS = \
@@ -8,11 +12,11 @@ noinst_HEADERS = \
 	cg_sim.c
 
 #----------------------------------------------------------------------------
-# cg_merge
+# cg_merge (built for the primary target only)
 #----------------------------------------------------------------------------
 
-# Build cg_merge for the primary target only.
 bin_PROGRAMS = cg_merge
+
 cg_merge_SOURCES = cg_merge.c
 cg_merge_CPPFLAGS  = $(AM_CPPFLAGS_PRI)
 cg_merge_CFLAGS    = $(AM_CFLAGS_PRI)
