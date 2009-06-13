@@ -41,7 +41,7 @@ massif_@VGCONF_ARCH_SEC@_@VGCONF_OS@_LDFLAGS      = \
 endif
 
 #----------------------------------------------------------------------------
-# vgpreload_massif_<platform>.so
+# vgpreload_massif-<platform>.so
 #----------------------------------------------------------------------------
 
 noinst_PROGRAMS += vgpreload_massif-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so

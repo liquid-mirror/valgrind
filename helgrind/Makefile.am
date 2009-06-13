@@ -7,7 +7,10 @@ include $(top_srcdir)/Makefile.tool.am
 pkginclude_HEADERS = helgrind.h
 
 noinst_HEADERS = \
-	hg_basics.h hg_lock_n_thread.h hg_errors.h hg_wordset.h \
+	hg_basics.h \
+	hg_errors.h \
+	hg_lock_n_thread.h \
+	hg_wordset.h \
 	libhb.h
 
 EXTRA_DIST = README_MSMProp2.txt README_YARD.txt
@@ -55,7 +58,7 @@ helgrind_@VGCONF_ARCH_SEC@_@VGCONF_OS@_LDFLAGS      = \
 endif
 
 #----------------------------------------------------------------------------
-# vgpreload_helgrind_<platform>.so
+# vgpreload_helgrind-<platform>.so
 #----------------------------------------------------------------------------
 
 noinst_PROGRAMS += vgpreload_helgrind-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so

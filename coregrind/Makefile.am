@@ -30,7 +30,8 @@ default.supp: $(SUPP_FILES)
 #----------------------------------------------------------------------------
 
 bin_PROGRAMS = \
-	valgrind no_op_client_for_valgrind
+	valgrind \
+	no_op_client_for_valgrind
 
 if VGCONF_OS_IS_LINUX
 valgrind_SOURCES = \
@@ -200,7 +201,7 @@ noinst_HEADERS = \
 	m_ume/priv_ume.h
 
 #----------------------------------------------------------------------------
-# libcoregrind_<platform>.so
+# libcoregrind-<platform>.a
 #----------------------------------------------------------------------------
 
 BUILT_SOURCES = $(mach_user_srcs)
@@ -366,7 +367,7 @@ libvex_guest_offsets.h:
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" pub/libvex_guest_offsets.h
 
 #----------------------------------------------------------------------------
-# libreplacemalloc_toolpreload_<platform>.so
+# libreplacemalloc_toolpreload-<platform>.a
 #----------------------------------------------------------------------------
 
 pkglib_LIBRARIES += libreplacemalloc_toolpreload-@VGCONF_ARCH_PRI@-@VGCONF_OS@.a
@@ -394,7 +395,7 @@ libreplacemalloc_toolpreload_ppc32_aix5_a_AR = $(AR) -X32 cru
 libreplacemalloc_toolpreload_ppc64_aix5_a_AR = $(AR) -X64 cru
 
 #----------------------------------------------------------------------------
-# vgpreload_core_<platform>.so
+# vgpreload_core-<platform>.a
 #----------------------------------------------------------------------------
 
 noinst_PROGRAMS  = vgpreload_core-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so
@@ -444,8 +445,6 @@ install-exec-local: install-noinst_PROGRAMS install-noinst_DSYMS
 	  $(INSTALL_DATA) @VEX_DIR@/$$v $(DESTDIR)$(valdir) ; \
 	done
 
-
-MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS)
 
 EXTRA_DIST = \
 	m_debuginfo/UNUSED_STABS.txt \

@@ -57,7 +57,7 @@ endif
 mc_main.o: CFLAGS += -fomit-frame-pointer
 
 #----------------------------------------------------------------------------
-# vgpreload_memcheck_<platform>.so
+# vgpreload_memcheck-<platform>.so
 #----------------------------------------------------------------------------
 
 noinst_PROGRAMS += vgpreload_memcheck-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so
