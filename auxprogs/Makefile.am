@@ -75,12 +75,8 @@ endif
 ## First, we have to say how to build the .so's ..
 ##
 noinst_PROGRAMS =
-noinst_DSYMS =
 if BUILD_MPIWRAP_PRI
 noinst_PROGRAMS += libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so
-if VGCONF_OS_IS_DARWIN
-noinst_DSYMS    += libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so
-endif
 libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so: libmpiwrap.c
 	$(MPI_CC) $(HACKY_FLAGS_PRI) \
 		-I../include \
@@ -88,13 +84,14 @@ libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.so: libmpiwrap.c
 endif
 if BUILD_MPIWRAP_SEC
 noinst_PROGRAMS += libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.so
-if VGCONF_OS_IS_DARWIN
-noinst_DSYMS    += libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.so
-endif
 libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.so: libmpiwrap.c
 	$(MPI_CC) $(HACKY_FLAGS_SEC) \
 		-I../include \
 		-o libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.so libmpiwrap.c
+endif
+
+if VGCONF_OS_IS_DARWIN
+noinst_DSYMS = $(noinst_PROGRAMS)
 endif
 
 ## And some hacks to keep 'make dist' happy.
@@ -104,14 +101,9 @@ endif
 #nodist_SOURCES        = libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
 #nodist_SOURCES        = libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
 
-libmpiwrap-.c:
-	rm -f libmpiwrap-.c
-	touch libmpiwrap-.c
-
 libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c:
 	rm -f libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
 	touch libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
-
 if VGCONF_HAVE_PLATFORM_SEC
 libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c:
 	rm -f libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
