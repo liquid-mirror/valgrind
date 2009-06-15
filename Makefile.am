@@ -33,7 +33,17 @@ endif
 
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
-SUBDIRS = include coregrind . tests perf auxprogs $(TOOLS) $(EXP_TOOLS) docs
+SUBDIRS = \
+	include \
+	coregrind \
+	. \
+	$(TOOLS) \
+	$(EXP_TOOLS) \
+	tests \
+	perf \
+	auxprogs \
+	mpi \
+	docs
 DIST_SUBDIRS  = $(SUBDIRS)
 
 SUPP_FILES = \

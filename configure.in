@@ -1875,6 +1875,7 @@ AC_OUTPUT(
    include/Makefile 
    include/vki/Makefile 
    auxprogs/Makefile
+   mpi/Makefile
    coregrind/Makefile 
    memcheck/Makefile
    memcheck/tests/Makefile
