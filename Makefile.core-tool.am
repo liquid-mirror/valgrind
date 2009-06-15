@@ -1,7 +1,13 @@
 # This file contains things shared by coregrind/Makefile.am and tool
-# Makefile.am files.  Also auxprogs/Makefile.am.
+# Makefile.am and test/Makefile.am files.  Also auxprogs/Makefile.am.
 
-# See Makefile.tool-tests.am for an explanation of dSYMs.
+# On Darwin, for a program 'p', the DWARF debug info is stored in the
+# directory 'p.dSYM'.  This must be generated after the executable is
+# created, with 'dsymutil p'.  We could redefine LINK with a script that
+# executes 'dsymutil' after linking, but that's a pain.  Instead we use this
+# hook so that every time "make check" is run, we subsequently invoke
+# 'dsymutil' on all the executables that lack a .dSYM directory, or that are
+# newer than their corresponding .dSYM directory.
 build-noinst_DSYMS:
 	for f in $(noinst_DSYMS); do \
 	  if [ ! -e $$f.dSYM  -o  $$f -nt $$f.dSYM ] ; then \
