@@ -12,12 +12,12 @@ include $(top_srcdir)/Makefile.flags.am
 
 AM_CPPFLAGS_@VGCONF_PLATFORM_PRI_CAPS@ += \
  	-I$(top_srcdir)/coregrind \
-	-DVG_LIBDIR="\"$(valdir)"\" \
+	-DVG_LIBDIR="\"$(pkglibdir)"\" \
 	-DVG_PLATFORM="\"@VGCONF_ARCH_PRI@-@VGCONF_OS@\""
 if VGCONF_HAVE_PLATFORM_SEC
 AM_CPPFLAGS_@VGCONF_PLATFORM_SEC_CAPS@ += \
  	-I$(top_srcdir)/coregrind \
-	-DVG_LIBDIR="\"$(valdir)"\" \
+	-DVG_LIBDIR="\"$(pkglibdir)"\" \
 	-DVG_PLATFORM="\"@VGCONF_ARCH_SEC@-@VGCONF_OS@\""
 endif
 
@@ -441,7 +441,7 @@ endif
 # tools.
 install-exec-local: install-noinst_PROGRAMS install-noinst_DSYMS
 	for v in $(LIBVEX) ; do \
-	  $(INSTALL_DATA) @VEX_DIR@/$$v $(DESTDIR)$(valdir) ; \
+	  $(INSTALL_DATA) @VEX_DIR@/$$v $(DESTDIR)$(pkglibdir) ; \
 	done
 
 

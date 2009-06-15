@@ -6,7 +6,6 @@
 # Global stuff
 #----------------------------------------------------------------------------
 
-valdir = $(libdir)/valgrind
 inplacedir = $(top_builddir)/.in_place
 
 
@@ -61,9 +60,9 @@ inplace-noinst_DSYMS: build-noinst_DSYMS
 # It needs to be depended on by an 'install-exec-local' rule.
 install-noinst_PROGRAMS:
 	if [ -n "$(noinst_PROGRAMS)" ] ; then \
-	  $(mkinstalldirs) $(DESTDIR)$(valdir); \
+	  $(mkinstalldirs) $(DESTDIR)$(pkglibdir); \
 	  for f in $(noinst_PROGRAMS); do \
-	    $(INSTALL_PROGRAM) $$f $(DESTDIR)$(valdir); \
+	    $(INSTALL_PROGRAM) $$f $(DESTDIR)$(pkglibdir); \
 	  done ; \
 	fi
 
@@ -73,9 +72,9 @@ install-noinst_PROGRAMS:
 # correct when using 'cp -R'...
 install-noinst_DSYMS: build-noinst_DSYMS
 	if [ -n "$(noinst_DSYMS)" ] ; then \
-	  $(mkinstalldirs) $(DESTDIR)$(valdir); \
+	  $(mkinstalldirs) $(DESTDIR)$(pkglibdir); \
 	  for f in $(noinst_DSYMS); do \
-	    cp -R $$f.dSYM $(DESTDIR)$(valdir); \
+	    cp -R $$f.dSYM $(DESTDIR)$(pkglibdir); \
 	  done ; \
 	fi
 
