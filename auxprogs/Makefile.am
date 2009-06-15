@@ -1,5 +1,4 @@
 include $(top_srcdir)/Makefile.all.am
-include $(top_srcdir)/Makefile.flags.am
 
 noinst_SCRIPTS = \
 	gen-mdg \

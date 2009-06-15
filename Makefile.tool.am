@@ -2,7 +2,6 @@
 SUBDIRS = . tests docs
 
 include $(top_srcdir)/Makefile.all.am
-include $(top_srcdir)/Makefile.flags.am
 
 #----------------------------------------------------------------------------
 # <tool>-<platform> stuff

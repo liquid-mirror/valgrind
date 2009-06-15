@@ -4,7 +4,6 @@
 # particular forms.
 
 include $(top_srcdir)/Makefile.all.am
-include $(top_srcdir)/Makefile.flags.am
 
 #----------------------------------------------------------------------------
 # Basics, flags
