@@ -20,9 +20,6 @@ AM_CPPFLAGS_@VGCONF_PLATFORM_SEC_CAPS@ += \
 	-DVG_PLATFORM="\"@VGCONF_ARCH_SEC@-@VGCONF_OS@\""
 endif
 
-
-default.supp: $(SUPP_FILES)
-
 #----------------------------------------------------------------------------
 # The launcher.  Built for the primary target only.
 #----------------------------------------------------------------------------
