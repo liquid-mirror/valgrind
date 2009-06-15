@@ -72,23 +72,6 @@ libmpiwrap_@VGCONF_ARCH_SEC@_@VGCONF_OS@_so_CFLAGS   = \
 libmpiwrap_@VGCONF_ARCH_SEC@_@VGCONF_OS@_so_LDFLAGS  = $(LDFLAGS_MPI)
 endif
 
-## And some hacks to keep 'make dist' happy.
-## It would seem that using nodist_SOURCES is the right fix, but
-## I can't figure out how to do it.
-##
-#nodist_SOURCES        = libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
-#nodist_SOURCES        = libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
-
-#libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c:
-#	rm -f libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
-#	touch libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c
-#if VGCONF_HAVE_PLATFORM_SEC
-#libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c:
-#	rm -f libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
-#	touch libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
-#endif
-
-
 #----------------------------------------------------------------------------
 # General stuff
 #----------------------------------------------------------------------------
