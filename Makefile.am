@@ -81,34 +81,6 @@ nodist_incinc_HEADERS = $(VEX_PUBLIC_HDRS)
 BUILT_SOURCES  = default.supp valgrind.pc
 CLEANFILES     = default.supp
 
-if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
-BUILT_SOURCES += valt_load_address_x86_linux.lds
-CLEANFILES    += valt_load_address_x86_linux.lds
-endif
-if VGCONF_PLATFORMS_INCLUDE_AMD64_LINUX
-BUILT_SOURCES += valt_load_address_amd64_linux.lds
-CLEANFILES    += valt_load_address_amd64_linux.lds
-endif
-if VGCONF_PLATFORMS_INCLUDE_PPC32_LINUX
-BUILT_SOURCES += valt_load_address_ppc32_linux.lds
-CLEANFILES    += valt_load_address_ppc32_linux.lds
-endif
-if VGCONF_PLATFORMS_INCLUDE_PPC64_LINUX
-BUILT_SOURCES += valt_load_address_ppc64_linux.lds
-CLEANFILES    += valt_load_address_ppc64_linux.lds
-endif
-if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
-# No need to generate valt_load_address*.lds; the final executables
-# can be linked to be at any address.  They will be relocated by
-# AIX kernel when they are loaded.
-endif
-if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
-# Ditto
-endif
-if VGCONF_OS_IS_DARWIN
-# GrP untested, possibly hopeless
-endif
-
 default.supp: $(DEFAULT_SUPP_FILES)
 	echo "# This is a generated file, composed of the following suppression rules:" > default.supp
 	echo "# " $(DEFAULT_SUPP_FILES) >> default.supp
@@ -230,50 +202,3 @@ vex_primary_sources = \
 	VEX/priv/host-amd64/hdefs.h
 
 
-# Generate a linker script for linking the binaries.  This is the
-# standard gcc linker script, except hacked so that an alternative
-# load address can be specified by (1) asking gcc to use this script
-# (-Wl,-T,valt_load_address.lds) and (2) setting the symbol
-# valt_load_address to the required value
-# (-Wl,-defsym,valt_load_address=0x70000000).
-#
-# Extract ld's default linker script and hack it to our needs.
-# First we cut everything above and below the "=====..." lines at the top
-# and bottom.
-# Then we have to replace the load address with "valt_load_address".
-# The line to replace in has one of the following two forms:
-#
-#   . = 0x08048000 + SIZEOF_HEADERS;
-#
-# or
-#   PROVIDE (__executable_start = 0x08048000); . = 0x08048000 + SIZEOF_HEADERS;
-#
-# So we search for the line with a hex value "+ SIZEOF_HEADERS", and replace
-# all the hex values in that line with "valt_load_address".
-valt_load_address_x86_linux.lds: Makefile
-	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | sed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/,/.\*/d' \
-		-e '/\. = \(0x[0-9A-Fa-f]\+\|SEGMENT_START("[^"]\+", 0x[0-9A-Fa-f]\+)\) + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
-	|| rm -f $@
-
-valt_load_address_amd64_linux.lds: Makefile
-	$(CC) -m64 -Wl,--verbose -nostdlib 2>&1 | sed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/,/.\*/d' \
-		-e '/\. = \(0x[0-9A-Fa-f]\+\|SEGMENT_START("[^"]\+", 0x[0-9A-Fa-f]\+)\) + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
-	|| rm -f $@
-
-valt_load_address_ppc32_linux.lds: Makefile
-	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | sed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/,/.\*/d' \
-		-e '/\. = \(0x[0-9A-Fa-f]\+\|SEGMENT_START("[^"]\+", 0x[0-9A-Fa-f]\+)\) + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
-	|| rm -f $@
-
-valt_load_address_ppc64_linux.lds: Makefile
-	$(CC) -m64 -Wl,--verbose -nostdlib 2>&1 | sed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/,/.\*/d' \
-		-e '/\. = \(0x[0-9A-Fa-f]\+\|SEGMENT_START("[^"]\+", 0x[0-9A-Fa-f]\+)\) + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
-	|| rm -f $@
