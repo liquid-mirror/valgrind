@@ -1,19 +1,17 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-SUBDIRS = .
-
-DIST_SUBDIRS = .
-
-noinst_SCRIPTS =		    \
+dist_noinst_SCRIPTS =		    \
 	filter_error_summary	    \
 	filter_stderr               \
 	filter_stderr_and_thread_no \
 	run_openmp_test             \
 	supported_libpthread
 
+noinst_HEADERS =                                    \
+	tsan_thread_wrappers_pthread.h
+
 EXTRA_DIST =                                        \
-	$(noinst_SCRIPTS)                           \
 	annotate_order_1.stderr.exp		    \
 	annotate_order_1.vgtest			    \
 	annotate_order_2.stderr.exp		    \

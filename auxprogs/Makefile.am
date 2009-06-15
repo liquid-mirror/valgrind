@@ -1,12 +1,12 @@
 include $(top_srcdir)/Makefile.all.am
 
-noinst_SCRIPTS = \
+dist_noinst_SCRIPTS = \
 	gen-mdg \
 	gsl16test \
 	gsl19test \
 	posixtestsuite-1.5.1-diff-results
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	DotToScc.hs \
 	Merge3Way.hs \
 	aix5_VKI_info.c \

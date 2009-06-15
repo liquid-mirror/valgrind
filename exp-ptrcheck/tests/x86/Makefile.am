@@ -1,11 +1,11 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-noinst_SCRIPTS = filter_stderr
+dist_noinst_SCRIPTS = filter_stderr
 
 check_PROGRAMS = asm lea
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	asm.vgtest-disabled asm.stderr.exp \
 	lea.vgtest-disabled lea.stderr.exp
 

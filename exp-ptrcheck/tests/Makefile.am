@@ -7,10 +7,10 @@ include $(top_srcdir)/Makefile.tool-tests.am
 
 #DIST_SUBDIRS = x86 .
 
-noinst_SCRIPTS = filter_stderr filter_add filter_suppgen \
+dist_noinst_SCRIPTS = filter_stderr filter_add filter_suppgen \
 	sh_script
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	add.vgtest-disabled add.stderr.exp \
 	and.vgtest-disabled and.stderr.exp \
 	arith.vgtest-disabled arith.stderr.exp \

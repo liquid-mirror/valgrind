@@ -1,11 +1,11 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-noinst_SCRIPTS = filter_stderr
+dist_noinst_SCRIPTS = filter_stderr
 
 noinst_HEADERS = scalar.h
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	scalar.stderr.exp scalar.vgtest \
 	scalar_fork.stderr.exp scalar_fork.vgtest \
 	scalar_vfork.stderr.exp scalar_vfork.vgtest
