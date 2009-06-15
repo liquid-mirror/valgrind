@@ -31,6 +31,7 @@ endif
 # automake, but this does not really matter and seems hard to avoid.
 
 AM_CPPFLAGS_@VGCONF_PLATFORM_PRI_CAPS@ = \
+ 		-I$(top_srcdir) \
  		-I$(top_srcdir)/include \
 		-I@VEX_DIR@/pub \
 		-DVGA_@VGCONF_ARCH_PRI@=1 \
@@ -38,6 +39,7 @@ AM_CPPFLAGS_@VGCONF_PLATFORM_PRI_CAPS@ = \
 		-DVGP_@VGCONF_ARCH_PRI@_@VGCONF_OS@=1
 if VGCONF_HAVE_PLATFORM_SEC
 AM_CPPFLAGS_@VGCONF_PLATFORM_SEC_CAPS@ = \
+ 		-I$(top_srcdir) \
  		-I$(top_srcdir)/include \
 		-I@VEX_DIR@/pub \
 		-DVGA_@VGCONF_ARCH_SEC@=1 \
