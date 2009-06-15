@@ -5,31 +5,9 @@ include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.flags.am
 include $(top_srcdir)/Makefile.core-tool.am
 
-
-LIBREPLACEMALLOC_X86_LINUX = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-x86-linux.a
-
-LIBREPLACEMALLOC_AMD64_LINUX = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-amd64-linux.a
-
-LIBREPLACEMALLOC_PPC32_LINUX = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc32-linux.a
-
-LIBREPLACEMALLOC_PPC64_LINUX = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc64-linux.a
-
-LIBREPLACEMALLOC_PPC32_AIX5 = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc32-aix5.a
-
-LIBREPLACEMALLOC_PPC64_AIX5 = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc64-aix5.a
-
-LIBREPLACEMALLOC_X86_DARWIN = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-x86-darwin.a
-
-LIBREPLACEMALLOC_AMD64_DARWIN = \
-	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-amd64-darwin.a
-
+#----------------------------------------------------------------------------
+# <tool>-<platform> stuff
+#----------------------------------------------------------------------------
 
 COREGRIND_LIBS_X86_LINUX = \
 	$(top_builddir)/coregrind/libcoregrind-x86-linux.a \
@@ -63,8 +41,6 @@ COREGRIND_LIBS_AMD64_DARWIN = \
 	$(top_builddir)/coregrind/libcoregrind-amd64-darwin.a \
 	@VEX_DIR@/libvex-amd64-darwin.a
 
-
-##.PHONY:  @VEX_DIR@/libvex.a
 
 @VEX_DIR@/libvex-x86-linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" \
@@ -170,6 +146,34 @@ TOOL_LDFLAGS_AMD64_DARWIN = \
 	-Wl,-stack_addr,0x7fff50080000 -Wl,-stack_size,0x7ffe50080000 \
 	-Wl,-pagezero_size,0x100000000
 
+#----------------------------------------------------------------------------
+# vgpreload_<tool>-<platform>.a stuff
+#----------------------------------------------------------------------------
+
+LIBREPLACEMALLOC_X86_LINUX = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-x86-linux.a
+
+LIBREPLACEMALLOC_AMD64_LINUX = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-amd64-linux.a
+
+LIBREPLACEMALLOC_PPC32_LINUX = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc32-linux.a
+
+LIBREPLACEMALLOC_PPC64_LINUX = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc64-linux.a
+
+LIBREPLACEMALLOC_PPC32_AIX5 = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc32-aix5.a
+
+LIBREPLACEMALLOC_PPC64_AIX5 = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-ppc64-aix5.a
+
+LIBREPLACEMALLOC_X86_DARWIN = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-x86-darwin.a
+
+LIBREPLACEMALLOC_AMD64_DARWIN = \
+	$(top_builddir)/coregrind/libreplacemalloc_toolpreload-amd64-darwin.a
+
 
 LIBREPLACEMALLOC_LDFLAGS_X86_LINUX = \
 	-Wl,--whole-archive \
@@ -203,7 +207,9 @@ LIBREPLACEMALLOC_LDFLAGS_X86_DARWIN = \
 LIBREPLACEMALLOC_LDFLAGS_AMD64_DARWIN = \
 	$(LIBREPLACEMALLOC_AMD64_DARWIN)
 
-
+#----------------------------------------------------------------------------
+# General stuff
+#----------------------------------------------------------------------------
 
 all-local: inplace-noinst_PROGRAMS inplace-noinst_DSYMS
 
