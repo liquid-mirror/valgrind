@@ -100,9 +100,6 @@ EXTRA_DIST = \
 	$(vex_primary_sources) \
 	vg-in-place
 
-install-exec-hook:
-	$(mkinstalldirs) $(DESTDIR)$(valdir)
-
 all-local: default.supp
 	mkdir -p $(inplacedir)
 	rm -f $(inplacedir)/default.supp
