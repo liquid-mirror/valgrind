@@ -1,7 +1,7 @@
 # This file is used for tool tests, and also in perf/Makefile.am.
 
-include $(top_srcdir)/Makefile.flags.am     	# For AM_FLAG_M3264_PRI
-include $(top_srcdir)/Makefile.core-tool.am	# For *-noinst_DSYM targets
+include $(top_srcdir)/Makefile.all.am
+include $(top_srcdir)/Makefile.flags.am	    # For AM_FLAG_M3264_PRI
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
 		-I$(top_srcdir)/coregrind -I$(top_builddir)/include \
@@ -17,7 +17,6 @@ AM_CXXFLAGS = -Winline -Wall -Wshadow -g
 # automake;  see comments in Makefile.flags.am for more detail.
 AM_CCASFLAGS = $(AM_CPPFLAGS)
 
-# This sets
 if VGCONF_OS_IS_DARWIN
 noinst_DSYMS = $(check_PROGRAMS)
 endif

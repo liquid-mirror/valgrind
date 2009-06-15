@@ -5,7 +5,6 @@
 
 include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.flags.am
-include $(top_srcdir)/Makefile.core-tool.am
 
 #----------------------------------------------------------------------------
 # Basics, flags

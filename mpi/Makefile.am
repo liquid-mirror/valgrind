@@ -1,6 +1,5 @@
 include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.flags.am
-include $(top_srcdir)/Makefile.core-tool.am
 
 # HACK WARNING: automake isn't good at supporting non-$(CC) compilers.
 # But we need to use $(MPI_CC) for the MPI stuff.  So we have this mpi stuff
