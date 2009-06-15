@@ -61,17 +61,7 @@ DEFAULT_SUPP_FILES = @DEFAULT_SUPP@
 # default.supp, as it is built from the base .supp files at compile-time.
 dist_noinst_DATA = $(SUPP_FILES)
 
-# The "val" in "val_DATA" ties in with $(valdir), defined in
-# Makefile.all.am.  From the automake info pages:
-#
-#   Sometimes the standard directories--even as augmented by Automake--are
-#   not enough.  In particular it is sometimes useful, for clarity, to
-#   install objects in a subdirectory of some predefined directory.  To this
-#   end, Automake allows you to extend the list of possible installation
-#   directories.  A given prefix (e.g., `zar') is valid if a variable of the
-#   same name with `dir' appended is defined (e.g., `zardir').
-#
-val_DATA = default.supp
+pkglib_DATA = default.supp
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = valgrind.pc
