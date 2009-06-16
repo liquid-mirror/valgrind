@@ -97,7 +97,9 @@ EXTRA_DIST = \
 	README_PACKAGERS \
 	README_MISSING_SYSCALL_OR_IOCTL \
 	valgrind.pc.in \
-	valgrind.spec.in \
+	valgrind.spec.in
+
+dist_noinst_SCRIPTS = \
 	vg-in-place
 
 all-local: default.supp
