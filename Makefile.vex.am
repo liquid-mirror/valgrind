@@ -23,12 +23,18 @@ pkginclude_HEADERS = \
 	pub/libvex_guest_ppc32.h \
 	pub/libvex_guest_ppc64.h \
 	pub/libvex_guest_arm.h \
-	pub/libvex_guest_offsets.h \
 	pub/libvex_ir.h \
 	pub/libvex_trc_values.h
 
+# Nb: vex_svnversion.h must be built by the distributor, but not built in
+# distributed packages.  Naming it here ensures that it is included in the
+# distribution;  once distributed, it won't be rebuilt because it doesn't
+# depend on anything.
+# XXX: if you do "make clean" on a distributed version and then rebuild, the
+# Vex version will be reported as "exported".  Hmm.
 noinst_HEADERS = \
 	priv/main/vex_globals.h \
+	priv/main/vex_svnversion.h \
 	priv/main/vex_util.h \
 	priv/ir/irmatch.h \
 	priv/ir/iropt.h \
@@ -132,6 +138,28 @@ BUILT_SOURCES += \
 	priv/host-amd64/isel-amd64.c \
 	priv/host-ppc/isel-ppc.c \
 	priv/host-arm/isel-arm.c
+
+# XXX: temporary
+EXTRA_DIST += \
+	priv/guest-x86/ghelpers.c \
+	priv/guest-amd64/ghelpers.c \
+	priv/guest-ppc/ghelpers.c \
+	priv/guest-arm/ghelpers.c \
+	\
+	priv/guest-x86/toIR.c \
+	priv/guest-amd64/toIR.c \
+	priv/guest-ppc/toIR.c \
+	priv/guest-arm/toIR.c \
+	\
+	priv/host-x86/hdefs.c \
+	priv/host-amd64/hdefs.c \
+	priv/host-ppc/hdefs.c \
+	priv/host-arm/hdefs.c \
+	\
+	priv/host-x86/isel.c \
+	priv/host-amd64/isel.c \
+	priv/host-ppc/isel.c \
+	priv/host-arm/isel.c
 
 
 # XXX: ghelpers
