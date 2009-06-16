@@ -26,15 +26,8 @@ pkginclude_HEADERS = \
 	pub/libvex_ir.h \
 	pub/libvex_trc_values.h
 
-# Nb: vex_svnversion.h must be built by the distributor, but not built in
-# distributed packages.  Naming it here ensures that it is included in the
-# distribution;  once distributed, it won't be rebuilt because it doesn't
-# depend on anything.
-# XXX: if you do "make clean" on a distributed version and then rebuild, the
-# Vex version will be reported as "exported".  Hmm.
 noinst_HEADERS = \
 	priv/main/vex_globals.h \
-	priv/main/vex_svnversion.h \
 	priv/main/vex_util.h \
 	priv/ir/irmatch.h \
 	priv/ir/iropt.h \
@@ -54,9 +47,21 @@ noinst_HEADERS = \
 BUILT_SOURCES = \
 	priv/main/vex_svnversion.h \
 	pub/libvex_guest_offsets.h
-CLEANFILES = $(BUILT_SOURCES)
+# We deliberately don't clean vex_svnversion.h -- we don't want users of the
+# distribution to regenerate it.
+CLEANFILES = \
+	pub/libvex_guest_offsets.h
 
-priv/main/vex_svnversion.h:
+# Nb: this rule is imperfect;  if you 'svn up' your Vex version, it won't
+# get rebuilt (if only SVN had post-update hooks)...
+priv/main/vex_svnversion.h: version
+
+# ... however, this rebuilds vex_svnversion.h when "make dist" is run, thus
+# ensuring it is up-to-date in distributions.
+dist-hook: version
+	cp priv/main/vex_svnversion.h $(distdir)/priv/main/
+
+version:
 	cat quote.txt    > priv/main/vex_svnversion.h
 	svnversion -n . >> priv/main/vex_svnversion.h
 	cat quote.txt   >> priv/main/vex_svnversion.h
