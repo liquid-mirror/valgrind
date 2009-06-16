@@ -32,8 +32,6 @@ and supply the following two config files:
     will be used.
   ABT_JOBS: allows parallel builds -- it's passed as the argument to "make
     -j" when building Valgrind and the tests.  The default is 1.
-    [XXX: the .NOTPARALLEL that currently resides in Makefile.all.am foils
-     this!]
 
 - conf/<tag>.sendmail:  this should be a script that sends an email to the
   desired recipient (eg. the valgrind-developers list).  It takes three

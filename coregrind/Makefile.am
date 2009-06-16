@@ -109,7 +109,11 @@ mach_defs += \
         /usr/include/mach/vm_map.defs
 endif
 
-$(mach_user_srcs) $(mach_hdrs): $(mach_defs)
+# Be careful w.r.t. parellel builds.  See section 27.9 of the automake info
+# page, "Handling Tools that Produce many Outputs".
+$(mach_user_srcs): $(mach_defs)
+	(cd m_mach && mig $(mach_defs))
+$(mach_hdrs): $(mach_defs) $(mach_user_srcs)
 	(cd m_mach && mig $(mach_defs))
 
 #----------------------------------------------------------------------------
