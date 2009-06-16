@@ -8,7 +8,7 @@ EXTRA_DIST =  \
 	manual-core.xml 	\
 	manual-core-adv.xml 	\
 	manual-writing-tools.xml\
-	new-tech-docs.xml 	\
+	design-impl.xml 	\
 	quick-start-guide.xml	\
 	tech-docs.xml 		\
 	valgrind-manpage.xml 	\
