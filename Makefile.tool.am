@@ -9,87 +9,35 @@ include $(top_srcdir)/Makefile.all.am
 
 COREGRIND_LIBS_X86_LINUX = \
 	$(top_builddir)/coregrind/libcoregrind-x86-linux.a \
-	@VEX_DIR@/libvex-x86-linux.a
+	$(top_builddir)/VEX/libvex-x86-linux.a
 
 COREGRIND_LIBS_AMD64_LINUX = \
 	$(top_builddir)/coregrind/libcoregrind-amd64-linux.a \
-	@VEX_DIR@/libvex-amd64-linux.a
+	$(top_builddir)/VEX/libvex-amd64-linux.a
 
 COREGRIND_LIBS_PPC32_LINUX = \
 	$(top_builddir)/coregrind/libcoregrind-ppc32-linux.a \
-	@VEX_DIR@/libvex-ppc32-linux.a
+	$(top_builddir)/VEX/libvex-ppc32-linux.a
 
 COREGRIND_LIBS_PPC64_LINUX = \
 	$(top_builddir)/coregrind/libcoregrind-ppc64-linux.a \
-	@VEX_DIR@/libvex-ppc64-linux.a
+	$(top_builddir)/VEX/libvex-ppc64-linux.a
 
 COREGRIND_LIBS_PPC32_AIX5 = \
 	$(top_builddir)/coregrind/libcoregrind-ppc32-aix5.a \
-	@VEX_DIR@/libvex-ppc32-aix5.a
+	$(top_builddir)/VEX/libvex-ppc32-aix5.a
 
 COREGRIND_LIBS_PPC64_AIX5 = \
 	$(top_builddir)/coregrind/libcoregrind-ppc64-aix5.a \
-	@VEX_DIR@/libvex-ppc64-aix5.a
+	$(top_builddir)/VEX/libvex-ppc64-aix5.a
 
 COREGRIND_LIBS_X86_DARWIN = \
 	$(top_builddir)/coregrind/libcoregrind-x86-darwin.a \
-	@VEX_DIR@/libvex-x86-darwin.a
+	$(top_builddir)/VEX/libvex-x86-darwin.a
 
 COREGRIND_LIBS_AMD64_DARWIN = \
 	$(top_builddir)/coregrind/libcoregrind-amd64-darwin.a \
-	@VEX_DIR@/libvex-amd64-darwin.a
-
-
-@VEX_DIR@/libvex-x86-linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" \
-	libvex-x86-linux.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_X86_LINUX) @FLAG_WDECL_AFTER_STMT@ \
-			@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/libvex-amd64-linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" \
-	libvex-amd64-linux.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_AMD64_LINUX) @FLAG_WDECL_AFTER_STMT@ \
-			@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/libvex-ppc32-linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" \
-	libvex-ppc32-linux.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_PPC32_LINUX) @FLAG_WDECL_AFTER_STMT@ \
-			@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/libvex-ppc64-linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" \
-	libvex-ppc64-linux.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_PPC64_LINUX) @FLAG_WDECL_AFTER_STMT@ \
-			@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/libvex-ppc32-aix5.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR) -X32" \
-	libvex-ppc32-aix5.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_PPC32_AIX5) @FLAG_WDECL_AFTER_STMT@ \
-			@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/libvex-ppc64-aix5.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR) -X64" \
-	libvex-ppc64-aix5.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_PPC64_AIX5) @FLAG_WDECL_AFTER_STMT@ \
-			@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/libvex-x86-darwin.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" \
-	libvex-x86-darwin.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_X86_DARWIN) @FLAG_WDECL_AFTER_STMT@ \
-		@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/libvex-amd64-darwin.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" \
-	libvex-amd64-darwin.a \
-	EXTRA_CFLAGS="$(AM_CFLAGS_AMD64_DARWIN) @FLAG_WDECL_AFTER_STMT@ \
-		@FLAG_FNO_STACK_PROTECTOR@"
-
-@VEX_DIR@/priv/main/vex_svnversion.h:
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" version
+	$(top_builddir)/VEX/libvex-amd64-darwin.a
 
 
 TOOL_LDADD_COMMON = -lgcc

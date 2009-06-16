@@ -12,6 +12,7 @@ inplacedir = $(top_builddir)/.in_place
 # The kludge that passes for vex's build system can't handle parallel
 # builds.  So, for the time being, serialise all Valgrind building.
 # (this is equivalent to enforcing "make -j 1".
+# XXX: may not be necessary any more...
 .NOTPARALLEL:
 
 #----------------------------------------------------------------------------
@@ -25,7 +26,7 @@ inplacedir = $(top_builddir)/.in_place
 # hook so that every time "make check" is run, we subsequently invoke
 # 'dsymutil' on all the executables that lack a .dSYM directory, or that are
 # newer than their corresponding .dSYM directory.
-build-noinst_DSYMS:
+build-noinst_DSYMS: $(noinst_DSYMS)
 	for f in $(noinst_DSYMS); do \
 	  if [ ! -e $$f.dSYM  -o  $$f -nt $$f.dSYM ] ; then \
 	      echo "dsymutil $$f"; \
@@ -36,7 +37,7 @@ build-noinst_DSYMS:
 # This is used by coregrind/Makefile.am and Makefile.tool.am for doing
 # "in-place" installs.  It copies $(noinst_PROGRAMS) into $inplacedir.
 # It needs to be depended on by an 'all-local' rule.
-inplace-noinst_PROGRAMS:
+inplace-noinst_PROGRAMS: $(noinst_PROGRAMS)
 	if [ -n "$(noinst_PROGRAMS)" ] ; then \
 	  mkdir -p $(inplacedir); \
 	  for f in $(noinst_PROGRAMS) ; do \
@@ -58,7 +59,7 @@ inplace-noinst_DSYMS: build-noinst_DSYMS
 # This is used by coregrind/Makefile.am and by <tool>/Makefile.am for doing
 # "make install".  It copies $(noinst_PROGRAMS) into $prefix/lib/valgrind/.
 # It needs to be depended on by an 'install-exec-local' rule.
-install-noinst_PROGRAMS:
+install-noinst_PROGRAMS: $(noinst_PROGRAMS)
 	if [ -n "$(noinst_PROGRAMS)" ] ; then \
 	  $(mkinstalldirs) $(DESTDIR)$(pkglibdir); \
 	  for f in $(noinst_PROGRAMS); do \
@@ -90,10 +91,16 @@ clean-noinst_DSYMS:
 
 # Baseline flags for all compilations.  Aim here is to maximise
 # performance and get whatever useful warnings we can out of gcc.
-AM_CFLAGS_BASE = -O2 -g -Wmissing-prototypes -Wall -Wshadow \
-                 -Wpointer-arith -Wstrict-prototypes -Wmissing-declarations \
-		 @FLAG_W_NO_FORMAT_ZERO_LENGTH@ \
-                 -fno-strict-aliasing
+AM_CFLAGS_BASE = \
+	-O2 -g \
+	-Wall \
+	-Wmissing-prototypes \
+	-Wshadow \
+	-Wpointer-arith \
+	-Wstrict-prototypes \
+	-Wmissing-declarations \
+	@FLAG_W_NO_FORMAT_ZERO_LENGTH@ \
+	-fno-strict-aliasing
 
 # These flags are used for building the preload shared objects.
 # The aim is to give reasonable performance but also to have good
@@ -120,20 +127,20 @@ endif
 # automake, but this does not really matter and seems hard to avoid.
 
 AM_CPPFLAGS_@VGCONF_PLATFORM_PRI_CAPS@ = \
- 		-I$(top_srcdir) \
- 		-I$(top_srcdir)/include \
-		-I@VEX_DIR@/pub \
-		-DVGA_@VGCONF_ARCH_PRI@=1 \
-		-DVGO_@VGCONF_OS@=1 \
-		-DVGP_@VGCONF_ARCH_PRI@_@VGCONF_OS@=1
+ 	-I$(top_srcdir) \
+ 	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/VEX/pub \
+	-DVGA_@VGCONF_ARCH_PRI@=1 \
+	-DVGO_@VGCONF_OS@=1 \
+	-DVGP_@VGCONF_ARCH_PRI@_@VGCONF_OS@=1
 if VGCONF_HAVE_PLATFORM_SEC
 AM_CPPFLAGS_@VGCONF_PLATFORM_SEC_CAPS@ = \
- 		-I$(top_srcdir) \
- 		-I$(top_srcdir)/include \
-		-I@VEX_DIR@/pub \
-		-DVGA_@VGCONF_ARCH_SEC@=1 \
-		-DVGO_@VGCONF_OS@=1 \
-		-DVGP_@VGCONF_ARCH_SEC@_@VGCONF_OS@=1
+ 	-I$(top_srcdir) \
+ 	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/VEX/pub \
+	-DVGA_@VGCONF_ARCH_SEC@=1 \
+	-DVGO_@VGCONF_OS@=1 \
+	-DVGP_@VGCONF_ARCH_SEC@_@VGCONF_OS@=1
 endif
 
 AM_FLAG_M3264_X86_LINUX   = @FLAG_M32@

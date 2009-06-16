@@ -20,6 +20,11 @@ AM_CPPFLAGS_@VGCONF_PLATFORM_SEC_CAPS@ += \
 	-DVG_PLATFORM="\"@VGCONF_ARCH_SEC@-@VGCONF_OS@\""
 endif
 
+
+EXTRA_DIST = \
+	m_debuginfo/UNUSED_STABS.txt \
+	m_debuginfo/README.txt
+
 #----------------------------------------------------------------------------
 # The launcher.  Built for the primary target only.
 #----------------------------------------------------------------------------
@@ -349,18 +354,6 @@ endif
 libcoregrind_ppc32_aix5_a_AR = $(AR) -X32 cru
 libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
 
-
-m_syswrap/syswrap-main.c: 		 	     libvex_guest_offsets.h
-m_dispatch/dispatch-@VGCONF_ARCH_PRI@-@VGCONF_OS@.S: libvex_guest_offsets.h
-m_syswrap/syscall-@VGCONF_ARCH_PRI@-@VGCONF_OS@.S:   libvex_guest_offsets.h
-if VGCONF_HAVE_PLATFORM_SEC
-m_dispatch/dispatch-@VGCONF_ARCH_SEC@-@VGCONF_OS@.S: libvex_guest_offsets.h
-m_syswrap/syscall-@VGCONF_ARCH_SEC@-@VGCONF_OS@.S:   libvex_guest_offsets.h
-endif
-
-libvex_guest_offsets.h:
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" pub/libvex_guest_offsets.h
-
 #----------------------------------------------------------------------------
 # libreplacemalloc_toolpreload-<platform>.a
 #----------------------------------------------------------------------------
@@ -426,21 +419,6 @@ endif
 all-local: inplace-noinst_PROGRAMS inplace-noinst_DSYMS
 
 clean-local: clean-noinst_DSYMS
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" clean
 
-LIBVEX  = libvex-@VGCONF_ARCH_PRI@-@VGCONF_OS@.a
-if VGCONF_HAVE_PLATFORM_SEC
-LIBVEX += libvex-@VGCONF_ARCH_SEC@-@VGCONF_OS@.a
-endif
-
-# Nb: The loop installs the libvex library for possible use by standalone
-# tools.
 install-exec-local: install-noinst_PROGRAMS install-noinst_DSYMS
-	for v in $(LIBVEX) ; do \
-	  $(INSTALL_DATA) @VEX_DIR@/$$v $(DESTDIR)$(pkglibdir) ; \
-	done
 
-
-EXTRA_DIST = \
-	m_debuginfo/UNUSED_STABS.txt \
-	m_debuginfo/README.txt
