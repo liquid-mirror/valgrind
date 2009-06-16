@@ -88,13 +88,16 @@ perf: check
 	@PERL@ perf/vg_perf perf
 
 # Nb: no need to include any Makefile.am files here, or files included from
-# them, as automake includes them automatically.
+# them, as automake includes them automatically.  Also not COPYING, README
+# or NEWS.
 EXTRA_DIST = \
 	ACKNOWLEDGEMENTS \
+	COPYING.DOCS \
 	README_DEVELOPERS \
 	README_PACKAGERS \
 	README_MISSING_SYSCALL_OR_IOCTL \
-	valgrind.spec.in valgrind.pc.in \
+	valgrind.pc.in \
+	valgrind.spec.in \
 	vg-in-place
 
 all-local: default.supp
