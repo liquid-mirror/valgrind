@@ -553,6 +553,26 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
          addStmtToIRSB(bb, st);
          break;
 
+      case Ist_CAS:
+         if (instrument)
+         {
+            /* Just treat this as a read of the location.  I believe
+               this is equivalent to the previous logic, which
+               observed bus-lock/unlock Ist_MBEs, and ignored all
+               writes within sections bracketed by bus-lock and
+               bus-unlock annotations. */
+            Int    dataSize;
+            IRCAS* cas = st->Ist.CAS.details;
+            tl_assert(cas->addr != NULL);
+            tl_assert(cas->dataLo != NULL);
+            dataSize = sizeofIRType(typeOfIRExpr(bb->tyenv, cas->dataLo));
+            if (cas->dataHi != NULL)
+               dataSize *= 2; /* since it's a doubleword-CAS */
+            instrument_load(bb, cas->addr, dataSize);
+         }
+         addStmtToIRSB(bb, st);
+         break;
+
       default:
          addStmtToIRSB(bb, st);
          break;

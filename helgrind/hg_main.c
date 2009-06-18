@@ -3670,14 +3670,13 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
          case Ist_CAS: {
             /* Atomic read-modify-write cycle.  Just pretend it's a
                read. */
-            IRCAS* cas = st->Ist.CAS.details;
-            /* FIXME: handle DCAS ! */
-            if (cas->oldHi != IRTemp_INVALID || cas->expdHi || cas->dataHi)
-               goto unhandled;
+            IRCAS* cas    = st->Ist.CAS.details;
+            Bool   isDCAS = cas->dataHi != NULL;
             instrument_mem_access(
                bbOut,
                cas->addr,
-               sizeofIRType(typeOfIRExpr(bbIn->tyenv, cas->dataLo)),
+               (isDCAS ? 2 : 1)
+                  * sizeofIRType(typeOfIRExpr(bbIn->tyenv, cas->dataLo)),
                False/*!isStore*/,
                sizeofIRType(hWordTy)
             );

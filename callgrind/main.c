@@ -466,6 +466,28 @@ void collectStatementInfo(IRTypeEnv* tyenv, IRStmt* st,
       break;
    }
 
+   case Ist_CAS: {
+      /* We treat it as a read and a write of the location.  I think
+         that is the same behaviour as it was before IRCAS was
+         introduced, since prior to that point, the Vex front ends
+         would translate a lock-prefixed instruction into a (normal)
+         read followed by a (normal) write. */
+      IRCAS* cas = st->Ist.CAS.details;
+      CLG_ASSERT(cas->addr && isIRAtom(cas->addr));
+      CLG_ASSERT(cas->dataLo);
+      if (*storeAddrExpr == NULL)
+         *storeAddrExpr = cas->addr;
+      if (*loadAddrExpr == NULL)
+         *loadAddrExpr = cas->addr;
+      if (*dataSize == 0) {
+         CLG_ASSERT(cas->dataLo != NULL);
+         *dataSize = sizeofIRType(typeOfIRExpr(tyenv, cas->dataLo));
+         if (cas->dataHi != NULL)
+            *dataSize *= 2; /* since this is a doubleword-cas */
+      }
+      break;
+   }
+
    case Ist_Put:
    case Ist_PutI:
    case Ist_MBE:
