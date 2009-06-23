@@ -7,40 +7,25 @@ include $(top_srcdir)/Makefile.all.am
 # <tool>-<platform> stuff
 #----------------------------------------------------------------------------
 
-COREGRIND_LIBS_X86_LINUX = \
-	$(top_builddir)/coregrind/libcoregrind-x86-linux.a \
-	$(top_builddir)/VEX/libvex-x86-linux.a
-
-COREGRIND_LIBS_AMD64_LINUX = \
-	$(top_builddir)/coregrind/libcoregrind-amd64-linux.a \
-	$(top_builddir)/VEX/libvex-amd64-linux.a
-
-COREGRIND_LIBS_PPC32_LINUX = \
-	$(top_builddir)/coregrind/libcoregrind-ppc32-linux.a \
-	$(top_builddir)/VEX/libvex-ppc32-linux.a
-
-COREGRIND_LIBS_PPC64_LINUX = \
-	$(top_builddir)/coregrind/libcoregrind-ppc64-linux.a \
-	$(top_builddir)/VEX/libvex-ppc64-linux.a
-
-COREGRIND_LIBS_PPC32_AIX5 = \
-	$(top_builddir)/coregrind/libcoregrind-ppc32-aix5.a \
-	$(top_builddir)/VEX/libvex-ppc32-aix5.a
-
-COREGRIND_LIBS_PPC64_AIX5 = \
-	$(top_builddir)/coregrind/libcoregrind-ppc64-aix5.a \
-	$(top_builddir)/VEX/libvex-ppc64-aix5.a
-
-COREGRIND_LIBS_X86_DARWIN = \
-	$(top_builddir)/coregrind/libcoregrind-x86-darwin.a \
-	$(top_builddir)/VEX/libvex-x86-darwin.a
-
-COREGRIND_LIBS_AMD64_DARWIN = \
-	$(top_builddir)/coregrind/libcoregrind-amd64-darwin.a \
-	$(top_builddir)/VEX/libvex-amd64-darwin.a
+TOOL_DEPENDENCIES_@VGCONF_PLATFORM_PRI_CAPS@ = \
+	$(top_builddir)/coregrind/libcoregrind-@VGCONF_ARCH_PRI@-@VGCONF_OS@.a \
+	$(top_builddir)/VEX/libvex-@VGCONF_ARCH_PRI@-@VGCONF_OS@.a
+if VGCONF_HAVE_PLATFORM_SEC
+TOOL_DEPENDENCIES_@VGCONF_PLATFORM_SEC_CAPS@ = \
+	$(top_builddir)/coregrind/libcoregrind-@VGCONF_ARCH_SEC@-@VGCONF_OS@.a \
+	$(top_builddir)/VEX/libvex-@VGCONF_ARCH_SEC@-@VGCONF_OS@.a
+endif
 
 
 TOOL_LDADD_COMMON = -lgcc
+TOOL_LDADD_@VGCONF_PLATFORM_PRI_CAPS@ = \
+	$(TOOL_DEPENDENCIES_@VGCONF_PLATFORM_PRI_CAPS@) $(TOOL_LDADD_COMMON)
+if VGCONF_HAVE_PLATFORM_SEC
+TOOL_LDADD_@VGCONF_PLATFORM_SEC_CAPS@ = \
+	$(TOOL_DEPENDENCIES_@VGCONF_PLATFORM_SEC_CAPS@) $(TOOL_LDADD_COMMON)
+endif
+
+
 TOOL_LDFLAGS_COMMON_LINUX = -static \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
 	-nodefaultlibs -nostartfiles -u _start
@@ -48,35 +33,28 @@ TOOL_LDFLAGS_COMMON_AIX5 = -static -Wl,-e_start_valgrind
 TOOL_LDFLAGS_COMMON_DARWIN = -nodefaultlibs -nostartfiles \
 	-Wl,-u,__start -Wl,-e,__start -Wl,-bind_at_load /usr/lib/dyld
 
-TOOL_LDADD_X86_LINUX = $(COREGRIND_LIBS_X86_LINUX) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_X86_LINUX = \
 	$(TOOL_LDFLAGS_COMMON_LINUX) @FLAG_M32@ \
 	-Wl,-T,$(top_builddir)/valt_load_address_x86_linux.lds
 
-TOOL_LDADD_AMD64_LINUX = $(COREGRIND_LIBS_AMD64_LINUX) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_AMD64_LINUX = \
 	$(TOOL_LDFLAGS_COMMON_LINUX) @FLAG_M64@ \
 	-Wl,-T,$(top_builddir)/valt_load_address_amd64_linux.lds
 
-TOOL_LDADD_PPC32_LINUX = $(COREGRIND_LIBS_PPC32_LINUX) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_PPC32_LINUX = \
 	$(TOOL_LDFLAGS_COMMON_LINUX) @FLAG_M32@ \
 	-Wl,-T,$(top_builddir)/valt_load_address_ppc32_linux.lds
 
-TOOL_LDADD_PPC64_LINUX = $(COREGRIND_LIBS_PPC64_LINUX) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_PPC64_LINUX = \
 	$(TOOL_LDFLAGS_COMMON_LINUX) @FLAG_M64@ \
 	-Wl,-T,$(top_builddir)/valt_load_address_ppc64_linux.lds
 
-TOOL_LDADD_PPC32_AIX5 = $(COREGRIND_LIBS_PPC32_AIX5) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_PPC32_AIX5 = \
 	$(TOOL_LDFLAGS_COMMON_AIX5) @FLAG_MAIX32@
 
-TOOL_LDADD_PPC64_AIX5 = $(COREGRIND_LIBS_PPC64_AIX5) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_PPC64_AIX5 = \
 	$(TOOL_LDFLAGS_COMMON_AIX5) @FLAG_MAIX64@ -Wl,-bbigtoc
 
-TOOL_LDADD_X86_DARWIN = $(COREGRIND_LIBS_X86_DARWIN) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_X86_DARWIN = \
 	$(TOOL_LDFLAGS_COMMON_DARWIN) -arch i386 \
 	-Wl,-seg1addr,0xf0080000 \
@@ -85,7 +63,6 @@ TOOL_LDFLAGS_X86_DARWIN = \
 
 # pagezero can't be unmapped and remapped. Use stack instead.
 # GrP fixme no stack guard
-TOOL_LDADD_AMD64_DARWIN = $(COREGRIND_LIBS_AMD64_DARWIN) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_AMD64_DARWIN = \
 	$(TOOL_LDFLAGS_COMMON_DARWIN) -arch x86_64 \
 	-Wl,-seg1addr,0x7fff55000000 \
@@ -171,6 +148,7 @@ $(top_builddir)/valt_load_address_ppc64_linux.lds: Makefile
 		-e '/^=====\+$$/,/.\*/d' \
 		-e '/\. = \(0x[0-9A-Fa-f]\+\|SEGMENT_START("[^"]\+", 0x[0-9A-Fa-f]\+)\) + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
 	|| rm -f $@
+
 #----------------------------------------------------------------------------
 # vgpreload_<tool>-<platform>.a stuff
 #----------------------------------------------------------------------------
