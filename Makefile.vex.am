@@ -18,6 +18,7 @@ pkginclude_HEADERS = \
 	pub/libvex.h \
 	pub/libvex_basictypes.h \
 	pub/libvex_emwarn.h \
+	pub/libvex_guest_offsets.h \
 	pub/libvex_guest_x86.h \
 	pub/libvex_guest_amd64.h \
 	pub/libvex_guest_ppc32.h \
@@ -45,7 +46,7 @@ noinst_HEADERS = \
 	priv/host-arm/hdefs.h
 
 BUILT_SOURCES = pub/libvex_guest_offsets.h
-CLEANFILES = $(BUILT_SOURCES)
+CLEANFILES    = pub/libvex_guest_offsets.h
 
 # This is very uggerly.  Need to sed out both "xyzzyN" and
 # "xyzzy$N" since gcc on different targets emits the constants
@@ -148,7 +149,7 @@ LIBVEX_SOURCES_COMMON = \
 	priv/host-arm/isel-arm.c
 
 # XXX: temporary
-BUILT_SOURCES += \
+TMP_FILES = \
 	priv/guest-x86/ghelpers-x86.c \
 	priv/guest-amd64/ghelpers-amd64.c \
 	priv/guest-ppc/ghelpers-ppc.c \
@@ -168,6 +169,9 @@ BUILT_SOURCES += \
 	priv/host-amd64/isel-amd64.c \
 	priv/host-ppc/isel-ppc.c \
 	priv/host-arm/isel-arm.c
+
+BUILT_SOURCES += $(TMP_FILES)
+CLEANFILES    += $(TMP_FILES)
 
 # XXX: temporary
 EXTRA_DIST += \
