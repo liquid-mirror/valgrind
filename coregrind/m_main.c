@@ -1194,6 +1194,10 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    VG_(debugLog)(1, "main", "Welcome to Valgrind version " 
                             VERSION " debug logging\n");
 
+   VG_(debugLog)(0, "main",
+      "The BUILD_TWEAKS branch has been merged. Please don't use it.\n");
+   VG_(exit)(1);
+
    //--------------------------------------------------------------
    // AIX5 only: register the system call numbers
    //   p: logging
