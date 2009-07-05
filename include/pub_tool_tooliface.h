@@ -396,9 +396,19 @@ extern void VG_(needs_client_requests) (
 /* Tool does stuff before and/or after system calls? */
 // Nb: If either of the pre_ functions malloc() something to return, the
 // corresponding post_ function had better free() it!
+// Also, the args are the 'original args' -- that is, it may be
+// that the syscall pre-wrapper will modify the args before the
+// syscall happens.  So these args are the original, un-modified
+// args.  Finally, nArgs merely indicates the length of args[..],
+// it does not indicate how many of those values are actually
+// relevant to the syscall.  args[0 .. nArgs-1] is guaranteed
+// to be defined and to contain all the args for this syscall,
+// possibly including some trailing zeroes.
 extern void VG_(needs_syscall_wrapper) (
-   void (* pre_syscall)(ThreadId tid, UInt syscallno),
-   void (*post_syscall)(ThreadId tid, UInt syscallno, SysRes res)
+               void (* pre_syscall)(ThreadId tid, UInt syscallno,
+                                    UWord* args, UInt nArgs),
+               void (*post_syscall)(ThreadId tid, UInt syscallno,
+                                    UWord* args, UInt nArgs, SysRes res)
 );
 
 /* Are tool-state sanity checks performed? */
@@ -449,8 +459,14 @@ extern void VG_(needs_final_IR_tidy_pass) ( IRSB*(*final_tidy)(IRSB*) );
    what kind of error message should be emitted. */
 typedef
    enum { Vg_CoreStartup=1, Vg_CoreSignal, Vg_CoreSysCall,
-          Vg_CoreTranslate, Vg_CoreClientReq }
-   CorePart;
+          // This is for platforms where syscall args are passed on the
+          // stack; although pre_mem_read is the callback that will be
+          // called, such an arg should be treated (with respect to
+          // presenting information to the user) as if it was passed in a
+          // register, ie. like pre_reg_read.
+          Vg_CoreSysCallArgInMem,  
+          Vg_CoreTranslate, Vg_CoreClientReq
+   } CorePart;
 
 /* Events happening in core to track.  To be notified, pass a callback
    function to the appropriate function.  To ignore an event, don't do

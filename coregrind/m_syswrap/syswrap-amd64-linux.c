@@ -28,6 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#if defined(VGP_amd64_linux)
+
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
 #include "pub_core_vkiscnums.h"
@@ -298,7 +300,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
-   if (res.isError) {
+   if (sr_isError(res)) {
       /* clone failed */
       VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
@@ -912,7 +914,7 @@ PRE(wrap_sys_shmat)
    if (arg2tmp == 0)
       SET_STATUS_Failure( VKI_EINVAL );
    else
-      ARG2 = arg2tmp;
+      ARG2 = arg2tmp;  // used in POST
 }
 POST(wrap_sys_shmat)
 {
@@ -1041,8 +1043,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    PLAX_(__NR_rt_sigreturn,      sys_rt_sigreturn),   // 15 
    LINXY(__NR_ioctl,             sys_ioctl),          // 16 
-   GENXY(__NR_pread64,           sys_pread64_on64bitplat),  // 17 
-   GENX_(__NR_pwrite64,          sys_pwrite64_on64bitplat), // 18 
+   GENXY(__NR_pread64,           sys_pread64),        // 17 
+   GENX_(__NR_pwrite64,          sys_pwrite64),       // 18 
    GENXY(__NR_readv,             sys_readv),          // 19 
 
    GENX_(__NR_writev,            sys_writev),         // 20 
@@ -1053,7 +1055,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    GENX_(__NR_mremap,            sys_mremap),         // 25 
    GENX_(__NR_msync,             sys_msync),          // 26 
-   //   (__NR_mincore,           sys_mincore),        // 27 
+   GENX_(__NR_mincore,           sys_mincore),        // 27 
    GENX_(__NR_madvise,           sys_madvise),        // 28 
    PLAX_(__NR_shmget,            sys_shmget),         // 29 
 
@@ -1378,6 +1380,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
 const UInt ML_(syscall_table_size) = 
             sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
+
+#endif // defined(VGP_amd64_linux)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

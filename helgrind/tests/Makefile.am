@@ -1,9 +1,9 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-noinst_SCRIPTS = filter_stderr
+dist_noinst_SCRIPTS = filter_stderr
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	bar_bad.vgtest bar_bad.stdout.exp bar_bad.stderr.exp \
 	bar_trivial.vgtest bar_trivial.stdout.exp bar_trivial.stderr.exp \
 	hg01_all_ok.vgtest hg01_all_ok.stdout.exp hg01_all_ok.stderr.exp \
@@ -93,14 +93,22 @@ check_PROGRAMS = \
 	tc17_sembar \
 	tc18_semabuse \
 	tc19_shadowmem \
-	tc20_verifywrap \
 	tc21_pthonce \
-	tc22_exit_w_lock \
 	tc23_bogus_condwait \
 	tc24_nonzero_sem
 
+# DDD: it seg faults, and then the Valgrind exit path hangs
+if ! VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
+   check_PROGRAMS += \
+	tc22_exit_w_lock
+endif
+
 if HAVE_PTHREAD_BARRIER
 check_PROGRAMS += bar_bad bar_trivial
+endif
+
+if HAVE_PTHREAD_MUTEX_TIMEDLOCK
+check_PROGRAMS += tc20_verifywrap
 endif
 
 AM_CFLAGS   += $(AM_FLAG_M3264_PRI)

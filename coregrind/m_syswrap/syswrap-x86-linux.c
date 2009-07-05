@@ -28,6 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#if defined(VGP_x86_linux)
+
 /* TODO/FIXME jrs 20050207: assignments to the syscall return result
    in interrupted_syscall() need to be reviewed.  They don't seem
    to assign the shadow state.
@@ -300,7 +302,7 @@ static SysRes do_clone ( ThreadId ptid,
 		     ptst->arch.vex.guest_ESP,
 		     ctst->arch.vex.guest_FS, ctst->arch.vex.guest_GS);
       res = sys_set_thread_area(ctid, tlsinfo);
-      if (res.isError)
+      if (sr_isError(res))
 	 goto out;
    }
 
@@ -319,7 +321,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
-   if (res.isError) {
+   if (sr_isError(res)) {
       /* clone failed */
       VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
@@ -648,8 +650,11 @@ static SysRes sys_set_thread_area ( ThreadId tid, vki_modify_ldt_t* info )
    idx = info->entry_number;
 
    if (idx == -1) {
-      /* Find and use the first free entry. */
-      for (idx = 0; idx < VEX_GUEST_X86_GDT_NENT; idx++) {
+      /* Find and use the first free entry.  Don't allocate entry
+         zero, because the hardware will never do that, and apparently
+         doing so confuses some code (perhaps stuff running on
+         Wine). */
+      for (idx = 1; idx < VEX_GUEST_X86_GDT_NENT; idx++) {
          if (gdt[idx].LdtEnt.Words.word1 == 0 
              && gdt[idx].LdtEnt.Words.word2 == 0)
             break;
@@ -657,7 +662,8 @@ static SysRes sys_set_thread_area ( ThreadId tid, vki_modify_ldt_t* info )
 
       if (idx == VEX_GUEST_X86_GDT_NENT)
          return VG_(mk_SysRes_Error)( VKI_ESRCH );
-   } else if (idx < 0 || idx >= VEX_GUEST_X86_GDT_NENT) {
+   } else if (idx < 0 || idx == 0 || idx >= VEX_GUEST_X86_GDT_NENT) {
+      /* Similarly, reject attempts to use GDT[0]. */
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
@@ -1681,8 +1687,8 @@ void convert_sigset_to_rt(const vki_old_sigset_t *oldset, vki_sigset_t *set)
 }
 PRE(sys_sigaction)
 {
-   struct vki_sigaction new, old;
-   struct vki_sigaction *newp, *oldp;
+   vki_sigaction_toK_t   new, *newp;
+   vki_sigaction_fromK_t old, *oldp;
 
    PRINT("sys_sigaction ( %ld, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(int, "sigaction",
@@ -1712,9 +1718,8 @@ PRE(sys_sigaction)
 
    if (ARG2 != 0) {
       struct vki_old_sigaction *oldnew = (struct vki_old_sigaction *)ARG2;
-
       new.ksa_handler = oldnew->ksa_handler;
-      new.sa_flags = oldnew->sa_flags;
+      new.sa_flags    = oldnew->sa_flags;
       new.sa_restorer = oldnew->sa_restorer;
       convert_sigset_to_rt(&oldnew->sa_mask, &new.sa_mask);
       newp = &new;
@@ -1724,9 +1729,8 @@ PRE(sys_sigaction)
 
    if (ARG3 != 0 && SUCCESS && RES == 0) {
       struct vki_old_sigaction *oldold = (struct vki_old_sigaction *)ARG3;
-
       oldold->ksa_handler = oldp->ksa_handler;
-      oldold->sa_flags = oldp->sa_flags;
+      oldold->sa_flags    = oldp->sa_flags;
       oldold->sa_restorer = oldp->sa_restorer;
       oldold->sa_mask = oldp->sa_mask.sig[0];
    }
@@ -2058,8 +2062,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),// 178
    LINX_(__NR_rt_sigsuspend,     sys_rt_sigsuspend),  // 179
 
-   GENXY(__NR_pread64,           sys_pread64_on32bitplat),  // 180
-   GENX_(__NR_pwrite64,          sys_pwrite64_on32bitplat), // 181
+   GENXY(__NR_pread64,           sys_pread64),        // 180
+   GENX_(__NR_pwrite64,          sys_pwrite64),       // 181
    LINX_(__NR_chown,             sys_chown16),        // 182
    GENXY(__NR_getcwd,            sys_getcwd),         // 183
    LINXY(__NR_capget,            sys_capget),         // 184
@@ -2246,6 +2250,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
 const UInt ML_(syscall_table_size) = 
             sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
+
+#endif // defined(VGP_x86_linux)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

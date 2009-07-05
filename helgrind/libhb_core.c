@@ -2393,7 +2393,7 @@ static POrd VtsID__getOrdering_WRK ( VtsID vi1, VtsID vi2 ) {
    return ord;
 }
 static inline POrd VtsID__getOrdering ( VtsID vi1, VtsID vi2 ) {
-   return vi1 == vi2  ? POrd_EQ  : VtsID__getOrdering_WRK(vi1, vi2);
+   return LIKELY(vi1 == vi2)  ? POrd_EQ  : VtsID__getOrdering_WRK(vi1, vi2);
 }
 
 /* compute binary join */
@@ -2424,7 +2424,7 @@ static VtsID VtsID__join2_WRK ( VtsID vi1, VtsID vi2 ) {
    return res;
 }
 static inline VtsID VtsID__join2 ( VtsID vi1, VtsID vi2 ) {
-   return vi1 == vi2  ? vi1  : VtsID__join2_WRK(vi1, vi2);
+   return LIKELY(vi1 == vi2)  ? vi1  : VtsID__join2_WRK(vi1, vi2);
 }
 
 /* create a singleton VTS, namely [thr:1] */
@@ -3653,7 +3653,7 @@ static inline SVal msm_read ( SVal svOld,
       tl_assert(is_sane_SVal_C(svOld));
    }
 
-   if (SVal__isC(svOld)) {
+   if (LIKELY(SVal__isC(svOld))) {
       POrd  ord;
       VtsID tviR  = acc_thr->viR;
       VtsID tviW  = acc_thr->viW;
@@ -3661,7 +3661,7 @@ static inline SVal msm_read ( SVal svOld,
       VtsID wmini = SVal__unC_Wmin(svOld);
 
       ord = VtsID__getOrdering(rmini,tviR);
-      if (ord == POrd_EQ || ord == POrd_LT) {
+      if (LIKELY(ord == POrd_EQ || ord == POrd_LT)) {
          /* no race */
          /* Note: RWLOCK subtlety: use tviW, not tviR */
          svNew = SVal__mkC( rmini, VtsID__join2(wmini, tviW) );
@@ -3670,18 +3670,21 @@ static inline SVal msm_read ( SVal svOld,
          /* assert on sanity of constraints. */
          POrd  ordxx = VtsID__getOrdering(rmini,wmini);
          tl_assert(ordxx == POrd_EQ || ordxx == POrd_LT);
-         svNew = MSM_RACE2ERR
-                    ? SVal__mkE()
-                    /* see comments on corresponding fragment in
-                       msm_write for explanation. */
-                    /* aggressive setting: */
-                    /* 
-                    : SVal__mkC( VtsID__join2(wmini,tviR),
-                                 VtsID__join2(wmini,tviW) );
-                    */
-                    /* "consistent" setting: */ 
-                    : SVal__mkC( VtsID__join2(rmini,tviR),
-                                 VtsID__join2(wmini,tviW) );
+         /* Compute svNew following the race.  This isn't so
+            simple. */
+         /* see comments on corresponding fragment in
+            msm_write for explanation. */
+         if (MSM_RACE2ERR) {
+            /* XXX UNUSED; this should be deleted */
+            tl_assert(0);
+            svNew = SVal__mkE();
+         } else {
+            VtsID r_joined = VtsID__join2(rmini,tviR);
+            VtsID w_joined = VtsID__join2(wmini,tviW);
+            /* ensure that r_joined <= w_joined */
+            w_joined = VtsID__join2( w_joined, r_joined );
+            svNew = SVal__mkC( r_joined, w_joined );
+         }
          record_race_info( acc_thr, acc_addr, szB, False/*!isWrite*/ );
          goto out;
       }
@@ -3705,9 +3708,10 @@ static inline SVal msm_read ( SVal svOld,
    if (CHECK_MSM) {
       tl_assert(is_sane_SVal_C(svNew));
    }
-   tl_assert(svNew != SVal_INVALID);
-   if (svNew != svOld && HG_(clo_show_conflicts)) {
-      if (SVal__isC(svOld) && SVal__isC(svNew)) {
+   if (UNLIKELY(svNew != svOld)) {
+      tl_assert(svNew != SVal_INVALID);
+      if (HG_(clo_show_conflicts)
+          && SVal__isC(svOld) && SVal__isC(svNew)) {
          event_map_bind( acc_addr, szB, False/*!isWrite*/, acc_thr );
          stats__msm_read_change++;
       }
@@ -3731,13 +3735,13 @@ static inline SVal msm_write ( SVal svOld,
       tl_assert(is_sane_SVal_C(svOld));
    }
 
-   if (SVal__isC(svOld)) {
+   if (LIKELY(SVal__isC(svOld))) {
       POrd  ord;
       VtsID tviW  = acc_thr->viW;
       VtsID wmini = SVal__unC_Wmin(svOld);
 
       ord = VtsID__getOrdering(wmini,tviW);
-      if (ord == POrd_EQ || ord == POrd_LT) {
+      if (LIKELY(ord == POrd_EQ || ord == POrd_LT)) {
          /* no race */
          svNew = SVal__mkC( tviW, tviW );
          goto out;
@@ -3747,22 +3751,40 @@ static inline SVal msm_write ( SVal svOld,
          /* assert on sanity of constraints. */
          POrd  ordxx = VtsID__getOrdering(rmini,wmini);
          tl_assert(ordxx == POrd_EQ || ordxx == POrd_LT);
-         svNew = MSM_RACE2ERR
-                    ? SVal__mkE()
-                    /* One possibility is, after a race is seen, to
-                       set the location's constraints as aggressively
-                       (as far ahead) as possible.  However, that just
-                       causes lots more races to be reported, which is
-                       very confusing.  Hence don't do this. */
-                    /*
-                    : SVal__mkC( VtsID__join2(wmini,tviR),
-                                 VtsID__join2(wmini,tviW) );
-                    */
-                    /* instead, re-set the constraints in a way which
-                       is consistent with (ie, as they would have been
-                       computed anyway) had no race been detected. */
-                    : SVal__mkC( VtsID__join2(rmini,tviR),
-                                 VtsID__join2(wmini,tviW) );
+         /* Compute svNew following the race.  This isn't so
+            simple. */
+         if (MSM_RACE2ERR) {
+            /* XXX UNUSED; this should be deleted */
+            tl_assert(0);
+            svNew = SVal__mkE();
+            /* One possibility is, after a race is seen, to
+               set the location's constraints as aggressively
+               (as far ahead) as possible.  However, that just
+               causes lots more races to be reported, which is
+               very confusing.  Hence don't do this. */
+            /*
+                  = SVal__mkC( VtsID__join2(wmini,tviR),
+                               VtsID__join2(wmini,tviW) );
+            */
+         } else {
+            /* instead, re-set the constraints in a way which is
+               consistent with (ie, as they would have been computed
+               anyway) the case where no race was detected. */
+            VtsID r_joined = VtsID__join2(rmini,tviR);
+            VtsID w_joined = VtsID__join2(wmini,tviW);
+            /* Because of the race, the "normal" ordering constraint
+               wmini(constraint) <= tviW(actual access) no longer
+               holds.  Hence it can be that the required constraint
+               (on SVal_Cs) r_joined <= w_joined does not hold either.
+               To fix this and guarantee we're not generating invalid
+               SVal_Cs, do w_joined = w_joined `join` r_joined, so as
+               to force r_joined <= w_joined in the arguments to
+               SVal__mkC.  I think this is only important when we're
+               dealing with reader-writer locks.
+            */
+            w_joined = VtsID__join2( w_joined, r_joined );
+            svNew = SVal__mkC( r_joined, w_joined );
+         }
          record_race_info( acc_thr, acc_addr, szB, True/*isWrite*/ );
          goto out;
       }
@@ -3786,9 +3808,10 @@ static inline SVal msm_write ( SVal svOld,
    if (CHECK_MSM) {
       tl_assert(is_sane_SVal_C(svNew));
    }
-   tl_assert(svNew != SVal_INVALID);
-   if (svNew != svOld && HG_(clo_show_conflicts)) {
-      if (SVal__isC(svOld) && SVal__isC(svNew)) {
+   if (UNLIKELY(svNew != svOld)) {
+      tl_assert(svNew != SVal_INVALID);
+      if (HG_(clo_show_conflicts)
+          && SVal__isC(svOld) && SVal__isC(svNew)) {
          event_map_bind( acc_addr, szB, True/*isWrite*/, acc_thr );
          stats__msm_write_change++;
       }
@@ -3824,7 +3847,8 @@ void zsm_apply8___msm_read ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_read( svOld, thr,a,1 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
 }
 
@@ -3847,7 +3871,8 @@ void zsm_apply8___msm_write ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_write( svOld, thr,a,1 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
 }
 
@@ -3877,7 +3902,8 @@ void zsm_apply16___msm_read ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_read( svOld, thr,a,2 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3910,7 +3936,8 @@ void zsm_apply16___msm_write ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_write( svOld, thr,a,2 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3944,7 +3971,8 @@ void zsm_apply32___msm_read ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_read( svOld, thr,a,4 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3976,7 +4004,8 @@ void zsm_apply32___msm_write ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_write( svOld, thr,a,4 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4005,7 +4034,8 @@ void zsm_apply64___msm_read ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_read( svOld, thr,a,8 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4032,7 +4062,8 @@ void zsm_apply64___msm_write ( Thr* thr, Addr a ) {
    }
    svOld = cl->svals[cloff];
    svNew = msm_write( svOld, thr,a,8 );
-   tl_assert(svNew != SVal_INVALID);
+   if (CHECK_ZSM)
+      tl_assert(svNew != SVal_INVALID);
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */

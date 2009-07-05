@@ -32,16 +32,13 @@
 #include "pub_core_vki.h"
 
 #include "pub_core_libcbase.h"
-#include "pub_core_libcassert.h"  // VG_(exit), vg_assert
+#include "pub_core_libcassert.h"    // VG_(exit), vg_assert
 #include "pub_core_libcfile.h"      // VG_(close) et al
 #include "pub_core_libcprint.h"
 #include "pub_core_mallocfree.h"    // VG_(strdup)
 #include "pub_core_ume.h"           // self
 
-#include "priv_ume.h"               // self
-
-
-#if defined(HAVE_SCRIPT)
+#include "priv_ume.h"
 
 Bool VG_(match_script)(Char *hdr, Int len)
 {
@@ -90,11 +87,11 @@ Int VG_(load_script)(Int fd, const HChar* name, ExeInfo* info)
 
    // Read the first part of the file.
    res = VG_(pread)(fd, hdr, len, 0);
-   if (res.isError) {
+   if (sr_isError(res)) {
       VG_(close)(fd);
       return VKI_EACCES;
    } else {
-      len = res.res;
+      len = sr_Res(res);
    }
 
    vg_assert('#' == hdr[0] && '!' == hdr[1]);
@@ -142,8 +139,6 @@ Int VG_(load_script)(Int fd, const HChar* name, ExeInfo* info)
 
    return VG_(do_exec_inner)(interp, info);
 }
-
-#endif /* defined(HAVE_SCRIPT) */
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

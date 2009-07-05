@@ -112,7 +112,15 @@ typedef  Word                 PtrdiffT;   // 32             64
 // - off_t is "used for file sizes".
 // At one point we were using it for memory offsets, but PtrdiffT should be
 // used in those cases.
+// Nb: on Linux and AIX, off_t is a signed word-sized int.  On Darwin it's
+// always a signed 64-bit int.  So we defined our own Off64T as well.
+#if defined(VGO_linux) || defined(VGO_aix5)
 typedef Word                   OffT;      // 32             64
+#elif defined(VGO_darwin)
+typedef Long                   OffT;      // 64             64
+#else
+#  error Unknown OS
+#endif
 typedef Long                 Off64T;      // 64             64
 
 #if !defined(NULL)
@@ -135,32 +143,139 @@ typedef UInt ThreadId;
 
 /* An abstraction of syscall return values.
    Linux:
-      When .isError == False, 
-         res holds the return value, and err is zero.
-      When .isError == True,  
-         err holds the error code, and res is zero.
+      When _isError == False, 
+         _val holds the return value.
+      When _isError == True,  
+         _err holds the error code.
 
    AIX:
-      res is the POSIX result of the syscall.
-      err is the corresponding errno value.
-      isError === err==0
+      _res is the POSIX result of the syscall.
+      _err is the corresponding errno value.
+      _isError === _err==0
 
-      Unlike on Linux, it is possible for 'err' to be nonzero (thus an
-      error has occurred), nevertheless 'res' is also nonzero.  AIX
-      userspace does not appear to consistently inspect 'err' to
+      Unlike on Linux, it is possible for _err to be nonzero (thus an
+      error has occurred), nevertheless _res is also nonzero.  AIX
+      userspace does not appear to consistently inspect _err to
       determine whether or not an error has occurred.  For example,
-      sys_open() will return -1 for 'val' if a file cannot be opened,
-      as well as the relevant errno value in 'err', but AIX userspace
-      then consults 'val' to figure out if the syscall failed, rather
-      than looking at 'err'.  Hence we need to represent them both.
+      sys_open() will return -1 for _val if a file cannot be opened,
+      as well as the relevant errno value in _err, but AIX userspace
+      then consults _val to figure out if the syscall failed, rather
+      than looking at _err.  Hence we need to represent them both.
+
+   Darwin:
+      Interpretation depends on _mode:
+      MACH, MDEP:
+         these can never 'fail' (apparently).  The result of the
+         syscall is a single host word, _wLO.
+      UNIX:
+         Can record a double-word error or a double-word result:
+         When _mode is SysRes_UNIX_OK,  _wHI:_wLO holds the result.
+         When _mode is SysRes_UNIX_ERR, _wHI:_wLO holds the error code.
+         Probably the high word of an error is always ignored by
+         userspace, but we have to record it, so that we can correctly
+         update both {R,E}DX and {R,E}AX (in guest state) given a SysRes,
+         if we're required to.
 */
+#if defined(VGO_linux)
 typedef
    struct {
-      UWord res;
-      UWord err;
-      Bool  isError;
+      UWord _val;
+      Bool  _isError;
    }
    SysRes;
+#elif defined(VGO_aix5)
+typedef
+   struct {
+      UWord _res;
+      UWord _err;
+      Bool  _isError;
+   }
+   SysRes;
+#elif defined(VGO_darwin)
+typedef
+   struct {
+      UWord _wLO;
+      UWord _wHI;
+      enum { 
+         SysRes_MACH=40,  // MACH, result is _wLO
+         SysRes_MDEP,     // MDEP, result is _wLO
+         SysRes_UNIX_OK,  // UNIX, success, result is _wHI:_wLO
+         SysRes_UNIX_ERR  // UNIX, error,   error  is _wHI:_wLO
+      } _mode;
+   }
+   SysRes;
+#else
+#  error "Unknown OS"
+#endif
+
+
+/* ---- And now some basic accessor functions for it. ---- */
+
+#if defined(VGO_linux)
+
+static inline Bool sr_isError ( SysRes sr ) {
+   return sr._isError;
+}
+static inline UWord sr_Res ( SysRes sr ) {
+   return sr._isError ? 0 : sr._val;
+}
+static inline UWord sr_ResHI ( SysRes sr ) {
+   return 0;
+}
+static inline UWord sr_Err ( SysRes sr ) {
+   return sr._isError ? sr._val : 0;
+}
+static inline Bool sr_EQ ( SysRes sr1, SysRes sr2 ) {
+   return sr1._val == sr2._val 
+          && ((sr1._isError && sr2._isError) 
+              || (!sr1._isError && !sr2._isError));
+}
+
+#elif defined(VGO_aix5)
+#  error "need to define SysRes accessors on AIX5 (copy from 3.4.1 sources)"
+
+
+#elif defined(VGO_darwin)
+
+static inline Bool sr_isError ( SysRes sr ) {
+   switch (sr._mode) {
+      case SysRes_UNIX_ERR: return True;
+      default:              return False;
+      /* should check tags properly and assert here, but we can't here */
+   }
+}
+
+static inline UWord sr_Res ( SysRes sr ) {
+   switch (sr._mode) {
+      case SysRes_MACH:
+      case SysRes_MDEP:
+      case SysRes_UNIX_OK: return sr._wLO;
+      default: return 0; /* should assert, but we can't here */
+   }
+}
+
+static inline UWord sr_ResHI ( SysRes sr ) {
+   switch (sr._mode) {
+      case SysRes_UNIX_OK: return sr._wHI;
+      default: return 0; /* should assert, but we can't here */
+   }
+}
+
+static inline UWord sr_Err ( SysRes sr ) {
+   switch (sr._mode) {
+      case SysRes_UNIX_ERR: return sr._wLO;
+      default: return 0; /* should assert, but we can't here */
+   }
+}
+
+static inline Bool sr_EQ ( SysRes sr1, SysRes sr2 ) {
+   return sr1._mode == sr2._mode
+          && sr1._wLO == sr2._wLO && sr1._wHI == sr2._wHI;
+}
+
+#else
+#  error "Unknown OS"
+#endif
 
 
 /* ---------------------------------------------------------------------
@@ -179,6 +294,8 @@ typedef
 #  define VG_LITTLEENDIAN 1
 #elif defined(VGA_ppc32) || defined(VGA_ppc64)
 #  define VG_BIGENDIAN 1
+#else
+#  error Unknown arch
 #endif
 
 /* Regparmness */

@@ -21,21 +21,24 @@ endif
 if VGCONF_OS_IS_LINUX
 SUBDIRS += linux
 endif
+if VGCONF_OS_IS_DARWIN
+SUBDIRS += darwin
+endif
 
 # Platform-specific tests
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 SUBDIRS += x86-linux
 endif
 
-DIST_SUBDIRS = x86 amd64 ppc32 ppc64 linux x86-linux .
+DIST_SUBDIRS = x86 amd64 ppc32 ppc64 linux darwin x86-linux .
 
-noinst_SCRIPTS = \
+dist_noinst_SCRIPTS = \
 	filter_cmdline0 filter_linenos \
 	filter_fdleak filter_none_discards filter_stderr
 
 noinst_HEADERS = fdleak.h
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	ansi.stderr.exp ansi.vgtest \
 	args.stderr.exp args.stdout.exp args.vgtest \
 	async-sigs.stderr.exp async-sigs.vgtest \
@@ -103,7 +106,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	selfrun.stderr.exp selfrun.stdout.exp selfrun.vgtest \
 	sem.stderr.exp sem.stdout.exp sem.vgtest \
 	semlimit.stderr.exp semlimit.stdout.exp semlimit.vgtest \
-	shell shell.vgtest shell.stderr.exp shell.stdout.exp \
+	shell shell.vgtest shell.stderr.exp shell.stderr.exp-dash \
+	    shell.stdout.exp \
 	shell_badinterp shell_badinterp.vgtest shell_badinterp.stderr.exp \
 	shell_binaryfile shell_binaryfile.vgtest shell_binaryfile.stderr.exp \
 	shell_dir.vgtest shell_dir.stderr.exp \
@@ -113,6 +117,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	shell_valid2 shell_valid2.vgtest shell_valid2.stderr.exp \
 	shell_valid3 shell_valid3.vgtest shell_valid3.stderr.exp \
 	shell_zerolength shell_zerolength.vgtest shell_zerolength.stderr.exp \
+	    shell_zerolength.stderr.exp-dash \
 	sha1_test.stderr.exp sha1_test.vgtest \
 	shortpush.stderr.exp shortpush.vgtest \
 	shorts.stderr.exp shorts.vgtest \
@@ -138,7 +143,7 @@ check_PROGRAMS = \
 	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 \
 	fdleak_fcntl fdleak_ipv4 fdleak_open fdleak_pipe \
 	fdleak_socketpair \
-	floored fork fucomip manythreads \
+	floored fork fucomip \
 	munmap_exe map_unaligned map_unmap mq \
 	nestedfns \
 	pending \
@@ -149,9 +154,26 @@ check_PROGRAMS = \
 	rlimit_nofile selfrun sem semlimit sha1_test \
 	shortpush shorts stackgrowth sigstackgrowth \
 	syscall-restart1 syscall-restart2 system \
-	thread-exits threaded-fork threadederrno \
+	threaded-fork threadederrno \
 	tls tls.so tls2.so vgprintf \
 	coolo_sigaction gxx304
+
+# DDD:
+# - manythreads and thread-exits have lots of this:
+# --61831:0:aspacem  sync_check_mapping_callback: segment mismatch:
+#                    kernel's seg:
+# --61831:0:aspacem  start=0x102538000 end=0x1025b7fff prot=3 dev=0 ino=0 
+#                    offset=0 name="(none)"
+# --61831:0:aspacem  sync_check_mapping_callback: segment mismatch: V's seg:
+# --61831:0:aspacem  NSegment{    , start=0x10067a000, end=0x109a1efff,
+#                    smode=SmFixed, dev=0, ino=0, offset=0, fnIdx=-1, hasR=0,
+#                    hasW=0, hasX=0, hasT=0, mark=0, name="(none)"}
+if ! VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
+   check_PROGRAMS += \
+	manythreads \
+	thread-exits
+endif
+
 
 AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
 AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
@@ -160,7 +182,12 @@ AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 ansi_CFLAGS		= $(AM_CFLAGS) -ansi
 floored_LDADD 		= -lm
 manythreads_LDADD	= -lpthread
-mq_LDADD		= -lrt
+if VGCONF_OS_IS_DARWIN
+ nestedfns_CFLAGS	= $(AM_CFLAGS) -fnested-functions
+else
+ nestedfns_CFLAGS	= $(AM_CFLAGS)
+ mq_LDADD		= -lrt
+endif
 pth_atfork1_LDADD	= -lpthread
 pth_blockedsig_LDADD	= -lpthread
 pth_cancel1_CFLAGS	= $(AM_CFLAGS) -Wno-shadow
@@ -178,6 +205,7 @@ if VGCONF_OS_IS_AIX5
  res_search_LDADD       = -lpthread
 else
  res_search_LDADD       = -lresolv -lpthread
+ resolv_LDADD           = -lresolv -lpthread
 endif
 semlimit_LDADD		= -lpthread
 thread_exits_LDADD	= -lpthread
@@ -197,12 +225,21 @@ if VGCONF_OS_IS_AIX5
  tls_so_LDFLAGS		= -shared -fPIC
  tls_so_LDADD		= `pwd`/tls2.so
 else
+if VGCONF_OS_IS_DARWIN
+ tls_so_LDFLAGS		= -dynamic -dynamiclib -all_load -fpic
+ tls_so_LDADD		= `pwd`/tls2.so
+else
  tls_so_LDFLAGS		= -Wl,-rpath,$(top_builddir)/none/tests -shared -fPIC
  tls_so_LDADD		= tls2.so
 endif
+endif
 tls_so_CFLAGS		= $(AM_CFLAGS) -fPIC
 tls2_so_SOURCES		= tls2_so.c
+if VGCONF_OS_IS_DARWIN
+tls2_so_LDFLAGS		= -dynamic -dynamiclib -all_load
+else
 tls2_so_LDFLAGS		= -shared
+endif
 
 # C++ tests
 coolo_sigaction_SOURCES	= coolo_sigaction.cpp

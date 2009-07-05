@@ -45,7 +45,7 @@
    Assertery.
    ------------------------------------------------------------------ */
 
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux)  ||  defined(VGP_x86_darwin)
 #  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)      \
       asm("call 0f;" \
           "0: popl %0;" \
@@ -54,7 +54,7 @@
           : "=r" (pc),\
             "=r" (sp),\
             "=r" (fp));
-#elif defined(VGP_amd64_linux)
+#elif defined(VGP_amd64_linux)  ||  defined(VGP_amd64_darwin)
 #  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)      \
       asm("leaq 0(%%rip), %0;" \
           "movq %%rsp, %1;" \
@@ -99,14 +99,18 @@
 /* Pull down the entire world */
 void VG_(exit)( Int status )
 {
-#  if defined(VGO_linux)
+#if defined(VGO_linux)
    (void)VG_(do_syscall1)(__NR_exit_group, status );
-#  endif
+#elif defined(VGO_aix5) || defined(VGO_darwin)
    (void)VG_(do_syscall1)(__NR_exit, status );
-   /* Why are we still alive here? */
+#else
+#  error Unknown OS
+#endif
    /*NOTREACHED*/
-   *(volatile Int *)0 = 'x';
-   vg_assert(2+2 == 5);
+   // We really shouldn't reach here.  Just in case we do, use some very crude
+   // methods to force abort
+   __builtin_trap();
+   *(volatile Int*)0 = 'x';
 }
 
 // Print the scheduler status.

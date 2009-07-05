@@ -39,6 +39,7 @@
 
 #include "pub_tool_machine.h"
 
+// XXX: this is *really* the wrong spot for these things
 #if defined(VGP_x86_linux)
 #  define VG_ELF_DATA2XXX     ELFDATA2LSB
 #  define VG_ELF_MACHINE      EM_386
@@ -64,6 +65,11 @@
 #  undef  VG_ELF_MACHINE
 #  undef  VG_ELF_CLASS
 #  define VG_PLAT_USES_PPCTOC 1
+#elif defined(VGO_darwin)
+#  undef  VG_ELF_DATA2XXX
+#  undef  VG_ELF_MACHINE
+#  undef  VG_ELF_CLASS
+#  undef  VG_PLAT_USES_PPCTOC
 #else
 #  error Unknown platform
 #endif
@@ -91,6 +97,7 @@
 
 // Offsets for the Vex state
 #define VG_O_STACK_PTR        (offsetof(VexGuestArchState, VG_STACK_PTR))
+#define VG_O_INSTR_PTR        (offsetof(VexGuestArchState, VG_INSTR_PTR))
 
 
 //-------------------------------------------------------------

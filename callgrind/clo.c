@@ -98,24 +98,24 @@ static config_node* fn_configs = 0;
 static __inline__ 
 fn_config* new_fnc(void)
 {
-   fn_config* new = (fn_config*) CLG_MALLOC("cl.clo.nf.1",
+   fn_config* fnc = (fn_config*) CLG_MALLOC("cl.clo.nf.1",
                                             sizeof(fn_config));
 
-   new->dump_before  = CONFIG_DEFAULT;
-   new->dump_after   = CONFIG_DEFAULT;
-   new->zero_before  = CONFIG_DEFAULT;
-   new->toggle_collect = CONFIG_DEFAULT;
-   new->skip         = CONFIG_DEFAULT;
-   new->pop_on_jump  = CONFIG_DEFAULT;
-   new->group        = CONFIG_DEFAULT;
-   new->separate_callers    = CONFIG_DEFAULT;
-   new->separate_recursions = CONFIG_DEFAULT;
+   fnc->dump_before  = CONFIG_DEFAULT;
+   fnc->dump_after   = CONFIG_DEFAULT;
+   fnc->zero_before  = CONFIG_DEFAULT;
+   fnc->toggle_collect = CONFIG_DEFAULT;
+   fnc->skip         = CONFIG_DEFAULT;
+   fnc->pop_on_jump  = CONFIG_DEFAULT;
+   fnc->group        = CONFIG_DEFAULT;
+   fnc->separate_callers    = CONFIG_DEFAULT;
+   fnc->separate_recursions = CONFIG_DEFAULT;
 
 #if CLG_ENABLE_DEBUG
-   new->verbosity    = CONFIG_DEFAULT;
+   fnc->verbosity    = CONFIG_DEFAULT;
 #endif
 
-   return new;
+   return fnc;
 }
 
 
@@ -264,13 +264,13 @@ static fn_config* get_fnc2(config_node* node, Char* name)
   while(name[offset] && (!is_wild(name[offset]))) offset++;
 
   new_sub = new_config(name, offset);
-  new_sub->next = n->sub_node[ name[offset]%NODE_DEGREE ];
-  n->sub_node[ name[offset]%NODE_DEGREE ] = new_sub;	
+  new_sub->next = n->sub_node[ name[0]%NODE_DEGREE ];
+  n->sub_node[ name[0]%NODE_DEGREE ] = new_sub;
 
   return get_fnc2(new_sub, name+offset);
 }
 
-static void print_config_node(int s, config_node* node)
+static void print_config_node(int depth, int hash, config_node* node)
 {
   config_node* n;
   int i;
@@ -278,19 +278,22 @@ static void print_config_node(int s, config_node* node)
   if (node != fn_configs) {
     char sp[] = "                                        ";
 
-    if (s>40) s=40;
-    VG_(printf)("%s", sp+40-s);
-    VG_(printf)("'%s'/%d\n", node->name, node->length);
+    if (depth>40) depth=40;
+    VG_(printf)("%s", sp+40-depth);
+    if (hash >=0) VG_(printf)(" [hash %2d]", hash);
+    else if (hash == -2) VG_(printf)(" [wildc ?]");
+    else if (hash == -3) VG_(printf)(" [wildc *]");
+    VG_(printf)(" '%s' (len %d)\n", node->name, node->length);
   }
   for(i=0;i<NODE_DEGREE;i++) {
     n = node->sub_node[i];
     while(n) {
-      print_config_node(s+1, n);
+      print_config_node(depth+1, i, n);
       n = n->next;
     }
   }
-  if (node->wild_char) print_config_node(s+1, node->wild_char);
-  if (node->wild_star) print_config_node(s+1, node->wild_star);
+  if (node->wild_char) print_config_node(depth+1, -2, node->wild_char);
+  if (node->wild_star) print_config_node(depth+1, -3, node->wild_star);
 }
 
 /* get a function config for a name pattern (from command line) */
@@ -305,7 +308,7 @@ static fn_config* get_fnc(Char* name)
 
   CLG_DEBUGIF(3) {
     CLG_DEBUG(3, " -get_fnc(%s):\n", name);
-    print_config_node(3, fn_configs);
+    print_config_node(3, -1, fn_configs);
   }
   return fnc;
 }
@@ -358,7 +361,7 @@ static void update_fn_config2(fn_node* fn, Char* name, config_node* node)
     CLG_DEBUG(3, "  update_fn_config2('%s', node '%s'): \n",
 	     name, node->name);
     if ((*name == 0) && node->config) {
-      CLG_DEBUG(3, "Found!\n");
+      CLG_DEBUG(3, "   found!\n");
       update_fn_config1(fn, node->config);
       return;
     }
@@ -368,12 +371,19 @@ static void update_fn_config2(fn_node* fn, Char* name, config_node* node)
       if (VG_(strncmp)(name, n->name, n->length)==0) break;
       n = n->next;
     }
-    if (n) update_fn_config2(fn, name+n->length, n);
+    if (n) {
+	CLG_DEBUG(3, "   '%s' matching at hash %d\n",
+		  n->name, name[0]%NODE_DEGREE);
+	update_fn_config2(fn, name+n->length, n);
+    }
     
-    if (node->wild_char)
-      update_fn_config2(fn, name+1, node->wild_char);
+    if (node->wild_char) {
+	CLG_DEBUG(3, "   skip '%c' for wildcard '?'\n", *name);
+	update_fn_config2(fn, name+1, node->wild_char);
+    }
 
     if (node->wild_star) {
+      CLG_DEBUG(3, "   wildcard '*'\n");
       while(*name) {
 	update_fn_config2(fn, name, node->wild_star);
 	name++;

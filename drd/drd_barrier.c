@@ -152,7 +152,7 @@ static void barrier_cleanup(struct barrier_info* p)
 
    if (p->pre_waiters_left != p->count)
    {
-      BarrierErrInfo bei = { p->a1, 0, 0 };
+      BarrierErrInfo bei = { DRD_(thread_get_running_tid)(), p->a1, 0, 0 };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               BarrierErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
@@ -229,7 +229,7 @@ void DRD_(barrier_init)(const Addr barrier,
 
    if (count == 0)
    {
-      BarrierErrInfo bei = { barrier, 0, 0 };
+      BarrierErrInfo bei = { DRD_(thread_get_running_tid)(), barrier, 0, 0 };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               BarrierErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
@@ -242,7 +242,7 @@ void DRD_(barrier_init)(const Addr barrier,
       p = DRD_(barrier_get)(barrier);
       if (p)
       {
-         BarrierErrInfo bei = { barrier, 0, 0 };
+         BarrierErrInfo bei = { DRD_(thread_get_running_tid)(), barrier, 0, 0 };
          VG_(maybe_record_error)(VG_(get_running_tid)(),
                                  BarrierErr,
                                  VG_(get_IP)(VG_(get_running_tid)()),
@@ -280,7 +280,7 @@ void DRD_(barrier_init)(const Addr barrier,
    {
       if (p->pre_waiters_left != p->count || p->post_waiters_left != p->count)
       {
-         BarrierErrInfo bei = { p->a1, 0, 0 };
+         BarrierErrInfo bei = { DRD_(thread_get_running_tid)(), p->a1, 0, 0 };
          VG_(maybe_record_error)(VG_(get_running_tid)(),
                                  BarrierErr,
                                  VG_(get_IP)(VG_(get_running_tid)()),
@@ -311,7 +311,7 @@ void DRD_(barrier_destroy)(const Addr barrier, const BarrierT barrier_type)
 
    if (p == 0)
    {
-      GenericErrInfo GEI;
+      GenericErrInfo GEI = { DRD_(thread_get_running_tid)() };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               GenericErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
@@ -322,7 +322,7 @@ void DRD_(barrier_destroy)(const Addr barrier, const BarrierT barrier_type)
 
    if (p->pre_waiters_left != p->count || p->post_waiters_left != p->count)
    {
-      BarrierErrInfo bei = { p->a1, 0, 0 };
+      BarrierErrInfo bei = { DRD_(thread_get_running_tid)(), p->a1, 0, 0 };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               BarrierErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
@@ -441,7 +441,7 @@ void DRD_(barrier_post_wait)(const DrdThreadId tid, const Addr barrier,
    q = VG_(OSetGen_Lookup)(p->oset, &word_tid);
    if (q == 0)
    {
-      BarrierErrInfo bei = { p->a1, 0, 0 };
+      BarrierErrInfo bei = { DRD_(thread_get_running_tid)(), p->a1, 0, 0 };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               BarrierErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
@@ -456,24 +456,33 @@ void DRD_(barrier_post_wait)(const DrdThreadId tid, const Addr barrier,
       VG_(OSetGen_Insert)(p->oset, q);
       tl_assert(VG_(OSetGen_Lookup)(p->oset, &word_tid) == q);
    }
-   /*
-    * Combine all vector clocks that were stored in the pre_barrier_wait
-    * wrapper with the vector clock of the current thread.
-    */
-   VG_(OSetGen_ResetIter)(p->oset);
-   for ( ; (r = VG_(OSetGen_Next)(p->oset)) != 0; )
-   {
-      if (r != q)
-      {
-         tl_assert(r->sg[p->post_iteration]);
-         DRD_(thread_combine_vc2)(tid, &r->sg[p->post_iteration]->vc);
-      }
-   }
 
    /* Create a new segment and store a pointer to that segment. */
    DRD_(thread_new_segment)(tid);
    DRD_(thread_get_latest_segment)(&q->post_wait_sg, tid);
    s_barrier_segment_creation_count++;
+
+   /*
+    * Combine all vector clocks that were stored in the pre_barrier_wait
+    * wrapper with the vector clock of the current thread.
+    */
+   {
+      VectorClock old_vc;
+
+      DRD_(vc_copy)(&old_vc, &DRD_(g_threadinfo)[tid].last->vc);
+      VG_(OSetGen_ResetIter)(p->oset);
+      for ( ; (r = VG_(OSetGen_Next)(p->oset)) != 0; )
+      {
+         if (r != q)
+         {
+            tl_assert(r->sg[p->post_iteration]);
+            DRD_(vc_combine)(&DRD_(g_threadinfo)[tid].last->vc,
+                             &r->sg[p->post_iteration]->vc);
+         }
+      }
+      DRD_(thread_update_conflict_set)(tid, &old_vc);
+      DRD_(vc_cleanup)(&old_vc);
+   }
 
    /*
     * If the same number of threads as the barrier count indicates have
@@ -524,7 +533,7 @@ void barrier_report_wait_delete_race(const struct barrier_info* const p,
 
    {
       BarrierErrInfo bei
-         = { p->a1, q->tid, q->wait_call_ctxt };
+         = { DRD_(thread_get_running_tid)(), p->a1, q->tid, q->wait_call_ctxt };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               BarrierErr,
                               VG_(get_IP)(VG_(get_running_tid)()),

@@ -1063,14 +1063,23 @@ static void load_one_suppressions_file ( Char* filename )
    Char*  err_str = NULL;
    SuppLoc tmp_callers[VG_MAX_SUPP_CALLERS];
 
+   // Check it's not a directory.
+   if (VG_(is_dir)( filename )) {
+      if (VG_(clo_xml))
+         VG_(UMSG)("</valgrindoutput>\n");
+      VG_(UMSG)("FATAL: suppressions file \"%s\" is a directory\n", filename );
+      VG_(exit)(1);
+   }
+
+   // Open the suppression file.
    sres = VG_(open)( filename, VKI_O_RDONLY, 0 );
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       if (VG_(clo_xml))
          VG_(UMSG)("</valgrindoutput>\n");
       VG_(UMSG)("FATAL: can't open suppressions file \"%s\"\n", filename );
       VG_(exit)(1);
    }
-   fd = sres.res;
+   fd = sr_Res(sres);
 
 #  define BOMB(S)  { err_str = S;  goto syntax_error; }
 

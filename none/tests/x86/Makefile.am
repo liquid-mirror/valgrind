@@ -1,23 +1,23 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-noinst_SCRIPTS = filter_cpuid filter_stderr gen_insn_test.pl
+dist_noinst_SCRIPTS = filter_cpuid filter_stderr gen_insn_test.pl
 
 CLEANFILES = $(addsuffix .c,$(INSN_TESTS))
 
 INSN_TESTS = insn_basic insn_fpu insn_cmov insn_mmx insn_mmxext \
 		insn_sse insn_sse2
 if BUILD_SSE3_TESTS
- INSN_TESTS += insn_sse3
+   INSN_TESTS += insn_sse3
 endif
 if BUILD_SSSE3_TESTS
- INSN_TESTS += insn_ssse3
+   INSN_TESTS += insn_ssse3
 endif
 
 # Explicitly include insn_sse3 even if ! BUILD_SSE3_TESTS, 
 # to avoid packaging screwups if 'make dist' is run on a machine
 # which failed the BUILD_SSE3_TESTS test in configure.in.
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	badseg.stderr.exp badseg.stdout.exp badseg.vgtest \
 	bt_everything.stderr.exp bt_everything.stdout.exp bt_everything.vgtest \
 	bt_literal.stderr.exp bt_literal.stdout.exp bt_literal.vgtest \
@@ -26,8 +26,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	bug132813-x86.stderr.exp bug132813-x86.stdout.exp bug132813-x86.vgtest \
 	bug135421-x86.stderr.exp bug135421-x86.stdout.exp bug135421-x86.vgtest \
 	bug137714-x86.stderr.exp bug137714-x86.stdout.exp bug137714-x86.vgtest \
-	bug152818-x86.vgtest bug152818-x86.stdout.exp \
-	bug152818-x86.stderr.exp \
+	bug152818-x86.stderr.exp bug152818-x86.stdout.exp bug152818-x86.vgtest \
 	cmpxchg8b.stderr.exp cmpxchg8b.stdout.exp cmpxchg8b.vgtest \
 	cpuid.stderr.exp cpuid.stdout.exp cpuid.vgtest \
 	cse_fail.stderr.exp cse_fail.stdout.exp cse_fail.vgtest \
@@ -52,8 +51,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	sbbmisc.stderr.exp sbbmisc.stdout.exp sbbmisc.vgtest \
 	smc1.stderr.exp smc1.stdout.exp smc1.vgtest \
 	ssse3_misaligned.stderr.exp ssse3_misaligned.stdout.exp \
-	ssse3_misaligned.vgtest \
-	ssse3_misaligned.c \
+	ssse3_misaligned.vgtest ssse3_misaligned.c \
+	x86locked.vgtest x86locked.stdout.exp x86locked.stderr.exp \
 	yield.stderr.exp yield.stdout.exp yield.disabled
 
 check_PROGRAMS = \
@@ -70,23 +69,24 @@ check_PROGRAMS = \
 	cpuid \
 	cse_fail \
 	faultstatus \
-        fcmovnu \
-        fpu_lazy_eflags \
-        fxtract \
+	fcmovnu \
+	fpu_lazy_eflags \
+	fxtract \
 	getseg \
-        incdec_alt \
-        $(INSN_TESTS) \
-        int \
+	incdec_alt \
+	$(INSN_TESTS) \
+	int \
 	jcxz \
 	lahf \
-        looper \
-        movx \
-        pushpopseg \
-        sbbmisc \
-        smc1 \
-        yield
+	looper \
+	movx \
+	pushpopseg \
+	sbbmisc \
+	smc1 \
+	x86locked \
+	yield
 if BUILD_SSSE3_TESTS
- check_PROGRAMS += ssse3_misaligned
+   check_PROGRAMS += ssse3_misaligned
 endif
 
 
@@ -94,10 +94,17 @@ AM_CFLAGS    += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CXXFLAGS  += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CCASFLAGS += @FLAG_M32@
 
+if VGCONF_OS_IS_DARWIN
+# Some of the tests (bug125959_x86, bug152818_x86, insn_*) need
+# -mdynamic-no-pic.  I tried setting *_CFLAGS separately for all of them,
+# but it caused problems with the generation of insn_*.c.  So just use this
+# crude approach of setting -mdynamic-no-pic for all tests in this
+# directory.
+AM_CFLAGS += -mdynamic-no-pic
+endif
 
-# generic C ones
 cpuid_SOURCES 		= cpuid_c.c cpuid_s.S
-# fpu_lazy_eflags must use these flags -- the bug only occurred with them
+# fpu_lazy_eflags must use these flags -- the bug only occurred with them.
 fpu_lazy_eflags_CFLAGS	= $(AM_CFLAGS) -O2 -march=pentiumpro
 fxtract_LDADD		= -lm
 insn_basic_SOURCES	= insn_basic.def
@@ -116,6 +123,9 @@ insn_sse2_SOURCES	= insn_sse2.def
 insn_sse2_LDADD		= -lm
 insn_sse3_SOURCES	= insn_sse3.def
 insn_sse3_LDADD		= -lm
+insn_ssse3_SOURCES	= insn_ssse3.def
+insn_ssse3_LDADD	= -lm
+x86locked_CFLAGS	= $(AM_CFLAGS) -O
 yield_LDADD		= -lpthread
 
 .def.c: $(srcdir)/gen_insn_test.pl

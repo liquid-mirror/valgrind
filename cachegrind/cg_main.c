@@ -1032,6 +1032,27 @@ IRSB* cg_instrument ( VgCallbackClosure* closure,
             break;
          }
 
+         case Ist_CAS: {
+            /* We treat it as a read and a write of the location.  I
+               think that is the same behaviour as it was before IRCAS
+               was introduced, since prior to that point, the Vex
+               front ends would translate a lock-prefixed instruction
+               into a (normal) read followed by a (normal) write. */
+            Int    dataSize;
+            IRCAS* cas = st->Ist.CAS.details;
+            tl_assert(cas->addr != NULL);
+            tl_assert(cas->dataLo != NULL);
+            dataSize = sizeofIRType(typeOfIRExpr(tyenv, cas->dataLo));
+            if (cas->dataHi != NULL)
+               dataSize *= 2; /* since it's a doubleword-CAS */
+            /* I don't think this can ever happen, but play safe. */
+            if (dataSize > MIN_LINE_SIZE)
+               dataSize = MIN_LINE_SIZE;
+            addEvent_Dr( &cgs, curr_inode, dataSize, cas->addr );
+            addEvent_Dw( &cgs, curr_inode, dataSize, cas->addr );
+            break;
+         }
+
          case Ist_Exit: {
             /* Stuff to widen the guard expression to a host word, so
                we can pass it to the branch predictor simulation
@@ -1262,7 +1283,7 @@ static void fprint_CC_table_and_calc_totals(void)
 
    sres = VG_(open)(cachegrind_out_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
                                          VKI_S_IRUSR|VKI_S_IWUSR);
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       // If the file can't be opened for whatever reason (conflict
       // between multiple cachegrinded processes?), give up now.
       VG_(UMSG)("error: can't open cache simulation output file '%s'\n",
@@ -1271,7 +1292,7 @@ static void fprint_CC_table_and_calc_totals(void)
       VG_(free)(cachegrind_out_file);
       return;
    } else {
-      fd = sres.res;
+      fd = sr_Res(sres);
       VG_(free)(cachegrind_out_file);
    }
 
@@ -1464,13 +1485,14 @@ static void cg_fini(Int exitcode)
    if (VG_(clo_verbosity) == 0) 
       return;
 
-   #define MAX(a, b)  ((a) >= (b) ? (a) : (b))
+   // Nb: this isn't called "MAX" because that overshadows a global on Darwin.
+   #define CG_MAX(a, b)  ((a) >= (b) ? (a) : (b))
 
    /* I cache results.  Use the I_refs value to determine the first column
     * width. */
    l1 = ULong_width(Ir_total.a);
-   l2 = ULong_width(MAX(Dr_total.a, Bc_total.b));
-   l3 = ULong_width(MAX(Dw_total.a, Bi_total.b));
+   l2 = ULong_width(CG_MAX(Dr_total.a, Bc_total.b));
+   l3 = ULong_width(CG_MAX(Dw_total.a, Bi_total.b));
 
    /* Make format string, getting width right for numbers */
    VG_(sprintf)(fmt, "%%s %%,%dllu\n", l1);

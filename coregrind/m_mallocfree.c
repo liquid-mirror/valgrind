@@ -70,7 +70,7 @@ typedef UChar UByte;
 
 /* Layout of an in-use block:
 
-      cost center (OPTIONAL)   (sizeof(ULong) bytes, only when h-p enabled)
+      cost center (OPTIONAL)   (VG_MIN_MALLOC_SZB bytes, only when h-p enabled)
       this block total szB     (sizeof(SizeT) bytes)
       red zone bytes           (depends on Arena.rz_szB, but >= sizeof(void*))
       (payload bytes)
@@ -79,7 +79,7 @@ typedef UChar UByte;
 
    Layout of a block on the free list:
 
-      cost center (OPTIONAL)   (sizeof(ULong) bytes, only when h-p enabled)
+      cost center (OPTIONAL)   (VG_MIN_MALLOC_SZB bytes, only when h-p enabled)
       this block total szB     (sizeof(SizeT) bytes)
       freelist previous ptr    (sizeof(void*) bytes)
       excess red zone bytes    (if Arena.rz_szB > sizeof(void*))
@@ -95,7 +95,7 @@ typedef UChar UByte;
 
    when heap profiling is not enabled, and
 
-      bszB == pszB + 2*sizeof(SizeT) + 2*a->rz_szB + sizeof(ULong)
+      bszB == pszB + 2*sizeof(SizeT) + 2*a->rz_szB + VG_MIN_MALLOC_SZB
 
    when it is enabled.  It follows that the minimum overhead per heap
    block for arenas used by the core is:
@@ -105,8 +105,8 @@ typedef UChar UByte;
 
    when heap profiling is not enabled, and
 
-      32-bit platforms:  2*4 + 2*4 + 8 == 24 bytes
-      64-bit platforms:  2*8 + 2*8 + 8 == 40 bytes
+      32-bit platforms:  2*4 + 2*4 + 8  == 24 bytes
+      64-bit platforms:  2*8 + 2*8 + 16 == 48 bytes
 
    when it is enabled.  In all cases, extra overhead may be incurred
    when rounding the payload size up to VG_MIN_MALLOC_SZB.
@@ -231,7 +231,7 @@ SizeT mk_plain_bszB ( SizeT bszB )
 static __inline__
 SizeT hp_overhead_szB ( void )
 {
-   return VG_(clo_profile_heap)  ? sizeof(ULong)  : 0;
+   return VG_(clo_profile_heap)  ? VG_MIN_MALLOC_SZB  : 0;
 }
 
 //---------------------------------------------------------------------------
@@ -472,9 +472,7 @@ void arena_init ( ArenaId aid, Char* name, SizeT rz_szB, SizeT min_sblock_szB )
    // redzone size if necessary to achieve this.
    a->rz_szB = rz_szB;
    while (0 != overhead_szB_lo(a) % VG_MIN_MALLOC_SZB) a->rz_szB++;
-   //   vg_assert(overhead_szB_lo(a) == overhead_szB_hi(a));
-   vg_assert(0 == overhead_szB_lo(a) % VG_MIN_MALLOC_SZB);
-   vg_assert(0 == overhead_szB_hi(a) % VG_MIN_MALLOC_SZB);
+   vg_assert(overhead_szB_lo(a) - hp_overhead_szB() == overhead_szB_hi(a));
 
    a->min_sblock_szB = min_sblock_szB;
    for (i = 0; i < N_MALLOC_LISTS; i++) a->freelist[i] = NULL;
@@ -641,6 +639,7 @@ void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB )
    } else {
       VG_(debugLog)(0,"mallocfree", s1, who, (ULong)szB, tot_alloc);
    }
+
    VG_(exit)(1);
 }
 
@@ -672,9 +671,9 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
       // client allocation -- return 0 to client if it fails
       sres = VG_(am_sbrk_anon_float_client)
                 ( cszB, VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC );
-      if (sres.isError)
+      if (sr_isError(sres))
          return 0;
-      sb = (Superblock*)sres.res;
+      sb = (Superblock*)(AddrH)sr_Res(sres);
       // Mark this segment as containing client heap.  The leak
       // checker needs to be able to identify such segments so as not
       // to use them as sources of roots during leak checks.
@@ -684,12 +683,12 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
    } else {
       // non-client allocation -- abort if it fails
       sres = VG_(am_sbrk_anon_float_valgrind)( cszB );
-      if (sres.isError) {
+      if (sr_isError(sres)) {
          VG_(out_of_memory_NORETURN)("newSuperblock", cszB);
          /* NOTREACHED */
          sb = NULL; /* keep gcc happy */
       } else {
-         sb = (Superblock*)sres.res;
+         sb = (Superblock*)(AddrH)sr_Res(sres);
       }
    }
    vg_assert(NULL != sb);
@@ -1327,12 +1326,12 @@ void* VG_(arena_malloc) ( ArenaId aid, HChar* cc, SizeT req_pszB )
       Superblock ** array;
       SysRes sres = VG_(am_sbrk_anon_float_valgrind)(sizeof(Superblock *) *
                                                      a->sblocks_size * 2);
-      if (sres.isError) {
+      if (sr_isError(sres)) {
          VG_(out_of_memory_NORETURN)("arena_init", sizeof(Superblock *) * 
                                                    a->sblocks_size * 2);
          /* NOTREACHED */
       }
-      array = (Superblock**) sres.res;
+      array = (Superblock**)(AddrH)sr_Res(sres);
       for (i = 0; i < a->sblocks_used; ++i) array[i] = a->sblocks[i];
 
       a->sblocks_size *= 2;

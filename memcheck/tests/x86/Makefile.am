@@ -1,11 +1,11 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-noinst_SCRIPTS = filter_stderr filter_pushfpopf filter_tronical
+dist_noinst_SCRIPTS = filter_stderr filter_pushfpopf filter_tronical
 
 INSN_TESTS = insn_basic insn_fpu insn_cmov insn_mmx insn_mmxext insn_sse insn_sse2
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	bug152022.vgtest bug152022.stderr.exp bug152022.stdout.exp \
 	espindola2.vgtest espindola2.stderr.exp \
 	fpeflags.stderr.exp fpeflags.vgtest \
@@ -42,9 +42,15 @@ AM_CFLAGS    += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CXXFLAGS  += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CCASFLAGS += @FLAG_M32@
 
-# must be built with these flags -- bug only occurred with them
+
+# fpeflags must use these flags -- bug only occurred with them.
 fpeflags_CFLAGS		= $(AM_CFLAGS) -march=i686
 pushfpopf_SOURCES 	= pushfpopf_c.c pushfpopf_s.S
+if VGCONF_OS_IS_DARWIN
+pushpopmem_CFLAGS 	= $(AM_CFLAGS) -mdynamic-no-pic
+else
+pushpopmem_CFLAGS 	= $(AM_CFLAGS)
+endif
 tronical_SOURCES 	= tronical.S
 
 more_x86_fp_LDADD	= -lm

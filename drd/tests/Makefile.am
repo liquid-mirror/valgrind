@@ -1,37 +1,44 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-SUBDIRS = .
-
-DIST_SUBDIRS = .
-
-noinst_SCRIPTS =		    \
+dist_noinst_SCRIPTS =		    \
 	filter_error_summary	    \
 	filter_stderr               \
 	filter_stderr_and_thread_no \
 	run_openmp_test             \
 	supported_libpthread
 
+noinst_HEADERS =                                    \
+	tsan_thread_wrappers_pthread.h
+
 EXTRA_DIST =                                        \
-	$(noinst_SCRIPTS)                           \
-	atomic_var.stderr.exp-with-atomic-builtins  \
-	atomic_var.stderr.exp-without-atomic-builtins \
+	annotate_order_1.stderr.exp		    \
+	annotate_order_1.vgtest			    \
+	annotate_order_2.stderr.exp		    \
+	annotate_order_2.vgtest			    \
+	annotate_order_3.stderr.exp		    \
+	annotate_order_3.vgtest			    \
+	annotate_spinlock.stderr.exp		    \
+	annotate_spinlock.vgtest		    \
+	annotate_rwlock.stderr.exp		    \
+	annotate_rwlock.vgtest			    \
+	annotate_ignore_read.stderr.exp		    \
+	annotate_ignore_read.vgtest		    \
+	annotate_trace_memory.stderr.exp	    \
+	annotate_trace_memory.vgtest		    \
+	atomic_var.stderr.exp			    \
 	atomic_var.vgtest			    \
 	bar_bad.stderr.exp			    \
 	bar_bad.vgtest				    \
-	bar_trivial.stdout.exp			    \
 	bar_trivial.stderr.exp			    \
+	bar_trivial.stdout.exp			    \
 	bar_trivial.vgtest			    \
 	boost_thread.stderr.exp			    \
 	boost_thread.vgtest			    \
-	circular_buffer.stderr.exp-with-atomic-builtins		\
-	circular_buffer.stderr.exp-without-atomic-builtins	\
+	circular_buffer.stderr.exp		    \
 	circular_buffer.vgtest			    \
-	custom_alloc.vgtest			    \
 	custom_alloc.stderr.exp			    \
-	drd_bitmap_test.stderr.exp                  \
-	drd_bitmap_test.stdout.exp                  \
-	drd_bitmap_test.vgtest                      \
+	custom_alloc.vgtest			    \
 	fp_race.stderr.exp                          \
 	fp_race.vgtest                              \
 	fp_race2.stderr.exp                         \
@@ -91,6 +98,8 @@ EXTRA_DIST =                                        \
 	pth_broadcast.vgtest                        \
 	pth_cancel_locked.stderr.exp		    \
 	pth_cancel_locked.vgtest		    \
+	pth_cleanup_handler.stderr.exp		    \
+	pth_cleanup_handler.vgtest		    \
 	pth_cond_race.stderr.exp                    \
 	pth_cond_race.vgtest                        \
 	pth_cond_race2.stderr.exp                   \
@@ -98,7 +107,6 @@ EXTRA_DIST =                                        \
 	pth_cond_race3.stderr.exp                   \
 	pth_cond_race3.vgtest                       \
 	pth_create_chain.stderr.exp                 \
-	pth_create_chain.stderr.exp-ppc             \
 	pth_create_chain.vgtest                     \
 	pth_create_glibc_2_0.stderr.exp             \
 	pth_create_glibc_2_0.vgtest                 \
@@ -114,8 +122,10 @@ EXTRA_DIST =                                        \
 	pth_inconsistent_cond_wait.stderr.exp1      \
 	pth_inconsistent_cond_wait.stderr.exp2      \
 	pth_inconsistent_cond_wait.vgtest           \
-	pth_process_shared_mutex.vgtest             \
+	pth_mutex_reinit.stderr.exp		    \
+	pth_mutex_reinit.vgtest			    \
 	pth_process_shared_mutex.stderr.exp         \
+	pth_process_shared_mutex.vgtest             \
 	pth_spinlock.stderr.exp                     \
 	pth_spinlock.vgtest                         \
 	qt4_mutex.stderr.exp                        \
@@ -198,16 +208,21 @@ EXTRA_DIST =                                        \
 	tc22_exit_w_lock.stderr.exp-64bit           \
 	tc22_exit_w_lock.vgtest                     \
 	tc23_bogus_condwait.stderr.exp              \
+	tc23_bogus_condwait.stderr.exp2             \
 	tc23_bogus_condwait.vgtest                  \
 	tc24_nonzero_sem.stderr.exp                 \
 	tc24_nonzero_sem.vgtest                     \
+	thread_name.stderr.exp			    \
+	thread_name.vgtest			    \
 	trylock.stderr.exp                          \
-	trylock.vgtest
+	trylock.vgtest				    \
+	unit_bitmap.stderr.exp                      \
+	unit_bitmap.vgtest                          \
+	unit_vc.stderr.exp                          \
+	unit_vc.vgtest
+
 
 check_PROGRAMS =      \
-  atomic_var          \
-  circular_buffer     \
-  drd_bitmap_test     \
   fp_race             \
   hold_lock           \
   linuxthreads_det    \
@@ -216,21 +231,33 @@ check_PROGRAMS =      \
   new_delete          \
   pth_broadcast       \
   pth_cancel_locked   \
+  pth_cleanup_handler \
   pth_cond_race       \
   pth_create_chain    \
   pth_detached        \
   pth_detached_sem    \
-  pth_process_shared_mutex   \
   pth_inconsistent_cond_wait \
+  pth_mutex_reinit    \
+  pth_process_shared_mutex   \
   recursive_mutex     \
   rwlock_race         \
   rwlock_test         \
   sem_as_mutex        \
   sigalrm             \
-  trylock
+  thread_name         \
+  trylock             \
+  unit_bitmap         \
+  unit_vc
 
 if HAVE_BOOST_1_35
 check_PROGRAMS += boost_thread
+endif
+
+if HAVE_BUILTIN_ATOMIC
+check_PROGRAMS += annotate_rwlock atomic_var circular_buffer
+if ! VGCONF_OS_IS_DARWIN
+check_PROGRAMS += tsan_unittest
+endif
 endif
 
 if HAVE_OPENMP
@@ -260,13 +287,22 @@ AM_CXXFLAGS += $(AM_FLAG_M3264_PRI) @FLAG_W_EXTRA@ -Wno-inline -Wno-unused-param
 LDADD = -lpthread
 
 
-drd_bitmap_test_CFLAGS      = $(AM_CFLAGS) -O2 \
-                              -DENABLE_DRD_CONSISTENCY_CHECKS\
-                              @FLAG_UNLIMITED_INLINE_UNIT_GROWTH@
-drd_bitmap_test_LDADD       = # nothing, ie. not -lpthread
-
 monitor_example_SOURCES     = monitor_example.cpp
 new_delete_SOURCES          = new_delete.cpp
+
+pth_cleanup_handler_CFLAGS  = @FLAG_W_NO_EMPTY_BODY@
+
+tsan_unittest_SOURCES       = tsan_unittest.cpp
+tsan_unittest_CXXFLAGS      = $(AM_CXXFLAGS) \
+			-DTHREAD_WRAPPERS='"tsan_thread_wrappers_pthread.h"'
+
+unit_bitmap_CFLAGS          = $(AM_CFLAGS) -O2 \
+                              -DENABLE_DRD_CONSISTENCY_CHECKS \
+                              @FLAG_UNLIMITED_INLINE_UNIT_GROWTH@
+unit_bitmap_LDADD           = # nothing, i.e. not -lpthread
+
+unit_vc_CFLAGS              = $(AM_CFLAGS) -DENABLE_DRD_CONSISTENCY_CHECKS
+unit_vc_LDADD               = # nothing, i.e. not -lpthread
 
 if HAVE_BOOST_1_35
 boost_thread_SOURCES        = boost_thread.cpp

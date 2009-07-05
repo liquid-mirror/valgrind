@@ -27,6 +27,9 @@
 
    The GNU General Public License is contained in the file COPYING.
 */
+
+#if defined(VGO_linux) || defined(VGO_darwin)
+
 /*
    Stabs reader greatly improved by Nick Nethercote, Apr 02.
    This module was also extensively hacked on by Jeremy Fitzhardinge
@@ -46,7 +49,17 @@
 #include "priv_readstabs.h"        /* self */
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
-#include <a.out.h> /* stabs defns */
+#if defined(VGO_linux)
+#  include <a.out.h> /* stabs defns */
+#elif defined(VGO_darwin)
+#  include <mach-o/nlist.h>
+#  define n_other n_sect
+#  if VG_WORDSIZE == 8
+#     define nlist nlist_64
+#  endif
+#else
+#  error "Unknown OS"
+#endif
 /* --- !!! --- EXTERNAL HEADERS end --- !!! --- */
 
 /*------------------------------------------------------------*/
@@ -129,11 +142,12 @@ void ML_(read_debuginfo_stabs) ( DebugInfo* di,
       const struct nlist *st = &stab[i];
       Char *string;
 
-      if (debug && 1) {
-         VG_(printf) ( "%2d  type=%d   othr=%d   desc=%d   value=0x%x   strx=%d  %s\n", i,
+      if (di->trace_symtab) {
+         VG_(printf) ( "%2d  type=%d   othr=%d   desc=%d   "
+                       "value=0x%x   strx=%d  %s\n", i,
                        st->n_type, st->n_other, st->n_desc, 
-                       (int)st->n_value,
-                       (int)st->n_un.n_strx, 
+                       (Int)st->n_value,
+                       (Int)st->n_un.n_strx, 
                        stabstr + st->n_un.n_strx );
       }
 
@@ -374,6 +388,8 @@ void ML_(read_debuginfo_stabs) ( DebugInfo* di,
       }
    }
 }
+
+#endif // defined(VGO_linux) || defined(VGO_darwin)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

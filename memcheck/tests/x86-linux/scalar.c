@@ -17,6 +17,10 @@
 // when memory is unaddressable, and so tries to dereference it when doing
 // PRE_MEM_READ/PRE_MEM_WRITE calls.  (Note that Memcheck will
 // always issue an error message immediately before these seg faults occur).
+//
+// The output has numbers like "3s 2m" for each syscall.  "s" is short for
+// "scalar", ie. the argument itself is undefined.  "m" is short for "memory",
+// ie. the argument points to memory which is unaddressable.
 
 int main(void)
 {
@@ -367,11 +371,11 @@ int main(void)
 
    // __NR_gettimeofday 78
    GO(__NR_gettimeofday, "2s 2m");
-   SY(__NR_gettimeofday, x0, x0+1); FAIL;
+   SY(__NR_gettimeofday, x0+1, x0+1); FAIL;
 
    // __NR_settimeofday 79
    GO(__NR_settimeofday, "2s 2m");
-   SY(__NR_settimeofday, x0, x0+1); FAIL;
+   SY(__NR_settimeofday, x0+1, x0+1); FAIL;
 
    // __NR_getgroups 80
    GO(__NR_getgroups, "2s 1m");

@@ -103,7 +103,8 @@ static void mutex_cleanup(struct mutex_info* p)
 
    if (mutex_is_locked(p))
    {
-      MutexErrInfo MEI = { p->a1, p->recursion_count, p->owner };
+      MutexErrInfo MEI = { DRD_(thread_get_running_tid)(),
+                           p->a1, p->recursion_count, p->owner };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               MutexErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
@@ -118,7 +119,8 @@ static void mutex_cleanup(struct mutex_info* p)
 /** Let Valgrind report that there is no mutex object at address 'mutex'. */
 void DRD_(not_a_mutex)(const Addr mutex)
 {
-   MutexErrInfo MEI = { mutex, -1, DRD_INVALID_THREADID };
+   MutexErrInfo MEI = { DRD_(thread_get_running_tid)(),
+                        mutex, -1, DRD_INVALID_THREADID };
    VG_(maybe_record_error)(VG_(get_running_tid)(),
                            MutexErr,
                            VG_(get_IP)(VG_(get_running_tid)()),
@@ -186,13 +188,14 @@ DRD_(mutex_init)(const Addr mutex, const MutexT mutex_type)
    if (p)
    {
       const ThreadId vg_tid = VG_(get_running_tid)();
-      MutexErrInfo MEI
-         = { p->a1, p->recursion_count, p->owner };
+      MutexErrInfo MEI = { DRD_(thread_get_running_tid)(),
+                           p->a1, p->recursion_count, p->owner };
       VG_(maybe_record_error)(vg_tid,
                               MutexErr,
                               VG_(get_IP)(vg_tid),
                               "Mutex reinitialization",
                               &MEI);
+      p->mutex_type = mutex_type;
       return p;
    }
    p = DRD_(mutex_get_or_allocate)(mutex, mutex_type);
@@ -261,7 +264,8 @@ void DRD_(mutex_pre_lock)(const Addr mutex, MutexT mutex_type,
        && p->recursion_count >= 1
        && mutex_type != mutex_type_recursive_mutex)
    {
-      MutexErrInfo MEI = { p->a1, p->recursion_count, p->owner };
+      MutexErrInfo MEI = { DRD_(thread_get_running_tid)(),
+                           p->a1, p->recursion_count, p->owner };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               MutexErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
@@ -302,14 +306,16 @@ void DRD_(mutex_post_lock)(const Addr mutex, const Bool took_lock,
 
    if (p->recursion_count == 0)
    {
-      const DrdThreadId last_owner = p->owner;
-
-      if (last_owner != drd_tid && last_owner != DRD_INVALID_THREADID)
+      if (p->owner != drd_tid && p->owner != DRD_INVALID_THREADID)
       {
          tl_assert(p->last_locked_segment);
-         DRD_(thread_combine_vc2)(drd_tid, &p->last_locked_segment->vc);
+
+         DRD_(thread_new_segment_and_combine_vc)(drd_tid,
+                                                 p->last_locked_segment);
       }
-      DRD_(thread_new_segment)(drd_tid);
+      else
+         DRD_(thread_new_segment)(drd_tid);
+
       s_mutex_segment_creation_count++;
 
       p->owner           = drd_tid;
@@ -369,7 +375,8 @@ void DRD_(mutex_unlock)(const Addr mutex, MutexT mutex_type)
 
    if (p->owner == DRD_INVALID_THREADID)
    {
-      MutexErrInfo MEI = { p->a1, p->recursion_count, p->owner };
+      MutexErrInfo MEI = { DRD_(thread_get_running_tid)(),
+                           p->a1, p->recursion_count, p->owner };
       VG_(maybe_record_error)(vg_tid,
                               MutexErr,
                               VG_(get_IP)(vg_tid),
@@ -389,7 +396,8 @@ void DRD_(mutex_unlock)(const Addr mutex, MutexT mutex_type)
 
    if (p->owner != drd_tid || p->recursion_count <= 0)
    {
-      MutexErrInfo MEI = { p->a1, p->recursion_count, p->owner };
+      MutexErrInfo MEI = { DRD_(thread_get_running_tid)(),
+                           p->a1, p->recursion_count, p->owner };
       VG_(maybe_record_error)(vg_tid,
                               MutexErr,
                               VG_(get_IP)(vg_tid),
@@ -409,7 +417,8 @@ void DRD_(mutex_unlock)(const Addr mutex, MutexT mutex_type)
          if (held > s_mutex_lock_threshold_ms)
          {
             HoldtimeErrInfo HEI
-               = { mutex, p->acquired_at, held, s_mutex_lock_threshold_ms };
+               = { DRD_(thread_get_running_tid)(),
+                   mutex, p->acquired_at, held, s_mutex_lock_threshold_ms };
             VG_(maybe_record_error)(vg_tid,
                                     HoldtimeErr,
                                     VG_(get_IP)(vg_tid),
@@ -503,8 +512,8 @@ static void mutex_delete_thread(struct mutex_info* p, const DrdThreadId tid)
 
    if (p->owner == tid && p->recursion_count > 0)
    {
-      MutexErrInfo MEI
-         = { p->a1, p->recursion_count, p->owner };
+      MutexErrInfo MEI = { DRD_(thread_get_running_tid)(),
+                           p->a1, p->recursion_count, p->owner };
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               MutexErr,
                               VG_(get_IP)(VG_(get_running_tid)()),

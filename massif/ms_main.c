@@ -298,11 +298,21 @@ static void init_alloc_fns(void)
                                        VG_(free), sizeof(Char*));
    #define DO(x)  { Char* s = x; VG_(addToXA)(alloc_fns, &s); }
 
-   // Ordered according to (presumed) frequency.
+   // Ordered roughly according to (presumed) frequency.
    // Nb: The C++ "operator new*" ones are overloadable.  We include them
    // always anyway, because even if they're overloaded, it would be a
    // prodigiously stupid overloading that caused them to not allocate
    // memory.
+   //
+   // XXX: because we don't look at the first stack entry (unless it's a
+   // custom allocation) there's not much point to having all these alloc
+   // functions here -- they should never appear anywhere (I think?) other
+   // than the top stack entry.  The only exceptions are those that in
+   // vg_replace_malloc.c are partly or fully implemented in terms of another
+   // alloc function: realloc (which uses malloc);  valloc,
+   // malloc_zone_valloc, posix_memalign and memalign_common (which use
+   // memalign).
+   //
    DO("malloc"                                              );
    DO("__builtin_new"                                       );
    DO("operator new(unsigned)"                              );
@@ -313,10 +323,24 @@ static void init_alloc_fns(void)
    DO("calloc"                                              );
    DO("realloc"                                             );
    DO("memalign"                                            );
+   DO("posix_memalign"                                      );
+   DO("valloc"                                              );
    DO("operator new(unsigned, std::nothrow_t const&)"       );
    DO("operator new[](unsigned, std::nothrow_t const&)"     );
    DO("operator new(unsigned long, std::nothrow_t const&)"  );
    DO("operator new[](unsigned long, std::nothrow_t const&)");
+#if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+   DO("malloc_common"                                       );
+   DO("calloc_common"                                       );
+   DO("realloc_common"                                      );
+   DO("memalign_common"                                     );
+#elif defined(VGO_darwin)
+   DO("malloc_zone_malloc"                                  );
+   DO("malloc_zone_calloc"                                  );
+   DO("malloc_zone_realloc"                                 );
+   DO("malloc_zone_memalign"                                );
+   DO("malloc_zone_valloc"                                  );
+#endif
 }
 
 static void init_ignore_fns(void)
@@ -1288,8 +1312,10 @@ static Time get_time(void)
 
 // Take a snapshot, and only that -- decisions on whether to take a
 // snapshot, or what kind of snapshot, are made elsewhere.
+// Nb: we call the arg "my_time" because "time" shadows a global declaration
+// in /usr/include/time.h on Darwin.
 static void
-take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
+take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time my_time,
               Bool is_detailed)
 {
    tl_assert(!is_snapshot_in_use(snapshot));
@@ -1314,7 +1340,7 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
 
    // Rest of snapshot.
    snapshot->kind = kind;
-   snapshot->time = time;
+   snapshot->time = my_time;
    sanity_check_snapshot(snapshot);
 
    // Update stats.
@@ -1341,12 +1367,14 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
 
    Snapshot* snapshot;
    Bool      is_detailed;
-   Time      time = get_time();
+   // Nb: we call this variable "my_time" because "time" shadows a global
+   // declaration in /usr/include/time.h on Darwin.
+   Time      my_time = get_time();
 
    switch (kind) {
     case Normal: 
       // Only do a snapshot if it's time.
-      if (time < earliest_possible_time_of_next_snapshot) {
+      if (my_time < earliest_possible_time_of_next_snapshot) {
          n_skipped_snapshots++;
          n_skipped_snapshots_since_last_snapshot++;
          return;
@@ -1376,7 +1404,7 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
 
    // Take the snapshot.
    snapshot = & snapshots[next_snapshot_i];
-   take_snapshot(snapshot, kind, time, is_detailed);
+   take_snapshot(snapshot, kind, my_time, is_detailed);
 
    // Record if it was detailed.
    if (is_detailed) {
@@ -1422,7 +1450,7 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
    }
 
    // Work out the earliest time when the next snapshot can happen.
-   earliest_possible_time_of_next_snapshot = time + min_time_interval;
+   earliest_possible_time_of_next_snapshot = my_time + min_time_interval;
 }
 
 
@@ -1551,10 +1579,8 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
 static __inline__
 void die_block ( void* p, Bool custom_free )
 {
-   HP_Chunk* hc;
-
    // Remove HP_Chunk from malloc_list
-   hc = VG_(HT_remove)(malloc_list, (UWord)p);
+   HP_Chunk* hc = VG_(HT_remove)(malloc_list, (UWord)p);
    if (NULL == hc) {
       return;   // must have been a bogus free()
    }
@@ -1873,12 +1899,14 @@ static void add_counter_update(IRSB* sbOut, Int n)
    IRTemp t2 = newIRTemp(sbOut->tyenv, Ity_I64);
    IRExpr* counter_addr = mkIRExpr_HWord( (HWord)&guest_instrs_executed );
 
-   IRStmt* st1 = IRStmt_WrTmp(t1, IRExpr_Load(END, Ity_I64, counter_addr));
+   IRStmt* st1 = IRStmt_WrTmp(t1, IRExpr_Load(False/*!isLL*/,
+                                              END, Ity_I64, counter_addr));
    IRStmt* st2 =
       IRStmt_WrTmp(t2,
                    IRExpr_Binop(Iop_Add64, IRExpr_RdTmp(t1),
                                            IRExpr_Const(IRConst_U64(n))));
-   IRStmt* st3 = IRStmt_Store(END, counter_addr, IRExpr_RdTmp(t2));
+   IRStmt* st3 = IRStmt_Store(END, IRTemp_INVALID/*"not store-conditional"*/,
+                              counter_addr, IRExpr_RdTmp(t2));
 
    addStmtToIRSB( sbOut, st1 );
    addStmtToIRSB( sbOut, st2 );
@@ -2141,7 +2169,7 @@ static void write_snapshots_to_file(void)
 
    sres = VG_(open)(massif_out_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
                                      VKI_S_IRUSR|VKI_S_IWUSR);
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       // If the file can't be opened for whatever reason (conflict
       // between multiple cachegrinded processes?), give up now.
       VG_(UMSG)("error: can't open output file '%s'\n", massif_out_file );
@@ -2149,7 +2177,7 @@ static void write_snapshots_to_file(void)
       VG_(free)(massif_out_file);
       return;
    } else {
-      fd = sres.res;
+      fd = sr_Res(sres);
       VG_(free)(massif_out_file);
    }
 
@@ -2249,7 +2277,7 @@ static void ms_post_clo_init(void)
       VERB(1, "alloc-fns:\n");
       for (i = 0; i < VG_(sizeXA)(alloc_fns); i++) {
          Char** fn_ptr = VG_(indexXA)(alloc_fns, i);
-         VERB(1, "  %d: %s\n", i, *fn_ptr);
+         VERB(1, "  %s\n", *fn_ptr);
       }
 
       VERB(1, "ignore-fns:\n");

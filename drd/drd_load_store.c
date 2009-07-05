@@ -86,9 +86,9 @@ void DRD_(trace_mem_access)(const Addr addr, const SizeT size,
 {
    if (DRD_(is_any_traced)(addr, addr + size))
    {
-      char vc[80];
-      DRD_(vc_snprint)(vc, sizeof(vc),
-                       DRD_(thread_get_vc)(DRD_(thread_get_running_tid)()));
+      char* vc;
+
+      vc = DRD_(vc_aprint)(DRD_(thread_get_vc)(DRD_(thread_get_running_tid)()));
       VG_(message)(Vg_UserMsg,
                    "%s 0x%lx size %ld (vg %d / drd %d / vc %s)\n",
                    access_type == eLoad
@@ -105,6 +105,7 @@ void DRD_(trace_mem_access)(const Addr addr, const SizeT size,
                    VG_(get_running_tid)(),
                    DRD_(thread_get_running_tid)(),
                    vc);
+      VG_(free)(vc);
       VG_(get_and_pp_StackTrace)(VG_(get_running_tid)(),
                                  VG_(clo_backtrace_size));
       tl_assert(DRD_(DrdThreadIdToVgThreadId)(DRD_(thread_get_running_tid)())
@@ -151,7 +152,7 @@ VG_REGPARM(2) void DRD_(trace_load)(Addr addr, SizeT size)
              == VgThreadIdToDrdThreadId(VG_(get_running_tid())));
 #endif
 
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_loads)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_load_triggers_conflict(addr, addr + size)
@@ -163,7 +164,7 @@ VG_REGPARM(2) void DRD_(trace_load)(Addr addr, SizeT size)
 
 static VG_REGPARM(1) void drd_trace_load_1(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_loads)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_load_1_triggers_conflict(addr)
@@ -175,7 +176,7 @@ static VG_REGPARM(1) void drd_trace_load_1(Addr addr)
 
 static VG_REGPARM(1) void drd_trace_load_2(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_loads)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_load_2_triggers_conflict(addr)
@@ -187,7 +188,7 @@ static VG_REGPARM(1) void drd_trace_load_2(Addr addr)
 
 static VG_REGPARM(1) void drd_trace_load_4(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_loads)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_load_4_triggers_conflict(addr)
@@ -199,7 +200,7 @@ static VG_REGPARM(1) void drd_trace_load_4(Addr addr)
 
 static VG_REGPARM(1) void drd_trace_load_8(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_loads)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_load_8_triggers_conflict(addr)
@@ -217,7 +218,7 @@ VG_REGPARM(2) void DRD_(trace_store)(Addr addr, SizeT size)
              == VgThreadIdToDrdThreadId(VG_(get_running_tid())));
 #endif
 
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_stores)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_store_triggers_conflict(addr, addr + size)
@@ -229,7 +230,7 @@ VG_REGPARM(2) void DRD_(trace_store)(Addr addr, SizeT size)
 
 static VG_REGPARM(1) void drd_trace_store_1(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_stores)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_store_1_triggers_conflict(addr)
@@ -241,7 +242,7 @@ static VG_REGPARM(1) void drd_trace_store_1(Addr addr)
 
 static VG_REGPARM(1) void drd_trace_store_2(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_stores)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_store_2_triggers_conflict(addr)
@@ -253,7 +254,7 @@ static VG_REGPARM(1) void drd_trace_store_2(Addr addr)
 
 static VG_REGPARM(1) void drd_trace_store_4(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_stores)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_store_4_triggers_conflict(addr)
@@ -265,7 +266,7 @@ static VG_REGPARM(1) void drd_trace_store_4(Addr addr)
 
 static VG_REGPARM(1) void drd_trace_store_8(Addr addr)
 {
-   if (DRD_(running_thread_is_recording)()
+   if (DRD_(running_thread_is_recording_stores)()
        && (s_check_stack_accesses
            || ! DRD_(thread_address_on_stack)(addr))
        && bm_access_store_8_triggers_conflict(addr)
@@ -449,7 +450,6 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
    IRSB*    bb;
    IRExpr** argv;
    Bool     instrument = True;
-   Bool     bus_locked = False;
 
    /* Set up BB */
    bb           = emptyIRSB();
@@ -483,16 +483,6 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
          {
          case Imbe_Fence:
             break; /* not interesting */
-         case Imbe_BusLock:
-         case Imbe_SnoopedStoreBegin:
-            tl_assert(! bus_locked);
-            bus_locked = True;
-            break;
-         case Imbe_BusUnlock:
-         case Imbe_SnoopedStoreEnd:
-            tl_assert(bus_locked);
-            bus_locked = False;
-            break;
          default:
             tl_assert(0);
          }
@@ -500,7 +490,8 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
          break;
 
       case Ist_Store:
-         if (instrument && ! bus_locked)
+         if (instrument && /* ignore stores resulting from st{d,w}cx. */
+                           st->Ist.Store.resSC == IRTemp_INVALID)
          {
             instrument_store(bb,
                              st->Ist.Store.addr,
@@ -546,8 +537,7 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
                           argv);
                   addStmtToIRSB(bb, IRStmt_Dirty(di));
                }
-               if ((mFx == Ifx_Write || mFx == Ifx_Modify)
-                   && ! bus_locked)
+               if (mFx == Ifx_Write || mFx == Ifx_Modify)
                {
                   di = unsafeIRDirty_0_N(
                           /*regparms*/2,
@@ -564,13 +554,31 @@ IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
          addStmtToIRSB(bb, st);
          break;
 
+      case Ist_CAS:
+         if (instrument)
+         {
+            /* Just treat this as a read of the location.  I believe
+               this is equivalent to the previous logic, which
+               observed bus-lock/unlock Ist_MBEs, and ignored all
+               writes within sections bracketed by bus-lock and
+               bus-unlock annotations. */
+            Int    dataSize;
+            IRCAS* cas = st->Ist.CAS.details;
+            tl_assert(cas->addr != NULL);
+            tl_assert(cas->dataLo != NULL);
+            dataSize = sizeofIRType(typeOfIRExpr(bb->tyenv, cas->dataLo));
+            if (cas->dataHi != NULL)
+               dataSize *= 2; /* since it's a doubleword-CAS */
+            instrument_load(bb, cas->addr, dataSize);
+         }
+         addStmtToIRSB(bb, st);
+         break;
+
       default:
          addStmtToIRSB(bb, st);
          break;
       }
    }
-
-   tl_assert(! bus_locked);
 
    return bb;
 }

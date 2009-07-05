@@ -99,6 +99,8 @@ void VG_(set_syscall_return_shadows) ( ThreadId tid,
    VG_(threads)[tid].arch.vex_shadow2.guest_GPR3 = s2res;
    VG_(threads)[tid].arch.vex_shadow1.guest_GPR4 = s1err;
    VG_(threads)[tid].arch.vex_shadow2.guest_GPR4 = s2err;
+#  elif defined(VGO_darwin)
+   // GrP fixme darwin syscalls may return more values (2 registers plus error)
 #  else
 #    error "Unknown plat"
 #  endif
@@ -348,7 +350,7 @@ Bool VG_(machine_get_hwcaps)( void )
    LibVEX_default_VexArchInfo(&vai);
 
 #if defined(VGA_x86)
-   { Bool have_sse1, have_sse2;
+   { Bool have_sse1, have_sse2, have_cx8;
      UInt eax, ebx, ecx, edx;
 
      if (!VG_(has_cpuid)())
@@ -365,6 +367,13 @@ Bool VG_(machine_get_hwcaps)( void )
 
      have_sse1 = (edx & (1<<25)) != 0; /* True => have sse insns */
      have_sse2 = (edx & (1<<26)) != 0; /* True => have sse2 insns */
+
+     /* cmpxchg8b is a minimum requirement now; if we don't have it we
+        must simply give up.  But all CPUs since Pentium-I have it, so
+        that doesn't seem like much of a restriction. */
+     have_cx8 = (edx & (1<<8)) != 0; /* True => have cmpxchg8b */
+     if (!have_cx8)
+        return False;
 
      if (have_sse2 && have_sse1) {
         va          = VexArchX86;
@@ -388,10 +397,40 @@ Bool VG_(machine_get_hwcaps)( void )
    }
 
 #elif defined(VGA_amd64)
-   vg_assert(VG_(has_cpuid)());
-   va         = VexArchAMD64;
-   vai.hwcaps = 0; /*baseline - SSE2 */
-   return True;
+   { Bool have_sse1, have_sse2, have_sse3, have_cx8, have_cx16;
+     UInt eax, ebx, ecx, edx;
+
+     if (!VG_(has_cpuid)())
+        /* we can't do cpuid at all.  Give up. */
+        return False;
+
+     VG_(cpuid)(0, &eax, &ebx, &ecx, &edx);
+     if (eax < 1)
+        /* we can't ask for cpuid(x) for x > 0.  Give up. */
+        return False;
+
+     /* get capabilities bits into edx */
+     VG_(cpuid)(1, &eax, &ebx, &ecx, &edx);
+
+     have_sse1 = (edx & (1<<25)) != 0; /* True => have sse insns */
+     have_sse2 = (edx & (1<<26)) != 0; /* True => have sse2 insns */
+     have_sse3 = (ecx & (1<<9)) != 0;  /* True => have sse3 insns */
+
+     /* cmpxchg8b is a minimum requirement now; if we don't have it we
+        must simply give up.  But all CPUs since Pentium-I have it, so
+        that doesn't seem like much of a restriction. */
+     have_cx8 = (edx & (1<<8)) != 0; /* True => have cmpxchg8b */
+     if (!have_cx8)
+        return False;
+
+     /* on amd64 we tolerate older cpus, which don't have cmpxchg16b */
+     have_cx16 = (ecx & (1<<13)) != 0; /* True => have cmpxchg16b */
+
+     va         = VexArchAMD64;
+     vai.hwcaps = (have_sse3 ? VEX_HWCAPS_AMD64_SSE3 : 0)
+                  | (have_cx16 ? VEX_HWCAPS_AMD64_CX16 : 0);
+     return True;
+   }
 
 #elif defined(VGA_ppc32)
    {
@@ -401,12 +440,19 @@ Bool VG_(machine_get_hwcaps)( void )
         AT_PLATFORM entries in the ELF auxiliary table -- see also
         the_iifii.client_auxv in m_main.c.
       */
-     vki_sigset_t         saved_set, tmp_set;
-     struct vki_sigaction saved_sigill_act, tmp_sigill_act;
-     struct vki_sigaction saved_sigfpe_act, tmp_sigfpe_act;
+     vki_sigset_t          saved_set, tmp_set;
+     vki_sigaction_fromK_t saved_sigill_act, saved_sigfpe_act;
+     vki_sigaction_toK_t     tmp_sigill_act,   tmp_sigfpe_act;
 
      volatile Bool have_F, have_V, have_FX, have_GX;
      Int r;
+
+     /* This is a kludge.  Really we ought to back-convert saved_act
+        into a toK_t using VG_(convert_sigaction_fromK_to_toK), but
+        since that's a no-op on all ppc32 platforms so far supported,
+        it's not worth the typing effort.  At least include most basic
+        sanity check: */
+     vg_assert(sizeof(vki_sigaction_fromK_t) == sizeof(vki_sigaction_toK_t));
 
      VG_(sigemptyset)(&tmp_set);
      VG_(sigaddset)(&tmp_set, VKI_SIGILL);
@@ -512,24 +558,33 @@ Bool VG_(machine_get_hwcaps)( void )
 #elif defined(VGA_ppc64)
    {
      /* Same instruction set detection algorithm as for ppc32. */
-     vki_sigset_t         saved_set, tmp_set;
-     struct vki_sigaction saved_sigill_act, tmp_sigill_act;
-     struct vki_sigaction saved_sigfpe_act, tmp_sigfpe_act;
+     vki_sigset_t          saved_set, tmp_set;
+     vki_sigaction_fromK_t saved_sigill_act, saved_sigfpe_act;
+     vki_sigaction_toK_t     tmp_sigill_act,   tmp_sigfpe_act;
 
      volatile Bool have_F, have_V, have_FX, have_GX;
+     Int r;
+
+     /* This is a kludge.  Really we ought to back-convert saved_act
+        into a toK_t using VG_(convert_sigaction_fromK_to_toK), but
+        since that's a no-op on all ppc64 platforms so far supported,
+        it's not worth the typing effort.  At least include most basic
+        sanity check: */
+     vg_assert(sizeof(vki_sigaction_fromK_t) == sizeof(vki_sigaction_toK_t));
 
      VG_(sigemptyset)(&tmp_set);
      VG_(sigaddset)(&tmp_set, VKI_SIGILL);
      VG_(sigaddset)(&tmp_set, VKI_SIGFPE);
 
-     VG_(sigprocmask)(VKI_SIG_UNBLOCK, &tmp_set, &saved_set);
+     r = VG_(sigprocmask)(VKI_SIG_UNBLOCK, &tmp_set, &saved_set);
+     vg_assert(r == 0);
 
-     VG_(sigaction)(VKI_SIGILL, NULL, &saved_sigill_act);
+     r = VG_(sigaction)(VKI_SIGILL, NULL, &saved_sigill_act);
+     vg_assert(r == 0);
      tmp_sigill_act = saved_sigill_act;
 
      VG_(sigaction)(VKI_SIGFPE, NULL, &saved_sigfpe_act);
      tmp_sigfpe_act = saved_sigfpe_act;
-
 
      /* NODEFER: signal handler does not return (from the kernel's point of
         view), hence if it is to successfully catch a signal more than once,
@@ -656,8 +711,8 @@ void VG_(machine_get_VexArchInfo)( /*OUT*/VexArch* pVa,
 // produce a pointer to the actual entry point for the function.
 void* VG_(fnptr_to_fnentry)( void* f )
 {
-#if defined(VGP_x86_linux) || defined(VGP_amd64_linux) \
-                           || defined(VGP_ppc32_linux)
+#if defined(VGP_x86_linux)   || defined(VGP_amd64_linux) || \
+    defined(VGP_ppc32_linux) || defined(VGO_darwin)
    return f;
 #elif defined(VGP_ppc64_linux) || defined(VGP_ppc32_aix5) \
                                || defined(VGP_ppc64_aix5)

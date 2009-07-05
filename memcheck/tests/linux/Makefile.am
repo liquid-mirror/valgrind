@@ -1,9 +1,9 @@
 
 include $(top_srcdir)/Makefile.tool-tests.am
 
-noinst_SCRIPTS = filter_stderr
+dist_noinst_SCRIPTS = filter_stderr
 
-EXTRA_DIST = $(noinst_SCRIPTS) \
+EXTRA_DIST = \
 	brk.stderr.exp brk.vgtest \
 	capget capget.stderr.exp \
 	stack_switch.stderr.exp stack_switch.vgtest \
@@ -22,3 +22,4 @@ AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
 stack_switch_LDADD    = -lpthread
 timerfd_syscall_LDADD = -lrt
+

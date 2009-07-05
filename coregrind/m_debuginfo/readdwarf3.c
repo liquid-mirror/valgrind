@@ -34,6 +34,8 @@
    without prior written permission.
 */
 
+#if defined(VGO_linux) || defined(VGO_darwin)
+
 /* REFERENCE (without which this code will not make much sense):
 
    DWARF Debugging Information Format, Version 3, 
@@ -138,6 +140,7 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
+#include "pub_core_tooliface.h"    /* VG_(needs) */
 #include "pub_core_xarray.h"
 #include "pub_core_wordfm.h"
 #include "priv_misc.h"             /* dinfo_zalloc/free */
@@ -3903,6 +3906,8 @@ ML_(new_dwarf3_reader) (
    TRACE_SYMTAB("\n");
 #endif
 
+#endif // defined(VGO_linux) || defined(VGO_darwin)
+
 /*--------------------------------------------------------------------*/
-/*--- end                                             readdwarf3.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

@@ -27,11 +27,8 @@
 
    The GNU General Public License is contained in the file COPYING.
 */
-/*
-   Stabs reader greatly improved by Nick Nethercote, Apr 02.
-   This module was also extensively hacked on by Jeremy Fitzhardinge
-   and Tom Hughes.
-*/
+
+#if defined(VGO_linux) || defined(VGO_darwin)
 
 #include "pub_core_basics.h"
 #include "pub_core_debuginfo.h"
@@ -1785,6 +1782,14 @@ void ML_(read_debuginfo_dwarf1) (
 #  define FP_REG         1
 #  define SP_REG         1
 #  define RA_REG_DEFAULT 8     // CAB: What's a good default ?
+#elif defined(VGP_x86_darwin)
+#  define FP_REG         5
+#  define SP_REG         4
+#  define RA_REG_DEFAULT 8
+#elif defined(VGP_amd64_darwin)
+#  define FP_REG         6
+#  define SP_REG         7
+#  define RA_REG_DEFAULT 16
 #else
 #  error "Unknown platform"
 #endif
@@ -1922,6 +1927,11 @@ static void ppRegRule ( XArray* exprs, RegRule* rrule )
 }
 
 
+/* Size of the stack of register unwind rules.  This is only
+   exceedingly rarely used, so a stack of size 1 should actually work
+   with almost all compiler-generated CFA. */
+#define N_RR_STACK 4
+
 typedef
    struct {
       /* Read-only fields (set by the CIE) */
@@ -1938,8 +1948,12 @@ typedef
       Int     cfa_reg;
       Int     cfa_off;  /* in bytes */
       Int     cfa_expr_ix; /* index into cfa_exprs */
-      /* register unwind rules */
-      RegRule reg[N_CFI_REGS];
+      /* A stack of register unwind rules.  We need a stack of them,
+         rather than just one set of rules, in order to handle
+         DW_CFA_{remember,restore}_state. */
+      RegRule reg[N_RR_STACK][N_CFI_REGS];
+      Int     reg_sp; /* 0 <= reg_sp < N_RR_STACK; points at the
+                         currently-in-use rule set. */
       /* array of CfiExpr, shared by reg[] and cfa_expr_ix */
       XArray* exprs;
    }
@@ -1947,7 +1961,7 @@ typedef
 
 static void ppUnwindContext ( UnwindContext* ctx )
 {
-   Int i;
+   Int j, i;
    VG_(printf)("0x%llx: ", (ULong)ctx->loc);
    if (ctx->cfa_is_regoff) {
       VG_(printf)("%d(r%d) ",  ctx->cfa_off, ctx->cfa_reg);
@@ -1957,14 +1971,19 @@ static void ppUnwindContext ( UnwindContext* ctx )
       ML_(ppCfiExpr)( ctx->exprs, ctx->cfa_expr_ix );
       VG_(printf)("} ");
    }
-   for (i = 0; i < N_CFI_REGS; i++)
-      ppRegRule(ctx->exprs, &ctx->reg[i]);
+   for (j = 0; j <= ctx->reg_sp; j++) {
+      VG_(printf)("%s[%d]={ ", j > 0 ? " " : "", j);
+      for (i = 0; i < N_CFI_REGS; i++)
+         ppRegRule(ctx->exprs, &ctx->reg[j][i]);
+      VG_(printf)("}");
+   }
    VG_(printf)("\n");
 }
 
 static void initUnwindContext ( /*OUT*/UnwindContext* ctx )
 {
-   Int i;
+   Int j, i;
+   VG_(memset)(ctx, 0, sizeof(*ctx));
    ctx->code_a_f      = 0;
    ctx->data_a_f      = 0;
    ctx->initloc       = 0;
@@ -1975,9 +1994,12 @@ static void initUnwindContext ( /*OUT*/UnwindContext* ctx )
    ctx->cfa_off       = 0;
    ctx->cfa_expr_ix   = 0;
    ctx->exprs         = NULL;
-   for (i = 0; i < N_CFI_REGS; i++) {
-      ctx->reg[i].tag = RR_Undef;
-      ctx->reg[i].arg = 0;
+   ctx->reg_sp        = 0;
+   for (j = 0; j < N_RR_STACK; j++) {
+      for (i = 0; i < N_CFI_REGS; i++) {
+         ctx->reg[j][i].tag = RR_Undef;
+         ctx->reg[j][i].arg = 0;
+      }
    }
 }
 
@@ -2103,8 +2125,15 @@ static Bool summarise_context( /*OUT*/DiCfSI* si,
          why = 2; goto failed; /* otherwise give up */        \
    }
 
-   SUMMARISE_HOW(si->ra_how, si->ra_off, ctx->reg[ctx->ra_reg] );
-   SUMMARISE_HOW(si->fp_how, si->fp_off, ctx->reg[FP_REG] );
+   /* Guard against obviously stupid settings of the reg-rule stack
+      pointer. */
+   if (ctx->reg_sp < 0)           { why = 8; goto failed; }
+   if (ctx->reg_sp >= N_RR_STACK) { why = 9; goto failed; }
+
+   SUMMARISE_HOW(si->ra_how, si->ra_off,
+                             ctx->reg[ctx->reg_sp][ctx->ra_reg] );
+   SUMMARISE_HOW(si->fp_how, si->fp_off,
+                             ctx->reg[ctx->reg_sp][FP_REG] );
 
 #  undef SUMMARISE_HOW
 
@@ -2115,7 +2144,7 @@ static Bool summarise_context( /*OUT*/DiCfSI* si,
 
    /* also, gcc says "Undef" for %{e,r}bp when it is unchanged.  So
       .. */
-   if (ctx->reg[FP_REG].tag == RR_Undef)
+   if (ctx->reg[ctx->reg_sp][FP_REG].tag == RR_Undef)
       si->fp_how = CFIR_SAME;
 
    /* knock out some obviously stupid cases */
@@ -2214,10 +2243,10 @@ static void ppUnwindContext_summary ( UnwindContext* ctx )
    }
 
    VG_(printf)("RA=");
-   ppRegRule( ctx->exprs, &ctx->reg[ctx->ra_reg] );
+   ppRegRule( ctx->exprs, &ctx->reg[ctx->reg_sp][ctx->ra_reg] );
 
    VG_(printf)("FP=");
-   ppRegRule( ctx->exprs, &ctx->reg[FP_REG] );
+   ppRegRule( ctx->exprs, &ctx->reg[ctx->reg_sp][FP_REG] );
    VG_(printf)("\n");
 }
 
@@ -2663,6 +2692,9 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
    Addr   printing_bias = ((Addr)ctx->initloc) - ((Addr)di->text_bias);
    i++;
 
+   if (ctx->reg_sp < 0 || ctx->reg_sp >= N_RR_STACK)
+      return 0; /* bogus reg-rule stack pointer */
+
    if (hi2 == DW_CFA_advance_loc) {
       delta = (UInt)lo6;
       ctx->loc += delta;
@@ -2679,12 +2711,13 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
       reg = (Int)lo6;
       if (reg < 0 || reg >= N_CFI_REGS) 
          return 0; /* fail */
-      ctx->reg[reg].tag = RR_CFAOff;
-      ctx->reg[reg].arg = off * ctx->data_a_f;
+      ctx->reg[ctx->reg_sp][reg].tag = RR_CFAOff;
+      ctx->reg[ctx->reg_sp][reg].arg = off * ctx->data_a_f;
       if (di->ddump_frames)
          VG_(printf)("  DW_CFA_offset: r%d at cfa%s%d\n",
-                     (Int)reg, ctx->reg[reg].arg < 0 ? "" : "+", 
-                     (Int)ctx->reg[reg].arg );
+                     (Int)reg,
+                     ctx->reg[ctx->reg_sp][reg].arg < 0 ? "" : "+", 
+                     (Int)ctx->reg[ctx->reg_sp][reg].arg );
       return i;
    }
 
@@ -2694,7 +2727,7 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          return 0; /* fail */
       if (restore_ctx == NULL)
          return 0; /* fail */
-      ctx->reg[reg] = restore_ctx->reg[reg];
+      ctx->reg[ctx->reg_sp][reg] = restore_ctx->reg[ctx->reg_sp][reg];
       if (di->ddump_frames)
          VG_(printf)("  DW_CFA_restore: r%d\n", (Int)reg);
       return i;
@@ -2780,8 +2813,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
             return 0; /* fail */
          if (reg2 < 0 || reg2 >= N_CFI_REGS) 
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_Reg;
-         ctx->reg[reg].arg = reg2;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_Reg;
+         ctx->reg[ctx->reg_sp][reg].arg = reg2;
          if (di->ddump_frames)
             VG_(printf)("  DW_CFA_register: r%d in r%d\n", 
                         (Int)reg, (Int)reg2);
@@ -2794,8 +2827,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          i += nleb;
          if (reg < 0 || reg >= N_CFI_REGS)
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_CFAOff;
-         ctx->reg[reg].arg = off * ctx->data_a_f;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_CFAOff;
+         ctx->reg[ctx->reg_sp][reg].arg = off * ctx->data_a_f;
          if (di->ddump_frames)
             VG_(printf)("  rci:DW_CFA_offset_extended\n");
          break;
@@ -2807,12 +2840,13 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          i += nleb;
          if (reg < 0 || reg >= N_CFI_REGS) 
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_CFAOff;
-         ctx->reg[reg].arg = off * ctx->data_a_f;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_CFAOff;
+         ctx->reg[ctx->reg_sp][reg].arg = off * ctx->data_a_f;
          if (di->ddump_frames)
             VG_(printf)("  DW_CFA_offset_extended_sf: r%d at cfa%s%d\n", 
-                        reg, ctx->reg[reg].arg < 0 ? "" : "+", 
-                        (Int)ctx->reg[reg].arg);
+                        reg,
+                        ctx->reg[ctx->reg_sp][reg].arg < 0 ? "" : "+", 
+                        (Int)ctx->reg[ctx->reg_sp][reg].arg);
          break;
 
       case DW_CFA_GNU_negative_offset_extended:
@@ -2822,8 +2856,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          i += nleb;
          if (reg < 0 || reg >= N_CFI_REGS)
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_CFAOff;
-         ctx->reg[reg].arg = (-off) * ctx->data_a_f;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_CFAOff;
+         ctx->reg[ctx->reg_sp][reg].arg = (-off) * ctx->data_a_f;
          if (di->ddump_frames)
             VG_(printf)("  rci:DW_CFA_GNU_negative_offset_extended\n");
          break;
@@ -2835,7 +2869,7 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
             return 0; /* fail */
 	 if (restore_ctx == NULL)
 	    return 0; /* fail */
-	 ctx->reg[reg] = restore_ctx->reg[reg];
+	 ctx->reg[ctx->reg_sp][reg] = restore_ctx->reg[ctx->reg_sp][reg];
          if (di->ddump_frames)
             VG_(printf)("  rci:DW_CFA_restore_extended\n");
          break;
@@ -2847,8 +2881,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          i += nleb;
          if (reg < 0 || reg >= N_CFI_REGS)
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_CFAValOff;
-         ctx->reg[reg].arg = off * ctx->data_a_f;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_CFAValOff;
+         ctx->reg[ctx->reg_sp][reg].arg = off * ctx->data_a_f;
          if (di->ddump_frames)
             VG_(printf)("  rci:DW_CFA_val_offset\n");
          break;
@@ -2860,8 +2894,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          i += nleb;
          if (reg < 0 || reg >= N_CFI_REGS)
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_CFAValOff;
-         ctx->reg[reg].arg = off * ctx->data_a_f;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_CFAValOff;
+         ctx->reg[ctx->reg_sp][reg].arg = off * ctx->data_a_f;
          if (di->ddump_frames)
             VG_(printf)("  rci:DW_CFA_val_offset_sf\n");
          break;
@@ -2906,8 +2940,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          i += nleb;
          if (reg < 0 || reg >= N_CFI_REGS) 
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_Undef;
-         ctx->reg[reg].arg = 0;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_Undef;
+         ctx->reg[ctx->reg_sp][reg].arg = 0;
          if (di->ddump_frames)
             VG_(printf)("  rci:DW_CFA_undefined\n");
          break;
@@ -2917,8 +2951,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          i += nleb;
          if (reg < 0 || reg >= N_CFI_REGS) 
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_Same;
-         ctx->reg[reg].arg = 0;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_Same;
+         ctx->reg[ctx->reg_sp][reg].arg = 0;
          if (di->ddump_frames)
             VG_(printf)("  rci:DW_CFA_same_value\n");
          break;
@@ -2962,8 +2996,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
             return 0; /* fail */
          /* Add an extra dereference */
          j = ML_(CfiExpr_Deref)( ctx->exprs, j );
-         ctx->reg[reg].tag = RR_ValExpr;
-         ctx->reg[reg].arg = j;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_ValExpr;
+         ctx->reg[ctx->reg_sp][reg].arg = j;
          break;
 
       case DW_CFA_val_expression:
@@ -2991,8 +3025,8 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          }
          if (j == -1)
             return 0; /* fail */
-         ctx->reg[reg].tag = RR_ValExpr;
-         ctx->reg[reg].arg = j;
+         ctx->reg[ctx->reg_sp][reg].tag = RR_ValExpr;
+         ctx->reg[ctx->reg_sp][reg].arg = j;
          break;
 
       case DW_CFA_def_cfa_expression:
@@ -3018,7 +3052,39 @@ static Int run_CF_instruction ( /*MOD*/UnwindContext* ctx,
          /* Ignored.  This appears to be sparc-specific; quite why it
             turns up in SuSE-supplied x86 .so's beats me. */
          if (di->ddump_frames)
-            VG_(printf)("DW_CFA_GNU_window_save\n");
+            VG_(printf)("  DW_CFA_GNU_window_save\n");
+         break;
+
+      case DW_CFA_remember_state:
+         if (di->ddump_frames)
+            VG_(printf)("  DW_CFA_remember_state\n");
+         /* we just checked this at entry, so: */
+         vg_assert(ctx->reg_sp >= 0 && ctx->reg_sp < N_RR_STACK);
+         ctx->reg_sp++;
+         if (ctx->reg_sp == N_RR_STACK) {
+            /* stack overflow.  We're hosed. */
+            VG_(message)(Vg_DebugMsg, "DWARF2 CFI reader: N_RR_STACK is "
+                                      "too low; increase and recompile.");
+            i = 0; /* indicate failure */
+         } else {
+            VG_(memcpy)(/*dst*/&ctx->reg[ctx->reg_sp],
+                        /*src*/&ctx->reg[ctx->reg_sp - 1],
+                        sizeof(ctx->reg[ctx->reg_sp]) );
+         }
+         break;
+
+      case DW_CFA_restore_state:
+         if (di->ddump_frames)
+            VG_(printf)("  DW_CFA_restore_state\n");
+         /* we just checked this at entry, so: */
+         vg_assert(ctx->reg_sp >= 0 && ctx->reg_sp < N_RR_STACK);
+         if (ctx->reg_sp == 0) {
+            /* stack overflow.  Give up. */
+            i = 0; /* indicate failure */
+         } else {
+            /* simply fall back to previous entry */
+            ctx->reg_sp--;
+         }
          break;
 
       default: 
@@ -3816,6 +3882,7 @@ void ML_(read_callframe_info_dwarf3)
     return;
 }
 
+#endif // defined(VGO_linux) || defined(VGO_darwin)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
