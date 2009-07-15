@@ -210,12 +210,11 @@ static void usage_NORETURN ( Bool debug_help )
 "\n"
 "  Extra options read from ~/.valgrindrc, $VALGRIND_OPTS, ./.valgrindrc\n"
 "\n"
-"  Valgrind is Copyright (C) 2000-2009 Julian Seward et al.\n"
-"  and licensed under the GNU General Public License, version 2.\n"
-"  Bug reports, feedback, admiration, abuse, etc, to: %s.\n"
+"  %s is %s\n"
+"  Valgrind is Copyright (C) 2000-2009, and GNU GPL'd, by Julian Seward et al\n"
+"  LibVEX is Copyright (C) 2004-2009, and GNU GPL'd, by OpenWorks LLP\n"
 "\n"
-"  Tools are copyright and licensed by their authors.  See each\n"
-"  tool's start-up message for more information.\n"
+"  Bug reports, feedback, admiration, abuse, etc, to: %s.\n"
 "\n";
 
    Char* gdb_path = GDB_PATH;
@@ -245,7 +244,8 @@ static void usage_NORETURN ( Bool debug_help )
             VG_(printf)("    (none)\n");
       }
    }
-   VG_(printf)(usage3, VG_BUGS_TO);
+   VG_(printf)(usage3, VG_(details).name, VG_(details).copyright_author,
+               VG_BUGS_TO);
    VG_(exit)(0);
 }
 
@@ -1000,8 +1000,7 @@ static void print_preamble ( Bool logging_to_fd,
                    VG_(details).description,
                    xpost );
 
-      if (VG_(strlen)(toolname) >= 4 
-          && 0 == VG_(strncmp)(toolname, "exp-", 4)) {
+      if (VG_(strlen)(toolname) >= 4 && VG_STREQN(4, toolname, "exp-")) {
          umsg_or_xml(
             "%sNOTE: This is an Experimental-Class Valgrind Tool.%s\n",
             xpre, xpost
@@ -1013,20 +1012,9 @@ static void print_preamble ( Bool logging_to_fd,
 
       /* Core details */
       umsg_or_xml(
-         "%sUsing LibVEX rev %s, a library for dynamic binary translation.%s\n",
-         xpre, LibVEX_Version(), xpost );
-      umsg_or_xml(
-         "%sCopyright (C) 2004-2009, and GNU GPL'd, by OpenWorks Ltd.%s\n",
-         xpre, xpost );
-      umsg_or_xml(
-         "%sUsing valgrind-%s, a dynamic binary instrumentation framework.%s\n",
-         xpre, VERSION, xpost);
-      umsg_or_xml(
-         "%sCopyright (C) 2000-2009, and GNU GPL'd, by Julian Seward et al.%s\n",
-         xpre, xpost );
-
-      if (VG_(clo_verbosity) == 1 && !VG_(clo_xml))
-         VG_(UMSG)("For more details, rerun with: -v\n");
+         "%sBuilt with Valgrind and LibVEX; rerun with -h for copyright info%s\n",
+         xpre, xpost
+      );
 
       if (VG_(clo_xml))
          VG_(printf_xml)("</preamble>\n");

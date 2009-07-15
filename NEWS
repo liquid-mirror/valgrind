@@ -12,6 +12,7 @@ Release 3.5.0 (???)
     planned because it would require work and 10.4 is only becoming less common.
 
   Things that don't work:
+  - Helgrind and DRD
   - Objective-C garbage collection
   - --db-attach=yes
   - Messages like the following indicate a mismatch between Valgrind's
@@ -28,6 +29,8 @@ Release 3.5.0 (???)
 
 * XXX: something about improved Wine support?
 
+* XXX: exp-bbv has been added...
+
 * A new Memcheck client request VALGRIND_COUNT_LEAK_BLOCKS has been added.
   It is similar to VALGRIND_COUNT_LEAKS but counts blocks instead of bytes.
   [XXX: consider adding VALGRIND_COUNT_LEAK_BYTES as a synonym and
@@ -41,6 +44,10 @@ Release 3.5.0 (???)
   - Blocks that are only reachable via at least one interior-pointer, but
     are directly pointed to by a start-pointer, were previously marked as
     "still reachable".  They are now correctly marked as "possibly lost".
+  - The default value for the --leak-resolution option has been changed from
+    "low" to "high".  In general, this means that more leak reports will be
+    produced, but each leak report will describe fewer leaked blocks.
+  - The documentation for the leak checker has also been improved.
 
 * The format of some (non-XML) stack trace entries has changed a little.
   Previously there were six possible forms:

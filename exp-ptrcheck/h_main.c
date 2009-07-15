@@ -1955,9 +1955,17 @@ static void post_reg_write_nonptr ( ThreadId tid, PtrdiffT offset, SizeT size )
    //
    if (is_integer_guest_reg( (Int)offset, (Int)size )) {
       put_guest_intreg( tid, 1, offset, size, (UWord)NONPTR );
-   } else {
+   } 
+   else 
+   if (size == 1 || size == 2) {
+      /* can't possibly be an integer guest reg.  Ignore. */
+   }
+   else {
       // DDD: on Darwin, this assertion fails because we currently do a
       // 'post_reg_write' on the 'guest_CC_DEP1' pseudo-register.
+      // JRS 2009July13: we should change is_integer_guest_reg()
+      // to accept guest_CC_DEP* and guest_CC_NDEP
+      // as legitimate pointer-holding registers
       tl_assert(0);
    }
    //   VG_(set_thread_shadow_archreg)( tid, reg, (UInt)NONPTR );
@@ -2997,7 +3005,7 @@ static inline UWord do_store_conditional_64( Addr m/*dst*/, ULong t/*val*/ )
 
 /* Apply nonptr_or_unknown to all the words intersecting
    [a, a+len). */
-static VG_REGPARM(2)
+static inline VG_REGPARM(2)
 void nonptr_or_unknown_range ( Addr a, SizeT len )
 {
    const SizeT wszB = sizeof(UWord);
@@ -3007,6 +3015,34 @@ void nonptr_or_unknown_range ( Addr a, SizeT len )
    tl_assert(wfirst <= wlast);
    for (a2 = wfirst ; a2 <= wlast; a2 += wszB) {
       set_mem_vseg( a2, nonptr_or_unknown( *(UWord*)a2 ));
+   }
+}
+
+// Write to shadow memory, for a 32-bit store.  Must only
+// be used on 32-bit targets.
+static inline VG_REGPARM(2)
+void do_shadow_store4_P( Addr m, Seg* vseg )
+{
+   tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
+   if (VG_IS_4_ALIGNED(m)) {
+      set_mem_vseg( m, vseg );
+   } else {
+      // straddling two words
+      nonptr_or_unknown_range(m, 4);
+   }
+}
+
+// Write to shadow memory, for a 64-bit store.  Must only
+// be used on 64-bit targets.
+static inline VG_REGPARM(2)
+void do_shadow_store8_P( Addr m, Seg* vseg )
+{
+   tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
+   if (VG_IS_8_ALIGNED(m)) {
+      set_mem_vseg( m, vseg );
+   } else {
+      // straddling two words
+      nonptr_or_unknown_range(m, 8);
    }
 }
 
@@ -3118,12 +3154,7 @@ void check_store8_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
    check_load_or_store(/*is_write*/True, m, 8, mptr_vseg);
    // Actually *do* the STORE here
    *(ULong*)m = t;
-   if (VG_IS_8_ALIGNED(m)) {
-      set_mem_vseg( m, t_vseg );
-   } else {
-      // straddling two words
-      nonptr_or_unknown_range(m, 8);
-   }
+   do_shadow_store8_P( m, t_vseg );
 }
 
 // This handles 64 bit store-conditionals on 64 bit targets.  It must
@@ -3140,12 +3171,8 @@ UWord check_store8C_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
    check_load_or_store(/*is_write*/True, m, 8, mptr_vseg);
    // Actually *do* the STORE here
    success = do_store_conditional_64( m, t );
-   if (VG_IS_8_ALIGNED(m)) {
-      set_mem_vseg( m, t_vseg );
-   } else {
-      // straddling two words
-      nonptr_or_unknown_range(m, 8);
-   }
+   if (success)
+      do_shadow_store8_P( m, t_vseg );
    return success;
 }
 
@@ -3162,12 +3189,7 @@ void check_store4_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
    check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
    // Actually *do* the STORE here
    *(UInt*)m = t;
-   if (VG_IS_4_ALIGNED(m)) {
-      set_mem_vseg( m, t_vseg );
-   } else {
-      // straddling two words
-      nonptr_or_unknown_range(m, 4);
-   }
+   do_shadow_store4_P( m, t_vseg );
 }
 
 // This handles 32 bit store-conditionals on 32 bit targets.  It must
@@ -3184,12 +3206,8 @@ UWord check_store4C_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
    check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
    // Actually *do* the STORE here
    success = do_store_conditional_32( m, t );
-   if (VG_IS_4_ALIGNED(m)) {
-      set_mem_vseg( m, t_vseg );
-   } else {
-      // straddling two words
-      nonptr_or_unknown_range(m, 4);
-   }
+   if (success)
+      do_shadow_store4_P( m, t_vseg );
    return success;
 }
 
@@ -3219,7 +3237,8 @@ UWord check_store4C(Addr m, Seg* mptr_vseg, UWord t)
    check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
    // Actually *do* the STORE here
    success = do_store_conditional_32( m, t );
-   nonptr_or_unknown_range(m, 4);
+   if (success)
+      nonptr_or_unknown_range(m, 4);
    return success;
 }
 
@@ -3448,24 +3467,61 @@ static VG_REGPARM(2) Seg* do_mulW(Seg* seg1, Seg* seg2)
    abstractify the sg_ instrumentation.  See comments in sg_main.c's
    instrumentation section for further details. */
 
+
+/* Carries info about a particular tmp.  The tmp's number is not
+   recorded, as this is implied by (equal to) its index in the tmpMap
+   in PCEnv.  The tmp's type is also not recorded, as this is present
+   in PCEnv.sb->tyenv.
+
+   When .kind is NonShad, .shadow may give the identity of the temp
+   currently holding the associated shadow value, or it may be
+   IRTemp_INVALID if code to compute the shadow has not yet been
+   emitted.
+
+   When .kind is Shad tmp holds a shadow value, and so .shadow must be
+   IRTemp_INVALID, since it is illogical for a shadow tmp itself to be
+   shadowed.
+*/
+typedef
+   enum { NonShad=1, Shad=2 }
+   TempKind;
+
+typedef
+   struct {
+      TempKind kind;
+      IRTemp   shadow;
+   }
+   TempMapEnt;
+
+
+
 /* Carries around state during Ptrcheck instrumentation. */
 typedef
    struct {
       /* MODIFIED: the superblock being constructed.  IRStmts are
          added. */
-      IRSB* bb;
+      IRSB* sb;
       Bool  trace;
 
-      /* MODIFIED: a table [0 .. #temps_in_original_bb-1] which maps
-         original temps to their current their current shadow temp.
-         Initially all entries are IRTemp_INVALID.  Entries are added
-         lazily since many original temps are not used due to
-         optimisation prior to instrumentation.  Note that only
-         integer temps of the guest word size are shadowed, since it
-         is impossible (or meaningless) to hold a pointer in any other
-         type of temp. */
-      IRTemp* tmpMap;
-      Int     n_originalTmps; /* for range checking */
+      /* MODIFIED: a table [0 .. #temps_in_sb-1] which gives the
+         current kind and possibly shadow temps for each temp in the
+         IRSB being constructed.  Note that it does not contain the
+         type of each tmp.  If you want to know the type, look at the
+         relevant entry in sb->tyenv.  It follows that at all times
+         during the instrumentation process, the valid indices for
+         tmpMap and sb->tyenv are identical, being 0 .. N-1 where N is
+         total number of NonShad and Shad temps allocated so far.
+
+         The reason for this strange split (types in one place, all
+         other info in another) is that we need the types to be
+         attached to sb so as to make it possible to do
+         "typeOfIRExpr(mce->bb->tyenv, ...)" at various places in the
+         instrumentation process.
+
+         Note that only integer temps of the guest word size are
+         shadowed, since it is impossible (or meaningless) to hold a
+         pointer in any other type of temp. */
+      XArray* /* of TempMapEnt */ qmpMap;
 
       /* READONLY: the host word type.  Needed for constructing
          arguments of type 'HWord' to be passed to helper functions.
@@ -3505,18 +3561,41 @@ typedef
    sanity checker should catch all such anomalies, however.
 */
 
+/* Create a new IRTemp of type 'ty' and kind 'kind', and add it to
+   both the table in pce->sb and to our auxiliary mapping.  Note that
+   newTemp may cause pce->tmpMap to resize, hence previous results
+   from VG_(indexXA)(pce->tmpMap) are invalidated. */
+static IRTemp newTemp ( PCEnv* pce, IRType ty, TempKind kind )
+{
+   Word       newIx;
+   TempMapEnt ent;
+   IRTemp     tmp = newIRTemp(pce->sb->tyenv, ty);
+   ent.kind   = kind;
+   ent.shadow = IRTemp_INVALID;
+   newIx = VG_(addToXA)( pce->qmpMap, &ent );
+   tl_assert(newIx == (Word)tmp);
+   return tmp;
+}
+
 /* Find the tmp currently shadowing the given original tmp.  If none
    so far exists, allocate one.  */
 static IRTemp findShadowTmp ( PCEnv* pce, IRTemp orig )
 {
-   tl_assert(orig < pce->n_originalTmps);
-   tl_assert(pce->bb->tyenv->types[orig] == pce->gWordTy);
-   if (pce->tmpMap[orig] == IRTemp_INVALID) {
-      tl_assert(0);
-      pce->tmpMap[orig]
-         = newIRTemp(pce->bb->tyenv, pce->gWordTy);
+   TempMapEnt* ent;
+   /* VG_(indexXA) range-checks 'orig', hence no need to check
+      here. */
+   ent = (TempMapEnt*)VG_(indexXA)( pce->qmpMap, (Word)orig );
+   tl_assert(ent->kind == NonShad);
+   if (ent->shadow == IRTemp_INVALID) {
+      IRTemp shadow = newTemp( pce, pce->gWordTy, Shad );
+      /* newTemp may cause pce->tmpMap to resize, hence previous results
+         from VG_(indexXA) are invalid. */
+      ent = (TempMapEnt*)VG_(indexXA)( pce->qmpMap, (Word)orig );
+      tl_assert(ent->kind == NonShad);
+      tl_assert(ent->shadow == IRTemp_INVALID);
+      ent->shadow = shadow;
    }
-   return pce->tmpMap[orig];
+   return ent->shadow;
 }
 
 /* Allocate a new shadow for the given original tmp.  This means any
@@ -3524,15 +3603,29 @@ static IRTemp findShadowTmp ( PCEnv* pce, IRTemp orig )
    necessary to give a new value to a shadow once it has been tested
    for undefinedness, but unfortunately IR's SSA property disallows
    this.  Instead we must abandon the old shadow, allocate a new one
-   and use that instead. */
-__attribute__((noinline))
+   and use that instead.
+
+   This is the same as findShadowTmp, except we don't bother to see
+   if a shadow temp already existed -- we simply allocate a new one
+   regardless. */
 static IRTemp newShadowTmp ( PCEnv* pce, IRTemp orig )
 {
-   tl_assert(orig < pce->n_originalTmps);
-   tl_assert(pce->bb->tyenv->types[orig] == pce->gWordTy);
-   pce->tmpMap[orig]
-      = newIRTemp(pce->bb->tyenv, pce->gWordTy);
-   return pce->tmpMap[orig];
+   TempMapEnt* ent;
+   /* VG_(indexXA) range-checks 'orig', hence no need to check
+      here. */
+   ent = (TempMapEnt*)VG_(indexXA)( pce->qmpMap, (Word)orig );
+   tl_assert(ent->kind == NonShad);
+   if (1) {
+      IRTemp shadow = newTemp( pce, pce->gWordTy, Shad );
+      /* newTemp may cause pce->tmpMap to resize, hence previous results
+         from VG_(indexXA) are invalid. */
+      ent = (TempMapEnt*)VG_(indexXA)( pce->qmpMap, (Word)orig );
+      tl_assert(ent->kind == NonShad);
+      ent->shadow = shadow;
+      return shadow;
+   }
+   /* NOTREACHED */
+   tl_assert(0);
 }
 
 
@@ -3594,7 +3687,7 @@ static inline void stmt ( HChar cat, PCEnv* pce, IRStmt* st ) {
       ppIRStmt(st);
       VG_(printf)("\n");
    }
-   addStmtToIRSB(pce->bb, st);
+   addStmtToIRSB(pce->sb, st);
 }
 
 /* assign value to tmp */
@@ -3623,9 +3716,9 @@ void assign ( HChar cat, PCEnv* pce, IRTemp tmp, IRExpr* expr ) {
    that the two types agree. */
 static IRAtom* assignNew ( HChar cat, PCEnv* pce, IRType ty, IRExpr* e ) {
    IRTemp t;
-   IRType tyE = typeOfIRExpr(pce->bb->tyenv, e);
+   IRType tyE = typeOfIRExpr(pce->sb->tyenv, e);
    tl_assert(tyE == ty); /* so 'ty' is redundant (!) */
-   t = newIRTemp(pce->bb->tyenv, ty);
+   t = newTemp(pce, ty, Shad);
    assign(cat, pce, t, e);
    return mkexpr(t);
 }
@@ -3705,8 +3798,8 @@ static IRTemp gen_dirty_W_W ( PCEnv* pce, void* h_fn, HChar* h_nm,
    IRTemp   res;
    IRDirty* di;
    tl_assert(isIRAtom(a1));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   res = newTemp(pce, pce->gWordTy, Shad);
    di = unsafeIRDirty_1_N( res, 1/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_1( a1 ) );
@@ -3723,9 +3816,9 @@ static IRTemp gen_dirty_W_WW ( PCEnv* pce, void* h_fn, HChar* h_nm,
    IRDirty* di;
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
-   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a2) == pce->gWordTy);
+   res = newTemp(pce, pce->gWordTy, Shad);
    di = unsafeIRDirty_1_N( res, 2/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_2( a1, a2 ) );
@@ -3743,10 +3836,10 @@ static IRTemp gen_dirty_W_WWW ( PCEnv* pce, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
-   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a3) == pce->gWordTy);
+   res = newTemp(pce, pce->gWordTy, Shad);
    di = unsafeIRDirty_1_N( res, 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_3( a1, a2, a3 ) );
@@ -3766,11 +3859,11 @@ static IRTemp gen_dirty_W_WWWW ( PCEnv* pce, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
    tl_assert(isIRAtom(a4));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a4) == pce->gWordTy);
-   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a3) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a4) == pce->gWordTy);
+   res = newTemp(pce, pce->gWordTy, Shad);
    di = unsafeIRDirty_1_N( res, 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_4( a1, a2, a3, a4 ) );
@@ -3779,18 +3872,22 @@ static IRTemp gen_dirty_W_WWWW ( PCEnv* pce, void* h_fn, HChar* h_nm,
 }
 
 /* Version of gen_dirty_W_WW with no return value.  Callee must be a
-   VG_REGPARM(2) function.*/
-static void gen_dirty_v_WW ( PCEnv* pce, void* h_fn, HChar* h_nm, 
+   VG_REGPARM(2) function.  If guard is non-NULL then it is used to
+   conditionalise the call. */
+static void gen_dirty_v_WW ( PCEnv* pce, IRExpr* guard,
+                             void* h_fn, HChar* h_nm, 
                              IRExpr* a1, IRExpr* a2 )
 {
    IRDirty* di;
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a2) == pce->gWordTy);
    di = unsafeIRDirty_0_N( 2/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_2( a1, a2 ) );
+   if (guard)
+      di->guard = guard;
    stmt( 'I', pce, IRStmt_Dirty(di) );
 }
 
@@ -3803,9 +3900,9 @@ static void gen_dirty_v_WWW ( PCEnv* pce, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a3) == pce->gWordTy);
    di = unsafeIRDirty_0_N( 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_3( a1, a2, a3 ) );
@@ -3823,10 +3920,10 @@ static void gen_dirty_v_WWWW ( PCEnv* pce, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
    tl_assert(isIRAtom(a4));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a4) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a3) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a4) == pce->gWordTy);
    di = unsafeIRDirty_0_N( 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_4( a1, a2, a3, a4 ) );
@@ -3846,12 +3943,12 @@ static void gen_dirty_v_6W ( PCEnv* pce, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a4));
    tl_assert(isIRAtom(a5));
    tl_assert(isIRAtom(a6));
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a4) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a5) == pce->gWordTy);
-   tl_assert(typeOfIRExpr(pce->bb->tyenv, a6) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a3) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a4) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a5) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->sb->tyenv, a6) == pce->gWordTy);
    di = unsafeIRDirty_0_N( 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_6( a1, a2, a3, a4, a5, a6 ) );
@@ -3860,7 +3957,7 @@ static void gen_dirty_v_6W ( PCEnv* pce, void* h_fn, HChar* h_nm,
 
 static IRAtom* uwiden_to_host_word ( PCEnv* pce, IRAtom* a )
 {
-   IRType a_ty = typeOfIRExpr(pce->bb->tyenv, a);
+   IRType a_ty = typeOfIRExpr(pce->sb->tyenv, a);
    tl_assert(isIRAtom(a));
    if (pce->hWordTy == Ity_I32) {
       switch (a_ty) {
@@ -3910,7 +4007,7 @@ static IRAtom* schemeEw_Atom ( PCEnv* pce, IRExpr* e )
          return mkexpr(t);
       }
       if (e->tag == Iex_RdTmp
-          && typeOfIRExpr(pce->bb->tyenv, e) == Ity_I32) {
+          && typeOfIRExpr(pce->sb->tyenv, e) == Ity_I32) {
          return mkexpr( findShadowTmp(pce, e->Iex.RdTmp.tmp) );
       }
       /* there are no other word-sized atom cases */
@@ -3923,7 +4020,7 @@ static IRAtom* schemeEw_Atom ( PCEnv* pce, IRExpr* e )
          return mkexpr(t);
       }
       if (e->tag == Iex_RdTmp
-          && typeOfIRExpr(pce->bb->tyenv, e) == Ity_I64) {
+          && typeOfIRExpr(pce->sb->tyenv, e) == Ity_I64) {
          return mkexpr( findShadowTmp(pce, e->Iex.RdTmp.tmp) );
       }
       /* there are no other word-sized atom cases */
@@ -4182,9 +4279,10 @@ void instrument_arithop ( PCEnv* pce,
 
 static 
 void gen_call_nonptr_or_unknown_range ( PCEnv* pce,
+                                        IRExpr* guard,
                                         IRAtom* addr, IRAtom* len )
 {
-   gen_dirty_v_WW( pce, 
+   gen_dirty_v_WW( pce, guard,
                    &nonptr_or_unknown_range,
                    "nonptr_or_unknown_range",
                    addr, len );
@@ -4225,6 +4323,227 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
 
    switch (st->tag) {
 
+      case Ist_CAS: {
+         /* In all these CAS cases, the did-we-succeed? comparison is
+            done using Iop_CasCmpEQ{8,16,32,64} rather than the plain
+            Iop_CmpEQ equivalents.  This isn't actually necessary,
+            since the generated IR is not going to be subsequently
+            instrumented by Memcheck.  But it's done for consistency.
+            See COMMENT_ON_CasCmpEQ in memcheck/mc_translate.c for
+            background/rationale. */
+         IRCAS* cas = st->Ist.CAS.details;
+         IRType elTy = typeOfIRExpr(pce->sb->tyenv, cas->expdLo);
+         if (cas->oldHi == IRTemp_INVALID) {
+            /* ------------ SINGLE CAS ------------ */
+            /* -- single cas -- 32 bits, on 32-bit host -- */
+            /* -- single cas -- 64 bits, on 64-bit host -- */
+            /* -- viz, single cas, native-word case -- */
+            if ( (pce->gWordTy == Ity_I32 && elTy == Ity_I32)
+                 || (pce->gWordTy == Ity_I64 && elTy == Ity_I64) ) {
+               // 32 bit host translation scheme; 64-bit is analogous
+               // old#    = check_load4_P(addr, addr#)
+               // old     = CAS(addr:expd->new) [COPY]
+               // success = CasCmpEQ32(old,expd)
+               // if (success) do_shadow_store4_P(addr, new#)
+               IRTemp  success;
+               Bool    is64  = elTy == Ity_I64;
+               IROp    cmpEQ = is64 ? Iop_CasCmpEQ64 : Iop_CasCmpEQ32;
+               void*   r_fn  = is64 ? &check_load8_P  : &check_load4_P;
+               HChar*  r_nm  = is64 ? "check_load8_P" : "check_load4_P";
+               void*   w_fn  = is64 ? &do_shadow_store8_P  : &do_shadow_store4_P;
+               void*   w_nm  = is64 ? "do_shadow_store8_P" : "do_shadow_store4_P";
+               IRExpr* addr  = cas->addr;
+               IRExpr* addrV = schemeEw_Atom(pce, addr);
+               IRTemp  old   = cas->oldLo;
+               IRTemp  oldV  = newShadowTmp(pce, old);
+               IRExpr* nyu   = cas->dataLo;
+               IRExpr* nyuV  = schemeEw_Atom(pce, nyu);
+               IRExpr* expd  = cas->expdLo;
+               assign( 'I', pce, oldV, 
+                       mkexpr( gen_dirty_W_WW( pce, r_fn, r_nm, addr, addrV )));
+               stmt( 'C', pce, st );
+               success = newTemp(pce, Ity_I1, NonShad);
+               assign('I', pce, success, binop(cmpEQ, mkexpr(old), expd));
+               gen_dirty_v_WW( pce, mkexpr(success), w_fn, w_nm, addr, nyuV );
+            }
+            else
+            /* -- single cas -- 8 or 16 bits, on 32-bit host -- */
+            /* -- viz, single cas, 32-bit subword cases -- */
+            if (pce->gWordTy == Ity_I32
+                && (elTy == Ity_I8 || elTy == Ity_I16)) {
+               // 8-bit translation scheme; 16-bit is analogous
+               // check_load1(addr, addr#)
+               // old     = CAS(addr:expd->new) [COPY]
+               // success = CasCmpEQ8(old,expd)
+               // if (success) nonptr_or_unknown_range(addr, 1)
+               IRTemp  success;
+               Bool    is16  = elTy == Ity_I16;
+               IRExpr* addr  = cas->addr;
+               IRExpr* addrV = schemeEw_Atom(pce, addr);
+               IRTemp  old   = cas->oldLo;
+               IRExpr* expd  = cas->expdLo;
+               void*   h_fn  = is16 ? &check_load2  : &check_load1;
+               HChar*  h_nm  = is16 ? "check_load2" : "check_load1";
+               IROp    cmpEQ = is16 ? Iop_CasCmpEQ16 : Iop_CasCmpEQ8;
+               Int     szB   = is16 ? 2 : 1;
+               gen_dirty_v_WW( pce, NULL, h_fn, h_nm, addr, addrV );
+               stmt( 'C', pce, st );
+               success = newTemp(pce, Ity_I1, NonShad);
+               assign('I', pce, success,
+                           binop(cmpEQ, mkexpr(old), expd));
+               gen_call_nonptr_or_unknown_range( pce, mkexpr(success),
+                                                 addr, mkIRExpr_HWord(szB) );
+            }
+            else
+            /* -- single cas -- 8, 16 or 32 bits, on 64-bit host -- */
+            /* -- viz, single cas, 64-bit subword cases -- */
+            if (pce->gWordTy == Ity_I64
+                && (elTy == Ity_I8 || elTy == Ity_I16 || elTy == Ity_I32)) {
+               // 8-bit translation scheme; 16/32-bit are analogous
+               // check_load1(addr, addr#)
+               // old     = CAS(addr:expd->new) [COPY]
+               // success = CasCmpEQ8(old,expd)
+               // if (success) nonptr_or_unknown_range(addr, 1)
+               IRTemp  success;
+               Bool    is16  = elTy == Ity_I16;
+               Bool    is32  = elTy == Ity_I32;
+               IRExpr* addr  = cas->addr;
+               IRExpr* addrV = schemeEw_Atom(pce, addr);
+               IRTemp  old   = cas->oldLo;
+               IRExpr* expd  = cas->expdLo;
+               void*   h_fn  = is32 ? &check_load4
+                                    : (is16 ? &check_load2 : &check_load1);
+               HChar*  h_nm  = is32 ? "check_load4" 
+                                    : (is16 ? "check_load2" : "check_load1");
+               IROp    cmpEQ = is32 ? Iop_CasCmpEQ32
+                                    : (is16 ? Iop_CasCmpEQ16 : Iop_CasCmpEQ8);
+               Int     szB   = is32 ? 4 : (is16 ? 2 : 1);
+               gen_dirty_v_WW( pce, NULL, h_fn, h_nm, addr, addrV );
+               stmt( 'C', pce, st );
+               success = newTemp(pce, Ity_I1, NonShad);
+               assign('I', pce, success,
+                           binop(cmpEQ, mkexpr(old), expd));
+               gen_call_nonptr_or_unknown_range( pce, mkexpr(success),
+                                                 addr, mkIRExpr_HWord(szB) );
+            }
+            else
+               goto unhandled;
+         } else {
+            /* ------------ DOUBLE CAS ------------ */
+            /* Punt on bigendian DCAS.  In fact it's probably trivial
+               to do; just swap the individual shadow loads/stores
+               around in memory, but we'd have to verify it, and there
+               is no use case.  So punt. */
+            if (cas->end != Iend_LE)
+               goto unhandled;
+            /* -- double cas -- 2 x 32 bits, on 32-bit host -- */
+            /* -- double cas -- 2 x 64 bits, on 64-bit host -- */
+            /* -- viz, double cas, native-word case -- */
+            if ( (pce->gWordTy == Ity_I32 && elTy == Ity_I32)
+                 || (pce->gWordTy == Ity_I64 && elTy == Ity_I64) ) {
+               // 32 bit host translation scheme; 64-bit is analogous
+               // oldHi#    = check_load4_P(addr+4, addr#)
+               // oldLo#    = check_load4_P(addr+0, addr#)
+               // oldHi/Lo  = DCAS(addr:expdHi/Lo->newHi/Lo) [COPY]
+               // success   = CasCmpEQ32(oldHi,expdHi) && CasCmpEQ32(oldLo,expdLo)
+               //           = ((oldHi ^ expdHi) | (oldLo ^ expdLo)) == 0
+               // if (success) do_shadow_store4_P(addr+4, newHi#)
+               // if (success) do_shadow_store4_P(addr+0, newLo#)
+               IRTemp  diffHi, diffLo, diff, success, addrpp;
+               Bool    is64       = elTy == Ity_I64;
+               void*   r_fn       = is64 ? &check_load8_P  : &check_load4_P;
+               HChar*  r_nm       = is64 ? "check_load8_P" : "check_load4_P";
+               void*   w_fn       = is64 ? &do_shadow_store8_P
+                                         : &do_shadow_store4_P;
+               void*   w_nm       = is64 ? "do_shadow_store8_P"
+                                         : "do_shadow_store4_P";
+               IROp    opADD      = is64 ? Iop_Add64 : Iop_Add32;
+               IROp    opXOR      = is64 ? Iop_Xor64 : Iop_Xor32;
+               IROp    opOR       = is64 ? Iop_Or64 : Iop_Or32;
+               IROp    opCasCmpEQ = is64 ? Iop_CasCmpEQ64 : Iop_CasCmpEQ32;
+               IRExpr* step       = is64 ? mkU64(8) : mkU32(4);
+               IRExpr* zero       = is64 ? mkU64(0) : mkU32(0);
+               IRExpr* addr       = cas->addr;
+               IRExpr* addrV      = schemeEw_Atom(pce, addr);
+               IRTemp  oldLo      = cas->oldLo;
+               IRTemp  oldLoV     = newShadowTmp(pce, oldLo);
+               IRTemp  oldHi      = cas->oldHi;
+               IRTemp  oldHiV     = newShadowTmp(pce, oldHi);
+               IRExpr* nyuLo      = cas->dataLo;
+               IRExpr* nyuLoV     = schemeEw_Atom(pce, nyuLo);
+               IRExpr* nyuHi      = cas->dataHi;
+               IRExpr* nyuHiV     = schemeEw_Atom(pce, nyuHi);
+               IRExpr* expdLo     = cas->expdLo;
+               IRExpr* expdHi     = cas->expdHi;
+               tl_assert(elTy == Ity_I32 || elTy == Ity_I64);
+               tl_assert(pce->gWordTy == elTy);
+               addrpp = newTemp(pce, elTy, NonShad);
+               assign('I', pce, addrpp, binop(opADD, addr, step));
+               assign('I', pce, oldHiV,
+                      mkexpr( gen_dirty_W_WW( pce, r_fn, r_nm,
+                                                   mkexpr(addrpp), addrV ))
+               );
+               assign('I', pce, oldLoV,
+                      mkexpr( gen_dirty_W_WW( pce, r_fn, r_nm,
+                                                   addr, addrV ))
+               );
+               stmt( 'C', pce, st );
+               diffHi = newTemp(pce, elTy, NonShad);
+               assign('I', pce, diffHi,
+                           binop(opXOR, mkexpr(oldHi), expdHi));
+               diffLo = newTemp(pce, elTy, NonShad);
+               assign('I', pce, diffLo,
+                           binop(opXOR, mkexpr(oldLo), expdLo));
+               diff = newTemp(pce, elTy, NonShad);
+               assign('I', pce, diff,
+                      binop(opOR, mkexpr(diffHi), mkexpr(diffLo)));
+               success = newTemp(pce, Ity_I1, NonShad);
+               assign('I', pce, success,
+                      binop(opCasCmpEQ, mkexpr(diff), zero));
+               gen_dirty_v_WW( pce, mkexpr(success),
+                                     w_fn, w_nm, mkexpr(addrpp), nyuHiV );
+               gen_dirty_v_WW( pce, mkexpr(success),
+                                    w_fn, w_nm, addr, nyuLoV );
+            }
+            else
+            /* -- double cas -- 2 x 32 bits, on 64-bit host -- */
+            if (pce->gWordTy == Ity_I64 && elTy == Ity_I32) {
+               // check_load8(addr, addr#)
+               // oldHi/Lo  = DCAS(addr:expdHi/Lo->newHi/Lo) [COPY]
+               // success   = CasCmpEQ32(oldHi,expdHi) && CasCmpEQ32(oldLo,expdLo)
+               //           = ((oldHi ^ expdHi) | (oldLo ^ expdLo)) == 0
+               // if (success) nonptr_or_unknown_range(addr, 8)
+               IRTemp  diffHi, diffLo, diff, success;
+               IRExpr* addr   = cas->addr;
+               IRExpr* addrV  = schemeEw_Atom(pce, addr);
+               IRTemp  oldLo  = cas->oldLo;
+               IRTemp  oldHi  = cas->oldHi;
+               IRExpr* expdLo = cas->expdLo;
+               IRExpr* expdHi = cas->expdHi;
+               gen_dirty_v_WW( pce, NULL, &check_load8, "check_load8",
+                               addr, addrV );
+               stmt( 'C', pce, st );
+               diffHi = newTemp(pce, Ity_I32, NonShad);
+               assign('I', pce, diffHi,
+                           binop(Iop_Xor32, mkexpr(oldHi), expdHi));
+               diffLo = newTemp(pce, Ity_I32, NonShad);
+               assign('I', pce, diffLo,
+                           binop(Iop_Xor32, mkexpr(oldLo), expdLo));
+               diff = newTemp(pce, Ity_I32, NonShad);
+               assign('I', pce, diff,
+                      binop(Iop_Or32, mkexpr(diffHi), mkexpr(diffLo)));
+               success = newTemp(pce, Ity_I1, NonShad);
+               assign('I', pce, success,
+                      binop(Iop_CasCmpEQ32, mkexpr(diff), mkU32(0)));
+               gen_call_nonptr_or_unknown_range( pce, mkexpr(success),
+                                                 addr, mkU64(8) );
+            }
+            else
+               goto unhandled;
+         }
+         break;
+      }
+
       case Ist_Dirty: {
          Int i;
          IRDirty* di;
@@ -4234,7 +4553,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          di = st->Ist.Dirty.details;
          /* deal with the return tmp, if any */
          if (di->tmp != IRTemp_INVALID
-             && typeOfIRTemp(pce->bb->tyenv, di->tmp) == pce->gWordTy) {
+             && typeOfIRTemp(pce->sb->tyenv, di->tmp) == pce->gWordTy) {
             /* di->tmp is shadowed.  Set it to NONPTR. */
             IRTemp dstv = newShadowTmp( pce, di->tmp );
             if (pce->gWordTy == Ity_I32) {
@@ -4280,7 +4599,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          if (di->mFx != Ifx_None) {
             tl_assert(di->mAddr && isIRAtom(di->mAddr));
             tl_assert(di->mSize > 0);
-            gen_call_nonptr_or_unknown_range( pce, di->mAddr,
+            gen_call_nonptr_or_unknown_range( pce, NULL, di->mAddr,
                                               mkIRExpr_HWord(di->mSize));
          }
          break;
@@ -4332,7 +4651,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          IntRegInfo iii;
          IRType     ty;
          stmt( 'C', pce, st );
-         ty = typeOfIRExpr(pce->bb->tyenv, st->Ist.Put.data);
+         ty = typeOfIRExpr(pce->sb->tyenv, st->Ist.Put.data);
          get_IntRegInfo( &iii, st->Ist.Put.offset,
                          sizeofIRType(ty) );
          if (iii.n_offsets == -1) {
@@ -4377,11 +4696,11 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          */
          IRExpr* data  = st->Ist.Store.data;
          IRExpr* addr  = st->Ist.Store.addr;
-         IRType  d_ty  = typeOfIRExpr(pce->bb->tyenv, data);
+         IRType  d_ty  = typeOfIRExpr(pce->sb->tyenv, data);
          IRExpr* addrv = schemeEw_Atom( pce, addr );
          IRTemp  resSC = st->Ist.Store.resSC;
          if (resSC != IRTemp_INVALID) {
-            tl_assert(typeOfIRTemp(pce->bb->tyenv, resSC) == Ity_I1);
+            tl_assert(typeOfIRTemp(pce->sb->tyenv, resSC) == Ity_I1);
             /* viz, not something we want to shadow */
             /* also, throw out all store-conditional cases that
                we can't handle */
@@ -4601,7 +4920,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
             appear, we in fact only get an atom (Iex_RdTmp or
             Iex_Const). */
          IRExpr* e      = st->Ist.WrTmp.data;
-         IRType  e_ty   = typeOfIRExpr( pce->bb->tyenv, e );
+         IRType  e_ty   = typeOfIRExpr( pce->sb->tyenv, e );
          Bool    isWord = e_ty == pce->gWordTy;
          IRTemp  dst    = st->Ist.WrTmp.tmp;
          IRTemp  dstv   = isWord ? newShadowTmp( pce, dst )
@@ -4677,7 +4996,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                               mkexpr( gen_dirty_W_WW( pce, h_fn, h_nm,
                                                            addr, addrv )) );
                   } else {
-                     gen_dirty_v_WW( pce, h_fn, h_nm, addr, addrv );
+                     gen_dirty_v_WW( pce, NULL, h_fn, h_nm, addr, addrv );
                   }
                } else {
                   /* 64 bit host/guest (cough, cough) */
@@ -4706,7 +5025,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                               mkexpr( gen_dirty_W_WW( pce, h_fn, h_nm,
                                                            addr, addrv )) );
                   } else {
-                     gen_dirty_v_WW( pce, h_fn, h_nm, addr, addrv );
+                     gen_dirty_v_WW( pce, NULL, h_fn, h_nm, addr, addrv );
                   }
                }
                /* copy the original -- must happen after the helper call */
@@ -4823,6 +5142,13 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
 }
 
 
+static IRTemp for_sg__newIRTemp_cb ( IRType ty, void* opaque )
+{
+   PCEnv* pce = (PCEnv*)opaque;
+   return newTemp( pce, ty, NonShad );
+}
+
+
 IRSB* h_instrument ( VgCallbackClosure* closure,
                      IRSB* sbIn,
                      VexGuestLayout* layout,
@@ -4849,21 +5175,33 @@ IRSB* h_instrument ( VgCallbackClosure* closure,
    tl_assert(sizeof(UInt)   == 4);
    tl_assert(sizeof(Int)    == 4);
 
-   /* Set up the running environment.  Only .bb is modified as we go
-      along. */
-   pce.bb                = deepCopyIRSBExceptStmts(sbIn);
+   /* Set up the running environment.  Both .sb and .tmpMap are
+      modified as we go along.  Note that tmps are added to both
+      .sb->tyenv and .tmpMap together, so the valid index-set for
+      those two arrays should always be identical. */
+   VG_(memset)(&pce, 0, sizeof(pce));
+   pce.sb                = deepCopyIRSBExceptStmts(sbIn);
    pce.trace             = verboze;
-   pce.n_originalTmps    = sbIn->tyenv->types_used;
    pce.hWordTy           = hWordTy;
    pce.gWordTy           = gWordTy;
    pce.guest_state_sizeB = layout->total_sizeB;
-   pce.tmpMap            = LibVEX_Alloc(pce.n_originalTmps * sizeof(IRTemp));
-   for (i = 0; i < pce.n_originalTmps; i++)
-      pce.tmpMap[i] = IRTemp_INVALID;
 
-   /* Also set up for the sg_ instrumenter.  See comments
-      at the top of this instrumentation section for details. */
-   sgenv = sg_instrument_init();
+   pce.qmpMap = VG_(newXA)( VG_(malloc), "pc.h_instrument.1", VG_(free),
+                            sizeof(TempMapEnt));
+   for (i = 0; i < sbIn->tyenv->types_used; i++) {
+      TempMapEnt ent;
+      ent.kind   = NonShad;
+      ent.shadow = IRTemp_INVALID;
+      VG_(addToXA)( pce.qmpMap, &ent );
+   }
+   tl_assert( VG_(sizeXA)( pce.qmpMap ) == sbIn->tyenv->types_used );
+
+   /* Also set up for the sg_ instrumenter.  See comments at the top
+      of this instrumentation section for details.  The two parameters
+      constitute a closure, which sg_ can use to correctly generate
+      new IRTemps as needed. */
+   sgenv = sg_instrument_init( for_sg__newIRTemp_cb,
+                               (void*)&pce );
 
    /* Stay sane.  These two should agree! */
    tl_assert(layout->total_sizeB == MC_SIZEOF_GUEST_STATE);
@@ -4926,20 +5264,25 @@ IRSB* h_instrument ( VgCallbackClosure* closure,
 
    for (/*use current i*/; i < sbIn->stmts_used; i++) {
       /* generate sg_ instrumentation for this stmt */
-      sg_instrument_IRStmt( sgenv, pce.bb, sbIn->stmts[i],
+      sg_instrument_IRStmt( sgenv, pce.sb, sbIn->stmts[i],
                             layout, gWordTy, hWordTy );
       /* generate h_ instrumentation for this stmt */
       schemeS( &pce, sbIn->stmts[i] );
    }
 
    /* generate sg_ instrumentation for the final jump */
-   sg_instrument_final_jump( sgenv, pce.bb, sbIn->next, sbIn->jumpkind,
+   sg_instrument_final_jump( sgenv, pce.sb, sbIn->next, sbIn->jumpkind,
                              layout, gWordTy, hWordTy );
 
    /* and finalise .. */
    sg_instrument_fini( sgenv );
 
-   return pce.bb;
+   /* If this fails, there's been some serious snafu with tmp management,
+      that should be investigated. */
+   tl_assert( VG_(sizeXA)( pce.qmpMap ) == pce.sb->tyenv->types_used );
+   VG_(deleteXA)( pce.qmpMap );
+
+   return pce.sb;
 }
 
 

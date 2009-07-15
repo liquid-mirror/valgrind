@@ -14,13 +14,6 @@
    dl-2.6.*
    drd:ConflictingAccess
    obj:/lib*/ld-*.so
-   fun:exit
-}
-{
-   dl-2.6.*
-   drd:ConflictingAccess
-   obj:/lib*/ld-*.so
-   obj:/lib*/ld-*.so
 }
 {
    dl-dlsym-1
@@ -250,13 +243,13 @@
 {
    pthread-unwind
    drd:ConflictingAccess
-   fun:uw_update_context
-   fun:_Unwind_ForcedUnwind_Phase2
+   ...
+   fun:_Unwind_ForcedUnwind
 }
 {
    pthread-unwind
    drd:ConflictingAccess
-   fun:uw_frame_state_for
+   ...
    fun:_Unwind_ForcedUnwind_Phase2
 }
 {

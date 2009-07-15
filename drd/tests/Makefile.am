@@ -135,7 +135,6 @@ EXTRA_DIST =                                        \
 	qt4_semaphore.stderr.exp                    \
 	qt4_semaphore.vgtest                        \
 	recursive_mutex.stderr.exp	            \
-	recursive_mutex.stdout.exp	            \
 	recursive_mutex.vgtest                      \
 	rwlock_race.stderr.exp	                    \
 	rwlock_race.stderr.exp2	                    \
@@ -223,6 +222,7 @@ EXTRA_DIST =                                        \
 
 
 check_PROGRAMS =      \
+  custom_alloc        \
   fp_race             \
   hold_lock           \
   linuxthreads_det    \
@@ -290,7 +290,7 @@ LDADD = -lpthread
 monitor_example_SOURCES     = monitor_example.cpp
 new_delete_SOURCES          = new_delete.cpp
 
-pth_cleanup_handler_CFLAGS  = @FLAG_W_NO_EMPTY_BODY@
+pth_cleanup_handler_CFLAGS  = $(AM_CFLAGS) @FLAG_W_NO_EMPTY_BODY@
 
 tsan_unittest_SOURCES       = tsan_unittest.cpp
 tsan_unittest_CXXFLAGS      = $(AM_CXXFLAGS) \

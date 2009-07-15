@@ -391,7 +391,8 @@ PRE(sys_mount)
    // We are conservative and check everything, except the memory pointed to
    // by 'data'.
    *flags |= SfMayBlock;
-   PRINT( "sys_mount( %#lx, %#lx, %#lx, %#lx, %#lx )" ,ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_mount( %#lx(%s), %#lx(%s), %#lx(%s), %#lx, %#lx )",
+         ARG1,(Char*)ARG1, ARG2,(Char*)ARG2, ARG3,(Char*)ARG3, ARG4, ARG5);
    PRE_REG_READ5(long, "mount",
                  char *, source, char *, target, char *, type,
                  unsigned long, flags, void *, data);
@@ -1051,6 +1052,23 @@ POST(sys_epoll_create)
    }
 }
 
+PRE(sys_epoll_create1)
+{
+   PRINT("sys_epoll_create1 ( %ld )", ARG1);
+   PRE_REG_READ1(long, "epoll_create1", int, flags);
+}
+POST(sys_epoll_create1)
+{
+   vg_assert(SUCCESS);
+   if (!ML_(fd_allowed)(RES, "epoll_create1", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds))
+         ML_(record_fd_open_nameless) (tid, RES);
+   }
+}
+
 PRE(sys_epoll_ctl)
 {
    static const HChar* epoll_ctl_s[3] = {
@@ -1131,6 +1149,18 @@ POST(sys_eventfd2)
       if (VG_(clo_track_fds))
          ML_(record_fd_open_nameless) (tid, RES);
    }
+}
+
+// 64-bit version.
+PRE(sys_fallocate)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_fallocate ( %ld, %ld, %lld, %lld )",
+         ARG1, ARG2, (Long)ARG3, (Long)ARG4);
+   PRE_REG_READ4(long, "fallocate",
+                 int, fd, int, mode, vki_loff_t, offset, vki_loff_t, len);
+   if (!ML_(fd_allowed)(ARG1, "fallocate", tid, False))
+      SET_STATUS_Failure( VKI_EBADF );
 }
 
 /* ---------------------------------------------------------------------
@@ -3312,6 +3342,40 @@ PRE(sys_ioctl)
    PRE_REG_READ3(long, "ioctl",
                  unsigned int, fd, unsigned int, request, unsigned long, arg);
 
+   // We first handle the ones that don't use ARG3 (even as a
+   // scalar/non-pointer argument).
+   switch (ARG2 /* request */) {
+
+      /* linux/soundcard interface (ALSA) */
+   case VKI_SNDRV_PCM_IOCTL_HW_FREE:
+   case VKI_SNDRV_PCM_IOCTL_HWSYNC:
+   case VKI_SNDRV_PCM_IOCTL_PREPARE:
+   case VKI_SNDRV_PCM_IOCTL_RESET:
+   case VKI_SNDRV_PCM_IOCTL_START:
+   case VKI_SNDRV_PCM_IOCTL_DROP:
+   case VKI_SNDRV_PCM_IOCTL_DRAIN:
+   case VKI_SNDRV_PCM_IOCTL_RESUME:
+   case VKI_SNDRV_PCM_IOCTL_XRUN:
+   case VKI_SNDRV_PCM_IOCTL_UNLINK:
+   case VKI_SNDRV_TIMER_IOCTL_START:
+   case VKI_SNDRV_TIMER_IOCTL_STOP:
+   case VKI_SNDRV_TIMER_IOCTL_CONTINUE:
+   case VKI_SNDRV_TIMER_IOCTL_PAUSE:
+      PRINT("sys_ioctl ( %ld, 0x%lx )",ARG1,ARG2);
+      PRE_REG_READ2(long, "ioctl",
+                    unsigned int, fd, unsigned int, request);
+      return;
+
+   default:
+      PRINT("sys_ioctl ( %ld, 0x%lx, 0x%lx )",ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "ioctl",
+                    unsigned int, fd, unsigned int, request, unsigned long, arg);
+      break;
+   }
+
+   // We now handle those that do look at ARG3 (and unknown ones fall into
+   // this category).  Nb: some of these may well belong in the
+   // doesn't-use-ARG3 switch above.
    switch (ARG2 /* request */) {
    case VKI_TCSETS:
    case VKI_TCSETSW:
@@ -3707,20 +3771,9 @@ PRE(sys_ioctl)
       break;
 
       /* linux/soundcard interface (ALSA) */
-   case VKI_SNDRV_PCM_IOCTL_HW_FREE:
-   case VKI_SNDRV_PCM_IOCTL_HWSYNC:
-   case VKI_SNDRV_PCM_IOCTL_PREPARE:
-   case VKI_SNDRV_PCM_IOCTL_RESET:
-   case VKI_SNDRV_PCM_IOCTL_START:
-   case VKI_SNDRV_PCM_IOCTL_DROP:
-   case VKI_SNDRV_PCM_IOCTL_DRAIN:
-   case VKI_SNDRV_PCM_IOCTL_RESUME:
-   case VKI_SNDRV_PCM_IOCTL_XRUN:
-   case VKI_SNDRV_PCM_IOCTL_UNLINK:
-   case VKI_SNDRV_TIMER_IOCTL_START:
-   case VKI_SNDRV_TIMER_IOCTL_STOP:
-   case VKI_SNDRV_TIMER_IOCTL_CONTINUE:
-   case VKI_SNDRV_TIMER_IOCTL_PAUSE:
+   case VKI_SNDRV_PCM_IOCTL_PAUSE:
+   case VKI_SNDRV_PCM_IOCTL_LINK:
+      /* these just take an int by value */
       break;
 
       /* Real Time Clock (/dev/rtc) ioctls */
@@ -4168,7 +4221,6 @@ PRE(sys_ioctl)
       PRE_MEM_READ( "ioctl(VT_SETMODE)", ARG3, sizeof(struct vki_vt_mode) );
       break;
    case VKI_VT_GETSTATE:
-      PRE_MEM_READ( "ioctl(VT_GETSTATE)", ARG3, sizeof(struct vki_vt_stat) );
       PRE_MEM_WRITE( "ioctl(VT_GETSTATE).v_active",
                      (Addr) &(((struct vki_vt_stat*) ARG3)->v_active),
                      sizeof(((struct vki_vt_stat*) ARG3)->v_active));

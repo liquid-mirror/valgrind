@@ -75,7 +75,8 @@ int main(void)
 
    GO_UNIMP(17, "old break");
 
-   // __NR_getfsstat 18
+   GO(__NR_getfsstat, 18, "3s 1m");
+   SY(__NR_getfsstat, x0+1, x0+1, x0); SUCC; // This should fail...
 
    GO_UNIMP(19, "old lseek");
 
@@ -160,14 +161,16 @@ int main(void)
 
    GO_UNIMP(77, "old vlimit");
 
-   // __NR_mincore 218
-   GO(__NR_mincore, 218, "3s 1m");
+   GO(__NR_mincore, 78, "3s 1m");
    SY(__NR_mincore, x0, x0+40960, x0); FAIL;
 
    // __NR_getgroups 79
    // __NR_setgroups 80
    // __NR_getpgrp 81
-   // __NR_setpgid 82
+
+   GO(__NR_setpgid, 82, "2s 0m");
+   SY(__NR_setpgid, x0-1, x0-1); FAIL;
+
    // __NR_setitimer 83
 
    GO_UNIMP(78, "old wait");
@@ -312,7 +315,8 @@ int main(void)
 
    GO_UNIMP(166, "old exportfs");
 
-   // __NR_mount 167
+   GO(__NR_mount, 167, "4s 2m");
+   SY(__NR_mount, x0, x0, x0, x0); FAIL;
 
    GO_UNIMP(168, "old ustat");
 
@@ -496,9 +500,14 @@ int main(void)
       // Go again to get a complaint about where the 3rd arg points;  it
       // requires the 4th arg to point to a valid value.
       SY(__NR_lstat_extended, 0, 0, 0, &one); FAIL;
+
+      GO(__NR_fstat_extended, 280, "4s 3m");
+      SY(__NR_fstat_extended, x0, x0, x0, x0); FAIL;
+      // Go again to get a complaint about where the 3rd arg points;  it
+      // requires the 4th arg to point to a valid value.
+      SY(__NR_fstat_extended, 0, 0, 0, &one); FAIL;
    }
 
-   // __NR_fstat_extended 281
    // __NR_chmod_extended 282
    // __NR_fchmod_extended 283
    // __NR_access_extended 284
@@ -597,13 +606,22 @@ int main(void)
       // Go again to get a complaint about where the 3rd arg points;  it
       // requires the 4th arg to point to a valid value.
       SY(__NR_lstat64_extended, 0, 0, 0, &one); FAIL;
+
+      GO(__NR_fstat64_extended, 342, "4s 3m");
+      SY(__NR_fstat64_extended, x0, x0, x0, x0); FAIL;
+      // Go again to get a complaint about where the 3rd arg points;  it
+      // requires the 4th arg to point to a valid value.
+      SY(__NR_fstat64_extended, 0, 0, 0, &one); FAIL;
    }
 
    // __NR_fstat64_extended 343
    // __NR_getdirentries64 344
    // __NR_statfs64 345
    // __NR_fstatfs64 346
-   // __NR_getfsstat64 347
+
+   GO(__NR_getfsstat64, 347, "3s 1m");
+   SY(__NR_getfsstat64, x0+1, x0+1, x0); SUCC; // This should fail...
+
    // __NR___pthread_chdir 348
    // __NR___pthread_fchdir 349
    // __NR_audit 350

@@ -1875,7 +1875,6 @@ PRE(stat_extended)
    if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
       PRE_MEM_WRITE("stat_extended(fsacl)",      ARG3, *(vki_size_t *)ARG4 );
    PRE_MEM_READ(    "stat_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
-   PRE_MEM_WRITE(   "stat_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
 }
 POST(stat_extended)
 {
@@ -1897,9 +1896,28 @@ PRE(lstat_extended)
    if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
       PRE_MEM_WRITE("lstat_extended(fsacl)",      ARG3, *(vki_size_t *)ARG4 );
    PRE_MEM_READ(    "lstat_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
-   PRE_MEM_WRITE(   "lstat_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
 }
 POST(lstat_extended)
+{
+   POST_MEM_WRITE( ARG2, sizeof(struct vki_stat) );
+   if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
+      POST_MEM_WRITE( ARG3, *(vki_size_t *)ARG4 );
+   POST_MEM_WRITE( ARG4, sizeof(vki_size_t) );
+}
+
+
+PRE(fstat_extended)
+{
+   PRINT("fstat_extended( %ld, %#lx, %#lx, %#lx )",
+      ARG1, ARG2, ARG3, ARG4);
+   PRE_REG_READ4(int, "fstat_extended", int, fd, struct stat *, buf, 
+                 void *, fsacl, vki_size_t *, fsacl_size);
+   PRE_MEM_WRITE(   "fstat_extended(buf)",        ARG2, sizeof(struct vki_stat) );
+   if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
+      PRE_MEM_WRITE("fstat_extended(fsacl)",      ARG3, *(vki_size_t *)ARG4 );
+   PRE_MEM_READ(    "fstat_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
+}
+POST(fstat_extended)
 {
    POST_MEM_WRITE( ARG2, sizeof(struct vki_stat) );
    if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
@@ -1919,7 +1937,6 @@ PRE(stat64_extended)
    if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
       PRE_MEM_WRITE("stat64_extended(fsacl)",      ARG3, *(vki_size_t *)ARG4 );
    PRE_MEM_READ(    "stat64_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
-   PRE_MEM_WRITE(   "stat64_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
 }
 POST(stat64_extended)
 {
@@ -1941,9 +1958,28 @@ PRE(lstat64_extended)
    if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
       PRE_MEM_WRITE(   "lstat64_extended(fsacl)",   ARG3, *(vki_size_t *)ARG4 );
    PRE_MEM_READ(    "lstat64_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
-   PRE_MEM_WRITE(   "lstat64_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
 }
 POST(lstat64_extended)
+{
+   POST_MEM_WRITE( ARG2, sizeof(struct vki_stat64) );
+   if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
+      POST_MEM_WRITE( ARG3, *(vki_size_t *)ARG4 );
+   POST_MEM_WRITE( ARG4, sizeof(vki_size_t) );
+}
+
+
+PRE(fstat64_extended)
+{
+   PRINT("fstat64_extended( %ld, %#lx, %#lx, %#lx )",
+      ARG1, ARG2, ARG3, ARG4);
+   PRE_REG_READ4(int, "fstat64_extended", int, fd, struct stat64 *, buf, 
+                 void *, fsacl, vki_size_t *, fsacl_size);
+   PRE_MEM_WRITE(   "fstat64_extended(buf)",        ARG2, sizeof(struct vki_stat64) );
+   if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
+      PRE_MEM_WRITE("fstat64_extended(fsacl)",      ARG3, *(vki_size_t *)ARG4 );
+   PRE_MEM_READ(    "fstat64_extended(fsacl_size)", ARG4, sizeof(vki_size_t) );
+}
+POST(fstat64_extended)
 {
    POST_MEM_WRITE( ARG2, sizeof(struct vki_stat64) );
    if (ML_(safe_to_deref)( (void*)ARG4, sizeof(vki_size_t) ))
@@ -2049,16 +2085,48 @@ PRE(getfsstat)
                  struct vki_statfs *, buf, int, bufsize, int, flags);
    if (ARG1) {
       // ARG2 is a BYTE SIZE
-      PRE_MEM_WRITE("getfsstat", ARG1, ARG2);
+      PRE_MEM_WRITE("getfsstat(buf)", ARG1, ARG2);
    }
 }
-
 POST(getfsstat)
 {
    if (ARG1) {
       // RES is a STRUCT COUNT
       POST_MEM_WRITE(ARG1, RES * sizeof(struct vki_statfs));
    }
+}
+
+PRE(getfsstat64)
+{
+   PRINT("getfsstat64(%#lx, %ld, %ld)", ARG1, ARG2, ARG3);
+   PRE_REG_READ3(int, "getfsstat64",
+                 struct vki_statfs64 *, buf, int, bufsize, int, flags);
+   if (ARG1) {
+      // ARG2 is a BYTE SIZE
+      PRE_MEM_WRITE("getfsstat64(buf)", ARG1, ARG2);
+   }
+}
+POST(getfsstat64)
+{
+   if (ARG1) {
+      // RES is a STRUCT COUNT
+      POST_MEM_WRITE(ARG1, RES * sizeof(struct vki_statfs64));
+   }
+}
+
+PRE(mount)
+{
+   // Nb: depending on 'flags', the 'type' and 'data' args may be ignored.
+   // We are conservative and check everything, except the memory pointed to
+   // by 'data'.
+   *flags |= SfMayBlock;
+   PRINT("sys_mount( %#lx(%s), %#lx(%s), %#lx, %#lx )",
+         ARG1,(Char*)ARG1, ARG2,(Char*)ARG2, ARG3, ARG4);
+   PRE_REG_READ4(long, "mount",
+                 const char *, type, const char *, dir,
+                 int, flags, void *, data);
+   PRE_MEM_RASCIIZ( "mount(type)", ARG1);
+   PRE_MEM_RASCIIZ( "mount(dir)", ARG2);
 }
 
 
@@ -3041,7 +3109,7 @@ PRE(csops)
                  vki_pid_t, pid, uint32_t, ops,
                  void *, useraddr, vki_size_t, usersize);
 
-   PRE_MEM_WRITE( "csops(addr)", ARG3, ARG4 );
+   PRE_MEM_WRITE( "csops(useraddr)", ARG3, ARG4 );
 
    // If the pid is ours, don't mark the program as KILL or HARD
    // Maybe we should keep track of this for later calls to STATUS
@@ -3054,7 +3122,6 @@ PRE(csops)
       }
    }
 }
-
 POST(csops)
 {
    POST_MEM_WRITE( ARG3, ARG4 );
@@ -7124,7 +7191,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_getgroups,   sys_getgroups), 
 // _____(__NR_setgroups),   // 80
    GENX_(__NR_getpgrp,     sys_getpgrp), 
-// _____(__NR_setpgid), 
+   GENX_(__NR_setpgid,     sys_setpgid), 
    GENXY(__NR_setitimer,   sys_setitimer), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(84)),    // old wait
 // _____(__NR_swapon), 
@@ -7209,7 +7276,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(164)),   // ???
 // _____(__NR_quotactl), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(166)),   // old exportfs
-// _____(__NR_mount), 
+   MACX_(__NR_mount,       mount), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(168)),   // old ustat
    MACXY(__NR_csops,       csops),                 // code-signing ops
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(170)),   // old table
@@ -7323,7 +7390,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_umask_extended), 
    MACXY(__NR_stat_extended,  stat_extended), 
    MACXY(__NR_lstat_extended, lstat_extended),   // 280
-// _____(__NR_fstat_extended), 
+   MACXY(__NR_fstat_extended, fstat_extended), 
    MACX_(__NR_chmod_extended,    chmod_extended), 
    MACX_(__NR_fchmod_extended,   fchmod_extended), 
 // _____(__NR_access_extended), 
@@ -7385,11 +7452,11 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    MACXY(__NR_lstat64,     lstat64),    // 340
    MACXY(__NR_stat64_extended,  stat64_extended), 
    MACXY(__NR_lstat64_extended, lstat64_extended), 
-// _____(__NR_fstat64_extended), 
+   MACXY(__NR_fstat64_extended, fstat64_extended),
    MACXY(__NR_getdirentries64, getdirentries64), 
    MACXY(__NR_statfs64,    statfs64), 
    MACXY(__NR_fstatfs64,   fstatfs64), 
-// _____(__NR_getfsstat64), 
+   MACXY(__NR_getfsstat64, getfsstat64), 
 // _____(__NR___pthread_chdir), 
 // _____(__NR___pthread_fchdir), 
 // _____(__NR_audit), 
