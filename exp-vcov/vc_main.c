@@ -281,22 +281,27 @@ static FileCC* get_FileCC(Addr instrAddr, Char* dirname, Char* filename,
    file_hash = hash(dirname, filename, N_FILE_ENTRIES);
    curr_fileCC = CC_table[file_hash];
    // Look for the filename in the appropriate chain.
-   while (NULL != curr_fileCC &&
-          !VG_STREQ( dirname, curr_fileCC-> dirname) &&
-          !VG_STREQ(filename, curr_fileCC->filename))
-   {
+   while (True) {
+      if (NULL == curr_fileCC) {
+         if (must_be_present) {
+            // XXX: don't panic, quit in a better way
+            tl_assert2(0, "file not present: %s, %s", dirname, filename);
+         }
+         // It wasn't in the chain.  Create a new FileCC.
+         CC_table[file_hash] = curr_fileCC = 
+            new_FileCC(instrAddr, dirname, filename, CC_table[file_hash]);
+         n_src_files++;
+         break;
+      }
+      if (VG_STREQ(dirname,  curr_fileCC->dirname) &&
+          VG_STREQ(filename, curr_fileCC->filename))
+      {
+         break;
+      }
       curr_fileCC = curr_fileCC->next;
    }
-   if (NULL == curr_fileCC) {
-      if (must_be_present) {
-         // XXX: don't panic, quit in a better way
-         tl_assert2(0, "file not present: %s, %s", dirname, filename);
-      }
-      // It wasn't in the chain.  Create a new FileCC.
-      CC_table[file_hash] = curr_fileCC = 
-         new_FileCC(instrAddr, dirname, filename, CC_table[file_hash]);
-      n_src_files++;
-   }
+   tl_assert(VG_STREQ(dirname,  curr_fileCC->dirname));
+   tl_assert(VG_STREQ(filename, curr_fileCC->filename));
    return curr_fileCC;
 }
 
@@ -375,7 +380,9 @@ void doOneInstr(IRSB* sbOut, Addr instrAddr)
 
       while (True) {
          /* current unsearched space is from lo to hi, inclusive. */
-         if (lo > hi) tl_assert2(0, "didn't find %d in lineCCs", line);
+         if (lo > hi)
+            tl_assert2(0, "didn't find %d in lineCCs (%s/%s)",
+               line, dirname, filename);
          mid      = (lo + hi) / 2;
          mid_line = fileCC->lineCCs[mid].line_num;
          if (line < mid_line) { hi = mid-1; continue; } 
@@ -447,6 +454,10 @@ IRSB* vc_instrument ( VgCallbackClosure* closure,
 //
 // Simple, huh?  We move through lines in the file and lines in
 // fileCC->lineCCs[] in tandem.
+//
+// XXX: could save some space by not storing line numbers but the difference
+// from the previous line number (and use 0 as the starting line number).  Eg.
+// instead of [10, 12, 15, 18] it would be [10, 2, 3, 3].
 //
 static Bool parse_buffer(Char* outfile, struct vg_stat* outfile_statbuf, 
                          Char* buf)
