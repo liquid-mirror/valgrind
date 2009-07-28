@@ -4,13 +4,16 @@
 #include <stdlib.h>
 #include <sys/resource.h>
 #include <unistd.h>
+#include "fdleak.h"
 
 int main(int argc, char **argv)
 {
    struct rlimit oldrlim;
    struct rlimit newrlim;
    int fd;
-   close(4); /* seems to be inherited from parent on SuSE 10.1 amd64 */
+
+   CLOSE_INHERITED_FDS;
+
    if (getrlimit(RLIMIT_NOFILE, &oldrlim) < 0)
    {
       perror("getrlimit");
@@ -34,14 +37,16 @@ int main(int argc, char **argv)
 
    if (newrlim.rlim_cur != oldrlim.rlim_cur / 2)
    {
-      fprintf(stderr, "rlim_cur is %lu (should be %lu)\n",
-              newrlim.rlim_cur, oldrlim.rlim_cur / 2);
+      fprintf(stderr, "rlim_cur is %llu (should be %llu)\n",
+              (unsigned long long)newrlim.rlim_cur,
+              (unsigned long long)oldrlim.rlim_cur / 2);
    }
 
    if (newrlim.rlim_max != oldrlim.rlim_max)
    {
-      fprintf(stderr, "rlim_max is %lu (should be %lu)\n",
-              newrlim.rlim_max, oldrlim.rlim_max);
+      fprintf(stderr, "rlim_max is %llu (should be %llu)\n",
+              (unsigned long long)newrlim.rlim_max,
+              (unsigned long long)oldrlim.rlim_max);
    }
 
    newrlim.rlim_cur -= 3; /* allow for stdin, stdout and stderr */

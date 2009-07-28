@@ -10,7 +10,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2006-2007 OpenWorks LLP
+   Copyright (C) 2006-2009 OpenWorks LLP
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -35,6 +35,8 @@
    used to endorse or promote products derived from this software
    without prior written permission.
 */
+
+#if defined(VGO_aix5)
 
 /* *************************************************************
    DO NOT INCLUDE ANY OTHER FILES HERE.
@@ -162,7 +164,7 @@ typedef
       Bool   fromP;     // AnonC, AnonV only: originated from PreAlloc?
       UChar* fname;     // MText, FileV only: filename
       UChar* mname;     // MText only: member name if present
-      ULong  offset;    // FileV only: file offset
+      Off64T offset;    // FileV only: file offset
    }
    AixSegment;
 
@@ -1263,11 +1265,11 @@ void VG_(am_show_nsegments) ( Int logLevel, HChar* who )
 /* Get the filename corresponding to this segment, if known and if it
    has one.  The returned name's storage cannot be assumed to be
    persistent, so the caller should immediately copy the name
-   elsewhere. */
-HChar* VG_(am_get_filename)( NSegment* seg )
+   elsewhere.  On AIX5, we don't know what this is (in general)
+   so just return NULL. */
+HChar* VG_(am_get_filename)( NSegment const* seg )
 {
-   ML_(am_barf)("unimplemented: VG_(am_get_filename)");
-   return NULL; /* placate gcc -Wall */
+   return NULL;
 }
 
 /* Collect up the start addresses of all non-free, non-resvn segments.
@@ -2635,6 +2637,7 @@ static void parse_procselfmap ( /*OUT*/AixSegments* segs )
       show_AixSegments(0, "as read from procmap", segs);
 }
 
+#endif // defined(VGO_aix5)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

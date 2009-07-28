@@ -1,17 +1,15 @@
 #include <sys/socket.h>
 #include <unistd.h>
-int
-main (int argc, char **argv)
+#include "fdleak.h"
+#include <sys/errno.h>
+
+int main (int argc, char **argv)
 {
    int fds[2];
 
-   /*
-    * Fedora Core 1's Perl opens /dev/pts/2 as fd 10.  Let's close it
-    * now to get consistent results across different releases.
-    */
+   CLOSE_INHERITED_FDS;
 
-   close(10);  close(4);
+   DO( socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, fds) );
 
-   socketpair(AF_UNIX, SOCK_STREAM, PF_UNIX, fds);
    return 0;
 }

@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Nicholas Nethercote
+   Copyright (C) 2000-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -28,6 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#if defined(VGP_x86_linux)
+
 /* TODO/FIXME jrs 20050207: assignments to the syscall return result
    in interrupted_syscall() need to be reviewed.  They don't seem
    to assign the shadow state.
@@ -37,7 +39,6 @@
 #include "pub_core_vki.h"
 #include "pub_core_vkiscnums.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"     // VG_(di_notify_mmap)
 #include "pub_core_aspacemgr.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
@@ -53,6 +54,7 @@
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
 #include "pub_core_tooliface.h"
+#include "pub_core_stacks.h"        // VG_(register_stack)
 
 #include "priv_types_n_macros.h"
 #include "priv_syswrap-generic.h"    /* for decls of generic wrappers */
@@ -270,11 +272,14 @@ static SysRes do_clone ( ThreadId ptid,
       ctst->client_stack_highest_word = (Addr)VG_PGROUNDUP(esp);
       ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
+      VG_(register_stack)(seg->start, ctst->client_stack_highest_word);
+
       if (debug)
-	 VG_(printf)("tid %d: guessed client stack range %p-%p\n",
+	 VG_(printf)("tid %d: guessed client stack range %#lx-%#lx\n",
 		     ctid, seg->start, VG_PGROUNDUP(esp));
    } else {
-      VG_(message)(Vg_UserMsg, "!? New thread %d starts with ESP(%p) unmapped\n",
+      VG_(message)(Vg_UserMsg,
+                   "!? New thread %d starts with ESP(%#lx) unmapped\n",
 		   ctid, esp);
       ctst->client_stack_szB  = 0;
    }
@@ -291,13 +296,13 @@ static SysRes do_clone ( ThreadId ptid,
    if (flags & VKI_CLONE_SETTLS) {
       if (debug)
 	 VG_(printf)("clone child has SETTLS: tls info at %p: idx=%d "
-                     "base=%p limit=%x; esp=%p fs=%x gs=%x\n",
+                     "base=%#lx limit=%x; esp=%#x fs=%x gs=%x\n",
 		     tlsinfo, tlsinfo->entry_number, 
                      tlsinfo->base_addr, tlsinfo->limit,
 		     ptst->arch.vex.guest_ESP,
 		     ctst->arch.vex.guest_FS, ctst->arch.vex.guest_GS);
       res = sys_set_thread_area(ctid, tlsinfo);
-      if (res.isError)
+      if (sr_isError(res))
 	 goto out;
    }
 
@@ -316,7 +321,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
-   if (res.isError) {
+   if (sr_isError(res)) {
       /* clone failed */
       VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
@@ -400,7 +405,7 @@ void translate_to_hw_format ( /* IN  */ vki_modify_ldt_t* inn,
    vg_assert(8 == sizeof(VexGuestX86SegDescr));
 
    if (0)
-      VG_(printf)("translate_to_hw_format: base %p, limit %d\n", 
+      VG_(printf)("translate_to_hw_format: base %#lx, limit %d\n",
                   inn->base_addr, inn->limit );
 
    /* Allow LDTs to be cleared by the user. */
@@ -442,14 +447,14 @@ void translate_to_hw_format ( /* IN  */ vki_modify_ldt_t* inn,
 static VexGuestX86SegDescr* alloc_zeroed_x86_GDT ( void )
 {
    Int nbytes = VEX_GUEST_X86_GDT_NENT * sizeof(VexGuestX86SegDescr);
-   return VG_(arena_calloc)(VG_AR_CORE, nbytes, 1);
+   return VG_(arena_calloc)(VG_AR_CORE, "di.syswrap-x86.azxG.1", nbytes, 1);
 }
 
 /* Create a zeroed-out LDT. */
 static VexGuestX86SegDescr* alloc_zeroed_x86_LDT ( void )
 {
    Int nbytes = VEX_GUEST_X86_LDT_NENT * sizeof(VexGuestX86SegDescr);
-   return VG_(arena_calloc)(VG_AR_CORE, nbytes, 1);
+   return VG_(arena_calloc)(VG_AR_CORE, "di.syswrap-x86.azxL.1", nbytes, 1);
 }
 
 /* Free up an LDT or GDT allocated by the above fns. */
@@ -488,7 +493,7 @@ static void deallocate_LGDTs_for_thread ( VexGuestX86State* vex )
 
    if (0)
       VG_(printf)("deallocate_LGDTs_for_thread: "
-                  "ldt = 0x%x, gdt = 0x%x\n", 
+                  "ldt = 0x%lx, gdt = 0x%lx\n",
                   vex->guest_LDT, vex->guest_GDT );
 
    if (vex->guest_LDT != (HWord)NULL) {
@@ -645,8 +650,11 @@ static SysRes sys_set_thread_area ( ThreadId tid, vki_modify_ldt_t* info )
    idx = info->entry_number;
 
    if (idx == -1) {
-      /* Find and use the first free entry. */
-      for (idx = 0; idx < VEX_GUEST_X86_GDT_NENT; idx++) {
+      /* Find and use the first free entry.  Don't allocate entry
+         zero, because the hardware will never do that, and apparently
+         doing so confuses some code (perhaps stuff running on
+         Wine). */
+      for (idx = 1; idx < VEX_GUEST_X86_GDT_NENT; idx++) {
          if (gdt[idx].LdtEnt.Words.word1 == 0 
              && gdt[idx].LdtEnt.Words.word2 == 0)
             break;
@@ -654,7 +662,8 @@ static SysRes sys_set_thread_area ( ThreadId tid, vki_modify_ldt_t* info )
 
       if (idx == VEX_GUEST_X86_GDT_NENT)
          return VG_(mk_SysRes_Error)( VKI_ESRCH );
-   } else if (idx < 0 || idx >= VEX_GUEST_X86_GDT_NENT) {
+   } else if (idx < 0 || idx == 0 || idx >= VEX_GUEST_X86_GDT_NENT) {
+      /* Similarly, reject attempts to use GDT[0]. */
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
@@ -729,7 +738,8 @@ static void setup_child ( /*OUT*/ ThreadArchState *child,
 {
    /* We inherit our parent's guest state. */
    child->vex = parent->vex;
-   child->vex_shadow = parent->vex_shadow;
+   child->vex_shadow1 = parent->vex_shadow1;
+   child->vex_shadow2 = parent->vex_shadow2;
 
    /* We inherit our parent's LDT. */
    if (parent->vex.guest_LDT == (HWord)NULL) {
@@ -810,7 +820,7 @@ PRE(old_select)
       a4 = arg_struct[3];
       a5 = arg_struct[4];
 
-      PRINT("old_select ( %d, %p, %p, %p, %p )", a1,a2,a3,a4,a5);
+      PRINT("old_select ( %d, %#x, %#x, %#x, %#x )", a1,a2,a3,a4,a5);
       if (a2 != (Addr)NULL)
          PRE_MEM_READ( "old_select(readfds)",   a2, a1/8 /* __FD_SETSIZE/8 */ );
       if (a3 != (Addr)NULL)
@@ -825,38 +835,47 @@ PRE(old_select)
 PRE(sys_clone)
 {
    UInt cloneflags;
+   Bool badarg = False;
 
-   PRINT("sys_clone ( %x, %p, %p, %p, %p )",ARG1,ARG2,ARG3,ARG4,ARG5);
-   PRE_REG_READ5(int, "clone",
+   PRINT("sys_clone ( %lx, %#lx, %#lx, %#lx, %#lx )",ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRE_REG_READ2(int, "clone",
                  unsigned long, flags,
-                 void *, child_stack,
-                 int *, parent_tidptr,
-                 vki_modify_ldt_t *, tlsinfo,
-                 int *, child_tidptr);
+                 void *, child_stack);
 
    if (ARG1 & VKI_CLONE_PARENT_SETTID) {
+      if (VG_(tdict).track_pre_reg_read) {
+         PRA3("clone", int *, parent_tidptr);
+      }
       PRE_MEM_WRITE("clone(parent_tidptr)", ARG3, sizeof(Int));
       if (!VG_(am_is_valid_for_client)(ARG3, sizeof(Int), 
                                              VKI_PROT_WRITE)) {
-         SET_STATUS_Failure( VKI_EFAULT );
-         return;
-      }
-   }
-   if (ARG1 & (VKI_CLONE_CHILD_SETTID | VKI_CLONE_CHILD_CLEARTID)) {
-      PRE_MEM_WRITE("clone(child_tidptr)", ARG5, sizeof(Int));
-      if (!VG_(am_is_valid_for_client)(ARG5, sizeof(Int), 
-                                             VKI_PROT_WRITE)) {
-         SET_STATUS_Failure( VKI_EFAULT );
-         return;
+         badarg = True;
       }
    }
    if (ARG1 & VKI_CLONE_SETTLS) {
-      PRE_MEM_READ("clone(tls_user_desc)", ARG4, sizeof(vki_modify_ldt_t));
+      if (VG_(tdict).track_pre_reg_read) {
+         PRA4("clone", vki_modify_ldt_t *, tlsinfo);
+      }
+      PRE_MEM_READ("clone(tlsinfo)", ARG4, sizeof(vki_modify_ldt_t));
       if (!VG_(am_is_valid_for_client)(ARG4, sizeof(vki_modify_ldt_t), 
                                              VKI_PROT_READ)) {
-         SET_STATUS_Failure( VKI_EFAULT );
-         return;
+         badarg = True;
       }
+   }
+   if (ARG1 & (VKI_CLONE_CHILD_SETTID | VKI_CLONE_CHILD_CLEARTID)) {
+      if (VG_(tdict).track_pre_reg_read) {
+         PRA5("clone", int *, child_tidptr);
+      }
+      PRE_MEM_WRITE("clone(child_tidptr)", ARG5, sizeof(Int));
+      if (!VG_(am_is_valid_for_client)(ARG5, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
+         badarg = True;
+      }
+   }
+
+   if (badarg) {
+      SET_STATUS_Failure( VKI_EFAULT );
+      return;
    }
 
    cloneflags = ARG1;
@@ -921,13 +940,13 @@ PRE(sys_clone)
    default:
    reject:
       /* should we just ENOSYS? */
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "Unsupported clone() flags: 0x%x", ARG1);
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "The only supported clone() uses are:");
-      VG_(message)(Vg_UserMsg, " - via a threads library (LinuxThreads or NPTL)");
-      VG_(message)(Vg_UserMsg, " - via the implementation of fork or vfork");
-      VG_(message)(Vg_UserMsg, " - for the Quadrics Elan3 user-space driver");
+      VG_(message)(Vg_UserMsg, "\n");
+      VG_(message)(Vg_UserMsg, "Unsupported clone() flags: 0x%lx\n", ARG1);
+      VG_(message)(Vg_UserMsg, "\n");
+      VG_(message)(Vg_UserMsg, "The only supported clone() uses are:\n");
+      VG_(message)(Vg_UserMsg, " - via a threads library (LinuxThreads or NPTL)\n");
+      VG_(message)(Vg_UserMsg, " - via the implementation of fork or vfork\n");
+      VG_(message)(Vg_UserMsg, " - for the Quadrics Elan3 user-space driver\n");
       VG_(unimplemented)
          ("Valgrind does not support general clone().");
    }
@@ -1014,7 +1033,7 @@ PRE(sys_rt_sigreturn)
 
 PRE(sys_modify_ldt)
 {
-   PRINT("sys_modify_ldt ( %d, %p, %d )", ARG1,ARG2,ARG3);
+   PRINT("sys_modify_ldt ( %ld, %#lx, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(int, "modify_ldt", int, func, void *, ptr,
                  unsigned long, bytecount);
    
@@ -1036,7 +1055,7 @@ PRE(sys_modify_ldt)
 
 PRE(sys_set_thread_area)
 {
-   PRINT("sys_set_thread_area ( %p )", ARG1);
+   PRINT("sys_set_thread_area ( %#lx )", ARG1);
    PRE_REG_READ1(int, "set_thread_area", struct user_desc *, u_info)
    PRE_MEM_READ( "set_thread_area(u_info)", ARG1, sizeof(vki_modify_ldt_t) );
 
@@ -1046,7 +1065,7 @@ PRE(sys_set_thread_area)
 
 PRE(sys_get_thread_area)
 {
-   PRINT("sys_get_thread_area ( %p )", ARG1);
+   PRINT("sys_get_thread_area ( %#lx )", ARG1);
    PRE_REG_READ1(int, "get_thread_area", struct user_desc *, u_info)
    PRE_MEM_WRITE( "get_thread_area(u_info)", ARG1, sizeof(vki_modify_ldt_t) );
 
@@ -1066,7 +1085,7 @@ PRE(sys_get_thread_area)
 // space, and we should therefore not check anything it points to.
 PRE(sys_ptrace)
 {
-   PRINT("sys_ptrace ( %d, %d, %p, %p )", ARG1,ARG2,ARG3,ARG4);
+   PRINT("sys_ptrace ( %ld, %ld, %#lx, %#lx )", ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(int, "ptrace", 
                  long, request, long, pid, long, addr, long, data);
    switch (ARG1) {
@@ -1154,7 +1173,7 @@ static Addr deref_Addr ( ThreadId tid, Addr a, Char* s )
  
 PRE(sys_ipc)
 {
-   PRINT("sys_ipc ( %d, %d, %d, %d, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+   PRINT("sys_ipc ( %ld, %ld, %ld, %ld, %#lx, %ld )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
    // XXX: this is simplistic -- some args are not used in all circumstances.
    PRE_REG_READ6(int, "ipc",
                  vki_uint, call, int, first, int, second, int, third,
@@ -1226,7 +1245,7 @@ PRE(sys_ipc)
       ML_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
       break;
    default:
-      VG_(message)(Vg_DebugMsg, "FATAL: unhandled syscall(ipc) %d", ARG1 );
+      VG_(message)(Vg_DebugMsg, "FATAL: unhandled syscall(ipc) %ld\n", ARG1 );
       VG_(core_panic)("... bye!\n");
       break; /*NOTREACHED*/
    }   
@@ -1278,9 +1297,7 @@ POST(sys_ipc)
       POST_MEM_WRITE( ARG4, sizeof( Addr ) );
 
       addr = deref_Addr ( tid, ARG4, "shmat(addr)" );
-      if ( addr > 0 ) { 
-         ML_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
-      }
+      ML_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
       break;
    }
    case VKI_SHMDT:
@@ -1293,7 +1310,7 @@ POST(sys_ipc)
       break;
    default:
       VG_(message)(Vg_DebugMsg,
-		   "FATAL: unhandled syscall(ipc) %d",
+		   "FATAL: unhandled syscall(ipc) %ld\n",
 		   ARG1 );
       VG_(core_panic)("... bye!\n");
       break; /*NOTREACHED*/
@@ -1324,7 +1341,7 @@ PRE(old_mmap)
    a5 = args[5-1];
    a6 = args[6-1];
 
-   PRINT("old_mmap ( %p, %llu, %d, %d, %d, %d )",
+   PRINT("old_mmap ( %#lx, %llu, %ld, %ld, %ld, %ld )",
          a1, (ULong)a2, a3, a4, a5, a6 );
 
    r = ML_(generic_PRE_sys_mmap)( tid, a1, a2, a3, a4, a5, (Off64T)a6 );
@@ -1342,7 +1359,7 @@ PRE(sys_mmap2)
    // pagesize or 4K-size units in offset?  For ppc32/64-linux, this is
    // 4K-sized.  Assert that the page size is 4K here for safety.
    vg_assert(VKI_PAGE_SIZE == 4096);
-   PRINT("sys_mmap2 ( %p, %llu, %d, %d, %d, %d )",
+   PRINT("sys_mmap2 ( %#lx, %llu, %ld, %ld, %ld, %ld )",
          ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 );
    PRE_REG_READ6(long, "mmap2",
                  unsigned long, start, unsigned long, length,
@@ -1360,7 +1377,7 @@ PRE(sys_mmap2)
 // things, eventually, I think.  --njn
 PRE(sys_lstat64)
 {
-   PRINT("sys_lstat64 ( %p(%s), %p )",ARG1,ARG1,ARG2);
+   PRINT("sys_lstat64 ( %#lx(%s), %#lx )",ARG1,(char*)ARG1,ARG2);
    PRE_REG_READ2(long, "lstat64", char *, file_name, struct stat64 *, buf);
    PRE_MEM_RASCIIZ( "lstat64(file_name)", ARG1 );
    PRE_MEM_WRITE( "lstat64(buf)", ARG2, sizeof(struct vki_stat64) );
@@ -1376,7 +1393,7 @@ POST(sys_lstat64)
 
 PRE(sys_stat64)
 {
-   PRINT("sys_stat64 ( %p(%s), %p )",ARG1,ARG1,ARG2);
+   PRINT("sys_stat64 ( %#lx(%s), %#lx )",ARG1,(char*)ARG1,ARG2);
    PRE_REG_READ2(long, "stat64", char *, file_name, struct stat64 *, buf);
    PRE_MEM_RASCIIZ( "stat64(file_name)", ARG1 );
    PRE_MEM_WRITE( "stat64(buf)", ARG2, sizeof(struct vki_stat64) );
@@ -1389,7 +1406,7 @@ POST(sys_stat64)
 
 PRE(sys_fstatat64)
 {
-   PRINT("sys_fstatat64 ( %d, %p(%s), %p )",ARG1,ARG2,ARG2,ARG3);
+   PRINT("sys_fstatat64 ( %ld, %#lx(%s), %#lx )",ARG1,ARG2,(char*)ARG2,ARG3);
    PRE_REG_READ3(long, "fstatat64",
                  int, dfd, char *, file_name, struct stat64 *, buf);
    PRE_MEM_RASCIIZ( "fstatat64(file_name)", ARG2 );
@@ -1403,7 +1420,7 @@ POST(sys_fstatat64)
 
 PRE(sys_fstat64)
 {
-   PRINT("sys_fstat64 ( %d, %p )",ARG1,ARG2);
+   PRINT("sys_fstat64 ( %ld, %#lx )",ARG1,ARG2);
    PRE_REG_READ2(long, "fstat64", unsigned long, fd, struct stat64 *, buf);
    PRE_MEM_WRITE( "fstat64(buf)", ARG2, sizeof(struct vki_stat64) );
 }
@@ -1423,7 +1440,7 @@ PRE(sys_socketcall)
 #  define ARG2_5  (((UWord*)ARG2)[5])
 
    *flags |= SfMayBlock;
-   PRINT("sys_socketcall ( %d, %p )",ARG1,ARG2);
+   PRINT("sys_socketcall ( %ld, %#lx )",ARG1,ARG2);
    PRE_REG_READ2(long, "socketcall", int, call, unsigned long *, args);
 
    switch (ARG1 /* request */) {
@@ -1511,8 +1528,8 @@ PRE(sys_socketcall)
       /* int getsockopt(int s, int level, int optname, 
                         void *optval, socklen_t *optlen); */
       PRE_MEM_READ( "socketcall.getsockopt(args)", ARG2, 5*sizeof(Addr) );
-      ML_(generic_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2, 
-                                       ARG2_3, ARG2_4 );
+      ML_(linux_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2, 
+                                     ARG2_3, ARG2_4 );
       break;
 
    case VKI_SYS_GETSOCKNAME:
@@ -1555,7 +1572,7 @@ PRE(sys_socketcall)
    }
 
    default:
-      VG_(message)(Vg_DebugMsg,"Warning: unhandled socketcall 0x%x",ARG1);
+      VG_(message)(Vg_DebugMsg,"Warning: unhandled socketcall 0x%lx\n",ARG1);
       SET_STATUS_Failure( VKI_EINVAL );
       break;
    }
@@ -1632,9 +1649,9 @@ POST(sys_socketcall)
       break;
 
    case VKI_SYS_GETSOCKOPT:
-      ML_(generic_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
-                                             ARG2_0, ARG2_1, 
-                                             ARG2_2, ARG2_3, ARG2_4 );
+      ML_(linux_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
+                                      ARG2_0, ARG2_1, 
+                                      ARG2_2, ARG2_3, ARG2_4 );
       break;
 
    case VKI_SYS_GETSOCKNAME:
@@ -1658,7 +1675,7 @@ POST(sys_socketcall)
      break;
 
    default:
-      VG_(message)(Vg_DebugMsg,"FATAL: unhandled socketcall 0x%x",ARG1);
+      VG_(message)(Vg_DebugMsg,"FATAL: unhandled socketcall 0x%lx\n",ARG1);
       VG_(core_panic)("... bye!\n");
       break; /*NOTREACHED*/
    }
@@ -1679,10 +1696,10 @@ void convert_sigset_to_rt(const vki_old_sigset_t *oldset, vki_sigset_t *set)
 }
 PRE(sys_sigaction)
 {
-   struct vki_sigaction new, old;
-   struct vki_sigaction *newp, *oldp;
+   vki_sigaction_toK_t   new, *newp;
+   vki_sigaction_fromK_t old, *oldp;
 
-   PRINT("sys_sigaction ( %d, %p, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_sigaction ( %ld, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(int, "sigaction",
                  int, signum, const struct old_sigaction *, act,
                  struct old_sigaction *, oldact);
@@ -1710,9 +1727,8 @@ PRE(sys_sigaction)
 
    if (ARG2 != 0) {
       struct vki_old_sigaction *oldnew = (struct vki_old_sigaction *)ARG2;
-
       new.ksa_handler = oldnew->ksa_handler;
-      new.sa_flags = oldnew->sa_flags;
+      new.sa_flags    = oldnew->sa_flags;
       new.sa_restorer = oldnew->sa_restorer;
       convert_sigset_to_rt(&oldnew->sa_mask, &new.sa_mask);
       newp = &new;
@@ -1722,9 +1738,8 @@ PRE(sys_sigaction)
 
    if (ARG3 != 0 && SUCCESS && RES == 0) {
       struct vki_old_sigaction *oldold = (struct vki_old_sigaction *)ARG3;
-
       oldold->ksa_handler = oldp->ksa_handler;
-      oldold->sa_flags = oldp->sa_flags;
+      oldold->sa_flags    = oldp->sa_flags;
       oldold->sa_restorer = oldp->sa_restorer;
       oldold->sa_mask = oldp->sa_mask.sig[0];
    }
@@ -1749,7 +1764,7 @@ PRE(sys_sigsuspend)
       that takes a pointer to the signal mask so supports more signals.
     */
    *flags |= SfMayBlock;
-   PRINT("sys_sigsuspend ( %d, %d, %d )", ARG1,ARG2,ARG3 );
+   PRINT("sys_sigsuspend ( %ld, %ld, %ld )", ARG1,ARG2,ARG3 );
    PRE_REG_READ3(int, "sigsuspend",
                  int, history0, int, history1,
                  vki_old_sigset_t, mask);
@@ -1757,7 +1772,7 @@ PRE(sys_sigsuspend)
 
 PRE(sys_vm86old)
 {
-   PRINT("sys_vm86old ( %p )", ARG1);
+   PRINT("sys_vm86old ( %#lx )", ARG1);
    PRE_REG_READ1(int, "vm86old", struct vm86_struct *, info);
    PRE_MEM_WRITE( "vm86old(info)", ARG1, sizeof(struct vki_vm86_struct));
 }
@@ -1769,7 +1784,7 @@ POST(sys_vm86old)
 
 PRE(sys_vm86)
 {
-   PRINT("sys_vm86 ( %d, %p )", ARG1,ARG2);
+   PRINT("sys_vm86 ( %ld, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(int, "vm86", unsigned long, fn, struct vm86plus_struct *, v86);
    if (ARG1 == VKI_VM86_ENTER || ARG1 == VKI_VM86_ENTER_NO_BYPASS)
       PRE_MEM_WRITE( "vm86(v86)", ARG2, sizeof(struct vki_vm86plus_struct));
@@ -1867,8 +1882,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINX_(__NR_umount,            sys_oldumount),      // 22
    LINX_(__NR_setuid,            sys_setuid16),       // 23 ## P
    LINX_(__NR_getuid,            sys_getuid16),       // 24 ## P
-//zz 
-//zz    //   (__NR_stime,             sys_stime),          // 25 * (SVr4,SVID,X/OPEN)
+
+   LINX_(__NR_stime,             sys_stime),          // 25 * (SVr4,SVID,X/OPEN)
    PLAXY(__NR_ptrace,            sys_ptrace),         // 26
    GENX_(__NR_alarm,             sys_alarm),          // 27
 //zz    //   (__NR_oldfstat,          sys_fstat),          // 28 * L -- obsolete
@@ -1902,9 +1917,9 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_acct,              sys_acct),           // 51
    LINX_(__NR_umount2,           sys_umount),         // 52
    GENX_(__NR_lock,              sys_ni_syscall),     // 53
-   GENXY(__NR_ioctl,             sys_ioctl),          // 54
+   LINXY(__NR_ioctl,             sys_ioctl),          // 54
 
-   GENXY(__NR_fcntl,             sys_fcntl),          // 55
+   LINXY(__NR_fcntl,             sys_fcntl),          // 55
    GENX_(__NR_mpx,               sys_ni_syscall),     // 56
    GENX_(__NR_setpgid,           sys_setpgid),        // 57
    GENX_(__NR_ulimit,            sys_ni_syscall),     // 58
@@ -1992,8 +2007,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_sigprocmask,       sys_sigprocmask),    // 126
 //zz    // Nb: create_module() was removed 2.4-->2.6
    GENX_(__NR_create_module,     sys_ni_syscall),     // 127
-   GENX_(__NR_init_module,       sys_init_module),    // 128
-//zz    //   (__NR_delete_module,     sys_delete_module),  // 129 (*/Linux)?
+   LINX_(__NR_init_module,       sys_init_module),    // 128
+   LINX_(__NR_delete_module,     sys_delete_module),  // 129
 //zz 
 //zz    // Nb: get_kernel_syms() was removed 2.4-->2.6
    GENX_(__NR_get_kernel_syms,   sys_ni_syscall),     // 130
@@ -2106,7 +2121,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_madvise,           sys_madvise),        // 219
 
    GENXY(__NR_getdents64,        sys_getdents64),     // 220
-   GENXY(__NR_fcntl64,           sys_fcntl64),        // 221
+   LINXY(__NR_fcntl64,           sys_fcntl64),        // 221
    GENX_(222,                    sys_ni_syscall),     // 222
    PLAXY(223,                    sys_syscall223),     // 223 // sys_bproc?
    LINX_(__NR_gettid,            sys_gettid),         // 224
@@ -2144,7 +2159,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINX_(__NR_fadvise64,         sys_fadvise64),      // 250 */(Linux?)
    GENX_(251,                    sys_ni_syscall),     // 251
    LINX_(__NR_exit_group,        sys_exit_group),     // 252
-   GENXY(__NR_lookup_dcookie,    sys_lookup_dcookie), // 253
+   LINXY(__NR_lookup_dcookie,    sys_lookup_dcookie), // 253
    LINXY(__NR_epoll_create,      sys_epoll_create),   // 254
 
    LINX_(__NR_epoll_ctl,         sys_epoll_ctl),         // 255
@@ -2187,9 +2202,9 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINX_(__NR_add_key,           sys_add_key),        // 286
    LINX_(__NR_request_key,       sys_request_key),    // 287
    LINXY(__NR_keyctl,            sys_keyctl),         // 288
-//   LINX_(__NR_ioprio_set,        sys_ioprio_set),     // 289
+   LINX_(__NR_ioprio_set,        sys_ioprio_set),     // 289
 
-//   LINX_(__NR_ioprio_get,        sys_ioprio_get),     // 290
+   LINX_(__NR_ioprio_get,        sys_ioprio_get),     // 290
    LINX_(__NR_inotify_init,	 sys_inotify_init),   // 291
    LINX_(__NR_inotify_add_watch, sys_inotify_add_watch), // 292
    LINX_(__NR_inotify_rm_watch,	 sys_inotify_rm_watch), // 293
@@ -2223,13 +2238,29 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //   LINX_(__NR_vmsplice,          sys_ni_syscall),       // 316
 //   LINX_(__NR_move_pages,        sys_ni_syscall),       // 317
 //   LINX_(__NR_getcpu,            sys_ni_syscall),       // 318
-//   LINX_(__NR_epoll_pwait,       sys_ni_syscall),       // 319
+   LINXY(__NR_epoll_pwait,       sys_epoll_pwait),      // 319
 
    LINX_(__NR_utimensat,         sys_utimensat),        // 320
+   LINXY(__NR_signalfd,          sys_signalfd),         // 321
+   LINXY(__NR_timerfd_create,    sys_timerfd_create),   // 322
+   LINX_(__NR_eventfd,           sys_eventfd),          // 323
+   //LINX_(__NR_fallocate,         sys_fallocate),        // 324
+
+   LINXY(__NR_timerfd_settime,   sys_timerfd_settime),  // 325
+   LINXY(__NR_timerfd_gettime,   sys_timerfd_gettime),  // 326
+   LINXY(__NR_signalfd4,         sys_signalfd4),        // 327
+   LINX_(__NR_eventfd2,          sys_eventfd2),         // 328
+   LINXY(__NR_epoll_create1,     sys_epoll_create1),     // 329
+
+   //   (__NR_dup3,              sys_ni_syscall)        // 330
+   LINXY(__NR_pipe2,             sys_pipe2)             // 331
+   //   (__NR_inotify_init1,     sys_ni_syscall)        // 332
 };
 
 const UInt ML_(syscall_table_size) = 
             sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
+
+#endif // defined(VGP_x86_linux)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -88,7 +88,7 @@ typedef
       Bool client_requests;
       Bool syscall_wrapper;
       Bool sanity_checks;
-      Bool data_syms;
+      Bool var_info;
       Bool malloc_replacement;
       Bool xml_output;
       Bool final_IR_tidy_pass;
@@ -117,11 +117,12 @@ typedef struct {
    
    // VG_(needs).tool_errors
    Bool  (*tool_eq_Error)                    (VgRes, Error*, Error*);
+   void  (*tool_before_pp_Error)             (Error*);
    void  (*tool_pp_Error)                    (Error*);
    Bool  tool_show_ThreadIDs_for_errors;
    UInt  (*tool_update_extra)                (Error*);
    Bool  (*tool_recognised_suppression)      (Char*, Supp*);
-   Bool  (*tool_read_extra_suppression_info) (Int, Char*, Int, Supp*);
+   Bool  (*tool_read_extra_suppression_info) (Int, Char**, SizeT*, Supp*);
    Bool  (*tool_error_matches_suppression)   (Error*, Supp*);
    Char* (*tool_get_error_name)              (Error*);
    void  (*tool_print_extra_suppression_info)(Error*);
@@ -138,8 +139,8 @@ typedef struct {
    Bool (*tool_handle_client_request)(ThreadId, UWord*, UWord*);
 
    // VG_(needs).syscall_wrapper
-   void (*tool_pre_syscall) (ThreadId, UInt);
-   void (*tool_post_syscall)(ThreadId, UInt, SysRes);
+   void (*tool_pre_syscall) (ThreadId, UInt, UWord*, UInt);
+   void (*tool_post_syscall)(ThreadId, UInt, UWord*, UInt, SysRes);
 
    // VG_(needs).sanity_checks
    Bool (*tool_cheap_sanity_check)(void);
@@ -155,22 +156,37 @@ typedef struct {
    void  (*tool___builtin_delete)    (ThreadId, void*);
    void  (*tool___builtin_vec_delete)(ThreadId, void*);
    void* (*tool_realloc)             (ThreadId, void*, SizeT);
+   SizeT (*tool_malloc_usable_size)  (ThreadId, void*);
    SizeT tool_client_redzone_szB;
 
    // VG_(needs).final_IR_tidy_pass
    IRSB* (*tool_final_IR_tidy_pass)  (IRSB*);
 
+   // VG_(needs).xml_output
+   // (none)
+
    // -- Event tracking functions ------------------------------------
-   void (*track_new_mem_startup)     (Addr, SizeT, Bool, Bool, Bool);
-   void (*track_new_mem_stack_signal)(Addr, SizeT);
-   void (*track_new_mem_brk)         (Addr, SizeT);
-   void (*track_new_mem_mmap)        (Addr, SizeT, Bool, Bool, Bool);
+   void (*track_new_mem_startup)     (Addr, SizeT, Bool, Bool, Bool, ULong);
+   void (*track_new_mem_stack_signal)(Addr, SizeT, ThreadId);
+   void (*track_new_mem_brk)         (Addr, SizeT, ThreadId);
+   void (*track_new_mem_mmap)        (Addr, SizeT, Bool, Bool, Bool, ULong);
 
    void (*track_copy_mem_remap)      (Addr src, Addr dst, SizeT);
    void (*track_change_mem_mprotect) (Addr, SizeT, Bool, Bool, Bool);
    void (*track_die_mem_stack_signal)(Addr, SizeT);
    void (*track_die_mem_brk)         (Addr, SizeT);
    void (*track_die_mem_munmap)      (Addr, SizeT);
+
+   void VG_REGPARM(2) (*track_new_mem_stack_4_w_ECU)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_8_w_ECU)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_12_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_16_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_32_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_112_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_128_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_144_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_160_w_ECU)(Addr,UInt);
+   void (*track_new_mem_stack_w_ECU)(Addr,SizeT,UInt);
 
    void VG_REGPARM(1) (*track_new_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_8)  (Addr);
@@ -181,7 +197,7 @@ typedef struct {
    void VG_REGPARM(1) (*track_new_mem_stack_128)(Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_144)(Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_160)(Addr);
-   void (*track_new_mem_stack)(Addr, SizeT);
+   void (*track_new_mem_stack)(Addr,SizeT);
 
    void VG_REGPARM(1) (*track_die_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_die_mem_stack_8)  (Addr);
@@ -201,9 +217,10 @@ typedef struct {
    void (*track_pre_mem_write)      (CorePart, ThreadId, Char*, Addr, SizeT);
    void (*track_post_mem_write)     (CorePart, ThreadId, Addr, SizeT);
 
-   void (*track_pre_reg_read)  (CorePart, ThreadId, Char*, OffT, SizeT);
-   void (*track_post_reg_write)(CorePart, ThreadId,        OffT, SizeT);
-   void (*track_post_reg_write_clientcall_return)(ThreadId, OffT, SizeT, Addr);
+   void (*track_pre_reg_read)  (CorePart, ThreadId, Char*, PtrdiffT, SizeT);
+   void (*track_post_reg_write)(CorePart, ThreadId,        PtrdiffT, SizeT);
+   void (*track_post_reg_write_clientcall_return)(ThreadId, PtrdiffT, SizeT,
+                                                  Addr);
 
    void (*track_start_client_code)(ThreadId, ULong);
    void (*track_stop_client_code) (ThreadId, ULong);

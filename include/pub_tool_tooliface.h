@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -37,38 +37,22 @@
 /* ------------------------------------------------------------------ */
 /* The interface version */
 
-/* The version number indicates binary-incompatible changes to the
-   interface;  if the core and tool versions don't match, Valgrind
-   will abort.  */
-#define VG_CORE_INTERFACE_VERSION   10
+/* Initialise tool.   Must do the following:
+   - initialise the `details' struct, via the VG_(details_*)() functions
+   - register the basic tool functions, via VG_(basic_tool_funcs)().
+   May do the following:
+   - initialise the `needs' struct to indicate certain requirements, via
+     the VG_(needs_*)() functions
+   - any other tool-specific initialisation
+*/
+extern void (*VG_(tl_pre_clo_init)) ( void );
 
-typedef struct _ToolInfo {
-   Int	sizeof_ToolInfo;
-   Int	interface_version;
-
-   /* Initialise tool.   Must do the following:
-      - initialise the `details' struct, via the VG_(details_*)() functions
-      - register any helpers called by generated code
-      
-      May do the following:
-      - initialise the `needs' struct to indicate certain requirements, via
-      the VG_(needs_*)() functions
-      - initialize all the tool's entrypoints via the VG_(init_*)() functions
-      - register any tool-specific profiling events
-      - any other tool-specific initialisation
-   */
-   void (*tl_pre_clo_init) ( void );
-} ToolInfo;
-
-extern const ToolInfo VG_(tool_info);
-
-/* Every tool must include this macro somewhere, exactly once. */
-#define VG_DETERMINE_INTERFACE_VERSION(pre_clo_init)           \
-   const ToolInfo VG_(tool_info) = {                           \
-      .sizeof_ToolInfo   = sizeof(ToolInfo),                   \
-      .interface_version = VG_CORE_INTERFACE_VERSION,          \
-      .tl_pre_clo_init   = pre_clo_init,                       \
-   };
+/* Every tool must include this macro somewhere, exactly once.  The
+   interface version is no longer relevant, but we kept the same name
+   to avoid requiring changes to tools.
+*/
+#define VG_DETERMINE_INTERFACE_VERSION(pre_clo_init) \
+   void (*VG_(tl_pre_clo_init)) ( void ) = pre_clo_init;
 
 /* ------------------------------------------------------------------ */
 /* Basic tool functions */
@@ -292,13 +276,24 @@ extern void VG_(needs_core_errors) ( void );
 
 /* Want to report errors from tool?  This implies use of suppressions, too. */
 extern void VG_(needs_tool_errors) (
-   // Identify if two errors are equal, or equal enough.  `res' indicates how
-   // close is "close enough".  `res' should be passed on as necessary, eg. if
-   // the Error's `extra' part contains an ExeContext, `res' should be
+   // Identify if two errors are equal, or close enough.  This function is
+   // only called if e1 and e2 will have the same error kind.  `res' indicates
+   // how close is "close enough".  `res' should be passed on as necessary,
+   // eg. if the Error's `extra' part contains an ExeContext, `res' should be
    // passed to VG_(eq_ExeContext)() if the ExeContexts are considered.  Other
    // than that, probably don't worry about it unless you have lots of very
    // similar errors occurring.
    Bool (*eq_Error)(VgRes res, Error* e1, Error* e2),
+
+   // We give tools a chance to have a look at errors
+   // just before they are printed.  That is, before_pp_Error is 
+   // called just before pp_Error itself.  This gives the tool a
+   // chance to look at the just-about-to-be-printed error, so as to 
+   // emit any arbitrary output if wants to, before the error itself
+   // is printed.  This functionality was added to allow Helgrind to
+   // print thread-announcement messages immediately before the 
+   // errors that refer to them.
+   void (*before_pp_Error)(Error* err),
 
    // Print error context.
    void (*pp_Error)(Error* err),
@@ -322,8 +317,10 @@ extern void VG_(needs_tool_errors) (
    // Read any extra info for this suppression kind.  Most likely for filling
    // in the `extra' and `string' parts (with VG_(set_supp_{extra, string})())
    // of a suppression if necessary.  Should return False if a syntax error
-   // occurred, True otherwise.
-   Bool (*read_extra_suppression_info)(Int fd, Char* buf, Int nBuf, Supp* su),
+   // occurred, True otherwise.  bufpp and nBufp are the same as for
+   // VG_(get_line).
+   Bool (*read_extra_suppression_info)(Int fd, Char** bufpp, SizeT* nBufp,
+                                       Supp* su),
 
    // This should just check the kinds match and maybe some stuff in the
    // `string' and `extra' field if appropriate (using VG_(get_supp_*)() to
@@ -402,9 +399,19 @@ extern void VG_(needs_client_requests) (
 /* Tool does stuff before and/or after system calls? */
 // Nb: If either of the pre_ functions malloc() something to return, the
 // corresponding post_ function had better free() it!
+// Also, the args are the 'original args' -- that is, it may be
+// that the syscall pre-wrapper will modify the args before the
+// syscall happens.  So these args are the original, un-modified
+// args.  Finally, nArgs merely indicates the length of args[..],
+// it does not indicate how many of those values are actually
+// relevant to the syscall.  args[0 .. nArgs-1] is guaranteed
+// to be defined and to contain all the args for this syscall,
+// possibly including some trailing zeroes.
 extern void VG_(needs_syscall_wrapper) (
-   void (* pre_syscall)(ThreadId tid, UInt syscallno),
-   void (*post_syscall)(ThreadId tid, UInt syscallno, SysRes res)
+               void (* pre_syscall)(ThreadId tid, UInt syscallno,
+                                    UWord* args, UInt nArgs),
+               void (*post_syscall)(ThreadId tid, UInt syscallno,
+                                    UWord* args, UInt nArgs, SysRes res)
 );
 
 /* Are tool-state sanity checks performed? */
@@ -416,8 +423,8 @@ extern void VG_(needs_sanity_checks) (
    Bool(*expensive_sanity_check)(void)
 );
 
-/* Do we need to see data symbols? */
-extern void VG_(needs_data_syms) ( void );
+/* Do we need to see variable type and location information? */
+extern void VG_(needs_var_info) ( void );
 
 /* Does the tool replace malloc() and friends with its own versions?
    This has to be combined with the use of a vgpreload_<tool>.so module
@@ -433,13 +440,14 @@ extern void VG_(needs_malloc_replacement)(
    void  (*p__builtin_delete)     ( ThreadId tid, void* p ),
    void  (*p__builtin_vec_delete) ( ThreadId tid, void* p ),
    void* (*prealloc)              ( ThreadId tid, void* p, SizeT new_size ),
+   SizeT (*pmalloc_usable_size)   ( ThreadId tid, void* p), 
    SizeT client_malloc_redzone_szB
 );
 
 /* Can the tool do XML output?  This is a slight misnomer, because the tool
  * is not requesting the core to do anything, rather saying "I can handle
  * it". */
-extern void VG_(needs_xml_output)( void );
+extern void VG_(needs_xml_output) ( void );
 
 /* Does the tool want to have one final pass over the IR after tree
    building but before instruction selection?  If so specify the
@@ -453,9 +461,15 @@ extern void VG_(needs_final_IR_tidy_pass) ( IRSB*(*final_tidy)(IRSB*) );
 /* Part of the core from which this call was made.  Useful for determining
    what kind of error message should be emitted. */
 typedef
-   enum { Vg_CoreStartup, Vg_CoreSignal, Vg_CoreSysCall,
-          Vg_CoreTranslate, Vg_CoreClientReq }
-   CorePart;
+   enum { Vg_CoreStartup=1, Vg_CoreSignal, Vg_CoreSysCall,
+          // This is for platforms where syscall args are passed on the
+          // stack; although pre_mem_read is the callback that will be
+          // called, such an arg should be treated (with respect to
+          // presenting information to the user) as if it was passed in a
+          // register, ie. like pre_reg_read.
+          Vg_CoreSysCallArgInMem,  
+          Vg_CoreTranslate, Vg_CoreClientReq
+   } CorePart;
 
 /* Events happening in core to track.  To be notified, pass a callback
    function to the appropriate function.  To ignore an event, don't do
@@ -469,14 +483,26 @@ typedef
    Memory events (Nb: to track heap allocation/freeing, a tool must replace
    malloc() et al.  See above how to do this.)
 
-   These ones occur at startup, upon some signals, and upon some syscalls
- */
+   These ones occur at startup, upon some signals, and upon some syscalls.
+
+   For new_mem_brk and new_mem_stack_signal, the supplied ThreadId
+   indicates the thread for whom the new memory is being allocated.
+
+   For new_mem_startup and new_mem_mmap, the di_handle argument is a
+   handle which can be used to retrieve debug info associated with the
+   mapping or allocation (because it is of a file that Valgrind has
+   decided to read debug info from).  If the value is zero, there is
+   no associated debug info.  If the value exceeds zero, it can be
+   supplied as an argument to selected queries in m_debuginfo.
+*/
 void VG_(track_new_mem_startup)     (void(*f)(Addr a, SizeT len,
-                                              Bool rr, Bool ww, Bool xx));
-void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len));
-void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len));
+                                              Bool rr, Bool ww, Bool xx,
+                                              ULong di_handle));
+void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len, ThreadId tid));
+void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len, ThreadId tid));
 void VG_(track_new_mem_mmap)        (void(*f)(Addr a, SizeT len,
-                                              Bool rr, Bool ww, Bool xx));
+                                              Bool rr, Bool ww, Bool xx,
+                                              ULong di_handle));
 
 void VG_(track_copy_mem_remap)      (void(*f)(Addr from, Addr to, SizeT len));
 void VG_(track_change_mem_mprotect) (void(*f)(Addr a, SizeT len,
@@ -494,7 +520,29 @@ void VG_(track_die_mem_munmap)      (void(*f)(Addr a, SizeT len));
    specialised cases are defined, the general case must be defined too.
 
    Nb: all the specialised ones must use the VG_REGPARM(n) attribute.
- */
+
+   For the _new functions, a tool may specify with with-ECU
+   (ExeContext Unique) or without-ECU version for each size, but not
+   both.  If the with-ECU version is supplied, then the core will
+   arrange to pass, as the ecu argument, a 32-bit int which uniquely
+   identifies the instruction moving the stack pointer down.  This
+   32-bit value is as obtained from VG_(get_ECU_from_ExeContext).
+   VG_(get_ExeContext_from_ECU) can then be used to retrieve the
+   associated depth-1 ExeContext for the location.  All this
+   complexity is provided to support origin tracking in Memcheck.
+*/
+void VG_(track_new_mem_stack_4_w_ECU)  (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_8_w_ECU)  (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_12_w_ECU) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_16_w_ECU) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_32_w_ECU) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_112_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_128_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_144_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_160_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_w_ECU)                  (void(*f)(Addr a, SizeT len,
+                                                                       UInt ecu));
+
 void VG_(track_new_mem_stack_4)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
 void VG_(track_new_mem_stack_8)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
 void VG_(track_new_mem_stack_12) (VG_REGPARM(1) void(*f)(Addr new_ESP));
@@ -533,15 +581,15 @@ void VG_(track_post_mem_write)     (void(*f)(CorePart part, ThreadId tid,
 /* Register events.  Use VG_(set_shadow_state_area)() to set the shadow regs
    for these events.  */
 void VG_(track_pre_reg_read)  (void(*f)(CorePart part, ThreadId tid,
-                                        Char* s, OffT guest_state_offset,
+                                        Char* s, PtrdiffT guest_state_offset,
                                         SizeT size));
 void VG_(track_post_reg_write)(void(*f)(CorePart part, ThreadId tid,
-                                        OffT guest_state_offset,
+                                        PtrdiffT guest_state_offset,
                                         SizeT size));
 
 /* This one is called for malloc() et al if they are replaced by a tool. */
 void VG_(track_post_reg_write_clientcall_return)(
-      void(*f)(ThreadId tid, OffT guest_state_offset, SizeT size, Addr f));
+      void(*f)(ThreadId tid, PtrdiffT guest_state_offset, SizeT size, Addr f));
 
 
 /* Scheduler events (not exhaustive) */

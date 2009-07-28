@@ -9,7 +9,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2009 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -37,8 +37,8 @@
 /* See comment at top of debuginfo.c for explanation of
    the _svma / _avma / _image / _bias naming scheme.
 */
-/* Note this is not freestanding; needs pub_core_xarray.h to be
-   included before it. */
+/* Note this is not freestanding; needs pub_core_xarray.h and
+   priv_tytypes.h to be included before it. */
 
 #ifndef __PRIV_STORAGE_H
 #define __PRIV_STORAGE_H
@@ -50,8 +50,13 @@ typedef
    struct { 
       Addr  addr;   /* lowest address of entity */
       Addr  tocptr; /* ppc64-linux only: value that R2 should have */
-      UInt  size;   /* size in bytes */
       UChar *name;  /* name */
+      // XXX: this could be shrunk (on 32-bit platforms) by using 31 bits for
+      // the size and 1 bit for the isText.  If you do this, make sure that
+      // all assignments to isText use 0 or 1 (or True or False), and that a
+      // positive number larger than 1 is never used to represent True.
+      UInt  size;   /* size in bytes */
+      Bool  isText;
    }
    DiSym;
 
@@ -69,7 +74,7 @@ typedef
 #define MAX_LOC_SIZE   ((1 << LOC_SIZE_BITS) - 1)
 
 /* Number used to detect line number overflows; if one line is
-   60000-odd smaller than the previous, is was probably an overflow.
+   60000-odd smaller than the previous, it was probably an overflow.
  */
 #define OVERFLOW_DIFFERENCE     (LINENO_OVERFLOW - 5000)
 
@@ -207,83 +212,397 @@ extern Int ML_(CfiExpr_DwReg) ( XArray* dst, Int reg );
 
 extern void ML_(ppCfiExpr)( XArray* src, Int ix );
 
-/* --------------------- SEGINFO --------------------- */
+/* ---------------- FPO INFO (Windows PE) -------------- */
+
+/* for apps using Wine: MSVC++ PDB FramePointerOmitted: somewhat like
+   a primitive CFI */
+typedef
+   struct _FPO_DATA {  /* 16 bytes */
+      UInt   ulOffStart; /* offset of 1st byte of function code */
+      UInt   cbProcSize; /* # bytes in function */
+      UInt   cdwLocals;  /* # bytes/4 in locals */
+      UShort cdwParams;  /* # bytes/4 in params */
+      UChar  cbProlog;   /* # bytes in prolog */
+      UChar  cbRegs :3;  /* # regs saved */
+      UChar  fHasSEH:1;  /* Structured Exception Handling */
+      UChar  fUseBP :1;  /* EBP has been used */
+      UChar  reserved:1;
+      UChar  cbFrame:2;  /* frame type */
+   }
+   FPO_DATA;
+
+#define PDB_FRAME_FPO  0
+#define PDB_FRAME_TRAP 1
+#define PDB_FRAME_TSS  2
+
+/* --------------------- VARIABLES --------------------- */
+
+typedef
+   struct {
+      Addr    aMin;
+      Addr    aMax;
+      XArray* /* of DiVariable */ vars;
+   }
+   DiAddrRange;
+
+typedef
+   struct {
+      UChar* name;  /* in DebugInfo.strchunks */
+      UWord  typeR; /* a cuOff */
+      GExpr* gexpr; /* on DebugInfo.gexprs list */
+      GExpr* fbGX;  /* SHARED. */
+      UChar* fileName; /* where declared; may be NULL. in
+                          DebugInfo.strchunks */
+      Int    lineNo;   /* where declared; may be zero. */
+   }
+   DiVariable;
+
+Word 
+ML_(cmp_for_DiAddrRange_range) ( const void* keyV, const void* elemV );
+
+/* --------------------- DEBUGINFO --------------------- */
 
 /* This is the top-level data type.  It's a structure which contains
-   information pertaining to one mapped text segment.  This type is
+   information pertaining to one mapped ELF object.  This type is
    exported only abstractly - in pub_tool_debuginfo.h. */
 
 #define SEGINFO_STRCHUNKSIZE (64*1024)
 
-struct _SegInfo {
-   struct _SegInfo* next;	/* list of SegInfos */
+struct _DebugInfo {
 
-   /* Description of the mapped segment. */
-   Addr   text_start_avma;
-   UInt   text_size;
-   UChar* filename; /* in mallocville */
-   UChar* memname;  /* malloc'd.  AIX5 only: .a member name */
-   OffT   foffset;  /* file offset for mapped text section - UNUSED */
+   /* Admin stuff */
+
+   struct _DebugInfo* next;   /* list of DebugInfos */
+   Bool               mark;   /* marked for deletion? */
+
+   /* An abstract handle, which can be used by entities outside of
+      m_debuginfo to (in an abstract datatype sense) refer to this
+      struct _DebugInfo.  A .handle of zero is invalid; valid handles
+      are 1 and above.  The same handle is never issued twice (in any
+      given run of Valgrind), so a handle becomes invalid when the
+      associated struct _DebugInfo is discarded, and remains invalid
+      forever thereafter.  The .handle field is set as soon as this
+      structure is allocated. */
+   ULong handle;
+
+   /* Used for debugging only - indicate what stuff to dump whilst
+      reading stuff into the seginfo.  Are computed as early in the
+      lifetime of the DebugInfo as possible -- at the point when it is
+      created.  Use these when deciding what to spew out; do not use
+      the global VG_(clo_blah) flags. */
+
+   Bool trace_symtab; /* symbols, our style */
+   Bool trace_cfi;    /* dwarf frame unwind, our style */
+   Bool ddump_syms;   /* mimic /usr/bin/readelf --syms */
+   Bool ddump_line;   /* mimic /usr/bin/readelf --debug-dump=line */
+   Bool ddump_frames; /* mimic /usr/bin/readelf --debug-dump=frames */
+
+   /* Fields that must be filled in before we can start reading
+      anything from the ELF file.  These fields are filled in by
+      VG_(di_notify_mmap) and its immediate helpers. */
+
+   UChar* filename; /* in mallocville (VG_AR_DINFO) */
+   UChar* memname;  /* also in VG_AR_DINFO.  AIX5 only: .a member name */
+
+   Bool  have_rx_map; /* did we see a r?x mapping yet for the file? */
+   Bool  have_rw_map; /* did we see a rw? mapping yet for the file? */
+
+   Addr  rx_map_avma; /* these fields record the file offset, length */
+   SizeT rx_map_size; /* and map address of the r?x mapping we believe */
+   OffT  rx_map_foff; /* is the .text segment mapping */
+
+   Addr  rw_map_avma; /* ditto, for the rw? mapping we believe is the */
+   SizeT rw_map_size; /* .data segment mapping */
+   OffT  rw_map_foff;
+
+   /* Once both a rw? and r?x mapping for .filename have been
+      observed, we can go on to read the symbol tables and debug info.
+      .have_dinfo flags when that has happened. */
+   /* If have_dinfo is False, then all fields except "*rx_map*" and
+      "*rw_map*" are invalid and should not be consulted. */
+   Bool  have_dinfo; /* initially False */
+
+   /* All the rest of the fields in this structure are filled in once
+      we have committed to reading the symbols and debug info (that
+      is, at the point where .have_dinfo is set to True). */
+
+   /* The file's soname.  FIXME: ensure this is always allocated in
+      VG_AR_DINFO. */
    UChar* soname;
+
+   /* Description of some important mapped segments.  The presence or
+      absence of the mapping is denoted by the _present field, since
+      in some obscure circumstances (to do with data/sdata/bss) it is
+      possible for the mapping to be present but have zero size.
+      Certainly text_ is mandatory on all platforms; not sure about
+      the rest though. 
+
+      --------------------------------------------------------
+
+      Comment_on_IMPORTANT_CFSI_REPRESENTATIONAL_INVARIANTS: we require that
+ 
+      either (rx_map_size == 0 && cfsi == NULL) (the degenerate case)
+
+      or the normal case, which is the AND of the following:
+      (0) rx_map_size > 0
+      (1) no two DebugInfos with rx_map_size > 0 
+          have overlapping [rx_map_avma,+rx_map_size)
+      (2) [cfsi_minavma,cfsi_maxavma] does not extend 
+          beyond [rx_map_avma,+rx_map_size); that is, the former is a 
+          subrange or equal to the latter.
+      (3) all DiCfSI in the cfsi array all have ranges that fall within
+          [rx_map_avma,+rx_map_size).
+      (4) all DiCfSI in the cfsi array are non-overlapping
+
+      The cumulative effect of these restrictions is to ensure that
+      all the DiCfSI records in the entire system are non overlapping.
+      Hence any address falls into either exactly one DiCfSI record,
+      or none.  Hence it is safe to cache the results of searches for
+      DiCfSI records.  This is the whole point of these restrictions.
+      The caching of DiCfSI searches is done in VG_(use_CF_info).  The
+      cache is flushed after any change to debugInfo_list.  DiCfSI
+      searches are cached because they are central to stack unwinding
+      on amd64-linux.
+
+      Where are these invariants imposed and checked?
+
+      They are checked after a successful read of debuginfo into
+      a DebugInfo*, in check_CFSI_related_invariants.
+
+      (1) is not really imposed anywhere.  We simply assume that the
+      kernel will not map the text segments from two different objects
+      into the same space.  Sounds reasonable.
+
+      (2) follows from (4) and (3).  It is ensured by canonicaliseCFI.
+      (3) is ensured by ML_(addDiCfSI).
+      (4) is ensured by canonicaliseCFI.
+
+      --------------------------------------------------------
+
+      Comment_on_DEBUG_SVMA_and_DEBUG_BIAS_fields:
+
+      The _debug_{svma,bias} fields were added as part of a fix to
+      #185816.  The problem encompassed in that bug report was that it
+      wasn't correct to use apply the bias values deduced for a
+      primary object to its associated debuginfo object, because the
+      debuginfo object (or the primary) could have been prelinked to a
+      different SVMA.  Hence debuginfo and primary objects need to
+      have their own biases.
+
+      ------ JRS: (referring to r9329): ------
+      Let me see if I understand the workings correctly.  Initially
+      the _debug_ values are set to the same values as the "normal"
+      ones, as there's a bunch of bits of code like this (in
+      readelf.c)
+
+         di->text_svma = svma;
+         ...
+         di->text_bias = rx_bias;
+         di->text_debug_svma = svma;
+         di->text_debug_bias = rx_bias;
+
+      If a debuginfo object subsequently shows up then the
+      _debug_svma/bias are set for the debuginfo object.  Result is
+      that if there's no debuginfo object then the values are the same
+      as the primary-object values, and if there is a debuginfo object
+      then they will (or at least may) be different.
+
+      Then when we need to actually bias something, we'll have to
+      decide whether to use the primary bias or the debuginfo bias.
+      And the strategy is to use the primary bias for ELF symbols but
+      the debuginfo bias for anything pulled out of Dwarf.
+
+      ------ THH: ------
+      Correct - the debug_svma and bias values apply to any address
+      read from the debug data regardless of where that debug data is
+      stored and the other values are used for addresses from other
+      places (primarily the symbol table).
+
+      ------ JRS: ------ 
+      Ok; so this was my only area of concern.  Are there any
+      corner-case scenarios where this wouldn't be right?  It sounds
+      like we're assuming the ELF symbols come from the primary object
+      and, if there is a debug object, then all the Dwarf comes from
+      there.  But what if (eg) both symbols and Dwarf come from the
+      debug object?  Is that even possible or allowable?
+
+      ------ THH: ------
+      You may have a point...
+
+      The current logic is to try and take any one set of data from
+      either the base object or the debug object. There are four sets
+      of data we consider:
+
+         - Symbol Table
+         - Stabs
+         - DWARF1
+         - DWARF2
+
+      If we see the primary section for a given set in the base object
+      then we ignore all sections relating to that set in the debug
+      object.
+
+      Now in principle if we saw a secondary section (like debug_line
+      say) in the base object, but not the main section (debug_info in
+      this case) then we would take debug_info from the debug object
+      but would use the debug_line from the base object unless we saw
+      a replacement copy in the debug object. That's probably unlikely
+      however.
+
+      A bigger issue might be, as you say, the symbol table as we will
+      pick that up from the debug object if it isn't in the base. The
+      dynamic symbol table will always have to be in the base object
+      though so we will have to be careful when processing symbols to
+      know which table we are reading in that case.
+
+      What we probably need to do is tell read_elf_symtab which object
+      the symbols it is being asked to read came from.
+
+      (A followup patch to deal with this was committed in r9469).
+   */
+   /* .text */
+   Bool     text_present;
+   Addr     text_avma;
+   Addr     text_svma;
+   SizeT    text_size;
+   PtrdiffT text_bias;
+   Addr     text_debug_svma;
+   PtrdiffT text_debug_bias;
+   /* .data */
+   Bool     data_present;
+   Addr     data_svma;
+   Addr     data_avma;
+   SizeT    data_size;
+   PtrdiffT data_bias;
+   Addr     data_debug_svma;
+   PtrdiffT data_debug_bias;
+   /* .sdata */
+   Bool     sdata_present;
+   Addr     sdata_svma;
+   Addr     sdata_avma;
+   SizeT    sdata_size;
+   PtrdiffT sdata_bias;
+   Addr     sdata_debug_svma;
+   PtrdiffT sdata_debug_bias;
+   /* .rodata */
+   Bool     rodata_present;
+   Addr     rodata_svma;
+   Addr     rodata_avma;
+   SizeT    rodata_size;
+   PtrdiffT rodata_bias;
+   Addr     rodata_debug_svma;
+   PtrdiffT rodata_debug_bias;
+   /* .bss */
+   Bool     bss_present;
+   Addr     bss_svma;
+   Addr     bss_avma;
+   SizeT    bss_size;
+   PtrdiffT bss_bias;
+   Addr     bss_debug_svma;
+   PtrdiffT bss_debug_bias;
+   /* .sbss */
+   Bool     sbss_present;
+   Addr     sbss_svma;
+   Addr     sbss_avma;
+   SizeT    sbss_size;
+   PtrdiffT sbss_bias;
+   Addr     sbss_debug_svma;
+   PtrdiffT sbss_debug_bias;
+   /* .plt */
+   Bool   plt_present;
+   Addr	  plt_avma;
+   SizeT  plt_size;
+   /* .got */
+   Bool   got_present;
+   Addr   got_avma;
+   SizeT  got_size;
+   /* .got.plt */
+   Bool   gotplt_present;
+   Addr   gotplt_avma;
+   SizeT  gotplt_size;
+   /* .opd -- needed on ppc64-linux for finding symbols */
+   Bool   opd_present;
+   Addr   opd_avma;
+   SizeT  opd_size;
+   /* .ehframe -- needed on amd64-linux for stack unwinding */
+   Bool   ehframe_present;
+   Addr   ehframe_avma;
+   SizeT  ehframe_size;
+
+   /* Sorted tables of stuff we snarfed from the file.  This is the
+      eventual product of reading the debug info.  All this stuff
+      lives in VG_AR_DINFO. */
 
    /* An expandable array of symbols. */
    DiSym*  symtab;
-   UInt    symtab_used;
-   UInt    symtab_size;
+   UWord   symtab_used;
+   UWord   symtab_size;
    /* An expandable array of locations. */
    DiLoc*  loctab;
-   UInt    loctab_used;
-   UInt    loctab_size;
+   UWord   loctab_used;
+   UWord   loctab_size;
    /* An expandable array of CFI summary info records.  Also includes
       summary address bounds, showing the min and max address covered
       by any of the records, as an aid to fast searching.  And, if the
       records require any expression nodes, they are stored in
       cfsi_exprs. */
    DiCfSI* cfsi;
-   UInt    cfsi_used;
-   UInt    cfsi_size;
-   Addr    cfsi_minaddr;
-   Addr    cfsi_maxaddr;
-   XArray* cfsi_exprs; /* XArray of CfSiExpr */
+   UWord   cfsi_used;
+   UWord   cfsi_size;
+   Addr    cfsi_minavma;
+   Addr    cfsi_maxavma;
+   XArray* cfsi_exprs; /* XArray of CfiExpr */
+
+   /* Optimized code under Wine x86: MSVC++ PDB FramePointerOmitted
+      data.  Non-expandable array, hence .size == .used. */
+   FPO_DATA* fpo;
+   UWord     fpo_size;
+   Addr      fpo_minavma;
+   Addr      fpo_maxavma;
 
    /* Expandable arrays of characters -- the string table.  Pointers
       into this are stable (the arrays are not reallocated). */
    struct strchunk {
       UInt   strtab_used;
-      struct strchunk *next;
+      struct strchunk* next;
       UChar  strtab[SEGINFO_STRCHUNKSIZE];
    } *strchunks;
 
-   /* 'text_bias' is what needs to be added to an address in the
-      address space of the library as stored on disk [a so-called
-      stated VMA] (which is not 0-based for executables or prelinked
-      libraries) to get an address in memory for the object loaded at
-      'text_start_avma'.  At least for text symbols. */
-   OffT   text_bias;
+   /* Variable scope information, as harvested from Dwarf3 files.
 
-   /* Bounds of data, BSS, PLT, GOT and OPD (for ppc64-linux) so that
-      tools can see what section an address is in.  In the running
-      image! */
-   Addr	  plt_start_avma;
-   UInt   plt_size;
-   Addr   got_start_avma;
-   UInt   got_size;
-   Addr   opd_start_avma;
-   UInt   opd_size;
-   Addr   data_start_avma;
-   UInt   data_size;
-   Addr   bss_start_avma;
-   UInt   bss_size;
+      In short it's an
 
-   /* Used for debugging only - indicate what stuff to dump whilst
-      reading stuff into the seginfo.  Are computed as early in the
-      lifetime of the SegInfo as possible.  Use these when deciding
-      what to spew out; do not use the global VG_(clo_blah) flags. */
-   Bool trace_symtab; /* symbols, our style */
-   Bool trace_cfi;    /* dwarf frame unwind, our style */
-   Bool ddump_syms;   /* mimic /usr/bin/readelf --syms */
-   Bool ddump_line;   /* mimic /usr/bin/readelf --debug-dump=line */
-   Bool ddump_frames; /* mimic /usr/bin/readelf --debug-dump=frames */
+         array of (array of PC address ranges and variables)
+
+      The outer array indexes over scopes, with Entry 0 containing
+      information on variables which exist for any value of the program
+      counter (PC) -- that is, the outermost scope.  Entries 1, 2, 3,
+      etc contain information on increasinly deeply nested variables.
+
+      Each inner array is an array of (an address range, and a set
+      of variables that are in scope over that address range).  
+
+      The address ranges may not overlap.
+ 
+      Since Entry 0 in the outer array holds information on variables
+      that exist for any value of the PC (that is, global vars), it
+      follows that Entry 0's inner array can only have one address
+      range pair, one that covers the entire address space.
+   */
+   XArray* /* of OSet of DiAddrRange */varinfo;
+
+   /* These are arrays of the relevant typed objects, held here
+      partially for the purposes of visiting each object exactly once
+      when we need to delete them. */
+
+   /* An array of TyEnts.  These are needed to make sense of any types
+      in the .varinfo.  Also, when deleting this DebugInfo, we must
+      first traverse this array and throw away malloc'd stuff hanging
+      off it -- by calling ML_(TyEnt__make_EMPTY) on each entry. */
+   XArray* /* of TyEnt */ admin_tyents;
+
+   /* An array of guarded DWARF3 expressions. */
+   XArray* admin_gexprs;
 };
 
 /* --------------------- functions --------------------- */
@@ -291,46 +610,71 @@ struct _SegInfo {
 /* ------ Adding ------ */
 
 /* Add a symbol to si's symbol table. */
-extern void ML_(addSym) ( struct _SegInfo* si, DiSym* sym );
+extern void ML_(addSym) ( struct _DebugInfo* di, DiSym* sym );
 
-/* Add a line-number record to a SegInfo. */
+/* Add a line-number record to a DebugInfo. */
 extern
-void ML_(addLineInfo) ( struct _SegInfo* si, 
+void ML_(addLineInfo) ( struct _DebugInfo* di, 
                         UChar*   filename, 
                         UChar*   dirname,  /* NULL is allowable */
                         Addr this, Addr next, Int lineno, Int entry);
 
+/* Shrink completed tables to save memory. */
+extern 
+void ML_(shrinkSym) ( struct _DebugInfo *di );
+extern 
+void ML_(shrinkLineInfo) ( struct _DebugInfo *di );
+
 /* Add a CFI summary record.  The supplied DiCfSI is copied. */
-extern void ML_(addDiCfSI) ( struct _SegInfo* si, DiCfSI* cfsi );
+extern void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi );
 
-/* Add a string to the string table of a SegInfo.  If len==-1,
+/* Add a string to the string table of a DebugInfo.  If len==-1,
    ML_(addStr) will itself measure the length of the string. */
-extern UChar* ML_(addStr) ( struct _SegInfo* si, UChar* str, Int len );
+extern UChar* ML_(addStr) ( struct _DebugInfo* di, UChar* str, Int len );
 
-/* Canonicalise the tables held by 'si', in preparation for use.  Call
+extern void ML_(addVar)( struct _DebugInfo* di,
+                         Int    level,
+                         Addr   aMin,
+                         Addr   aMax,
+                         UChar* name,
+                         UWord  typeR, /* a cuOff */
+                         GExpr* gexpr,
+                         GExpr* fbGX, /* SHARED. */
+                         UChar* fileName, /* where decl'd - may be NULL */
+                         Int    lineNo, /* where decl'd - may be zero */
+                         Bool   show );
+
+/* Canonicalise the tables held by 'di', in preparation for use.  Call
    this after finishing adding entries to these tables. */
-extern void ML_(canonicaliseTables) ( struct _SegInfo* si );
+extern void ML_(canonicaliseTables) ( struct _DebugInfo* di );
 
 /* ------ Searching ------ */
 
 /* Find a symbol-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
-extern Int ML_(search_one_symtab) ( struct _SegInfo* si, Addr ptr,
-                                    Bool match_anywhere_in_fun );
+extern Word ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
+                                     Bool match_anywhere_in_sym,
+                                     Bool findText );
 
 /* Find a location-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
-extern Int ML_(search_one_loctab) ( struct _SegInfo* si, Addr ptr );
+extern Word ML_(search_one_loctab) ( struct _DebugInfo* di, Addr ptr );
 
 /* Find a CFI-table index containing the specified pointer, or -1 if
    not found.  Binary search.  */
-extern Int ML_(search_one_cfitab) ( struct _SegInfo* si, Addr ptr );
+extern Word ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr );
+
+/* Find a FPO-table index containing the specified pointer, or -1
+   if not found.  Binary search.  */
+extern Word ML_(search_one_fpotab) ( struct _DebugInfo* di, Addr ptr );
 
 /* ------ Misc ------ */
 
 /* Show a non-fatal debug info reading error.  Use vg_panic if
-   terminal. */
-extern void ML_(symerr) ( HChar* msg );
+   terminal.  'serious' errors are always shown, not 'serious' ones
+   are shown only at verbosity level 2 and above. */
+extern 
+void ML_(symerr) ( struct _DebugInfo* di, Bool serious, HChar* msg );
 
 /* Print a symbol. */
 extern void ML_(ppSym) ( Int idx, DiSym* sym );
@@ -340,7 +684,7 @@ extern void ML_(ppDiCfSI) ( XArray* /* of CfiExpr */ exprs, DiCfSI* si );
 
 
 #define TRACE_SYMTAB(format, args...) \
-   if (si->trace_symtab) { VG_(printf)(format, ## args); }
+   if (di->trace_symtab) { VG_(printf)(format, ## args); }
 
 
 #endif /* ndef __PRIV_STORAGE_H */

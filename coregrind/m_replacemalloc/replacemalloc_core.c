@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2009 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -53,21 +53,21 @@ UInt VG_(clo_alignment)     = VG_MIN_MALLOC_SZB;
 
 Bool VG_(replacement_malloc_process_cmd_line_option)(Char* arg)
 {
-   if (VG_CLO_STREQN(12, arg, "--alignment=")) {
-      VG_(clo_alignment) = (UInt)VG_(atoll)(&arg[12]);
-
-      if (VG_(clo_alignment) < VG_MIN_MALLOC_SZB
-          || VG_(clo_alignment) > 4096
-          || VG_(log2)( VG_(clo_alignment) ) == -1 /* not a power of 2 */) {
-         VG_(message)(Vg_UserMsg, "");
+   if VG_INT_CLO(arg, "--alignment", VG_(clo_alignment)) {
+      if (VG_(clo_alignment) < VG_MIN_MALLOC_SZB ||
+          VG_(clo_alignment) > 4096 ||
+          VG_(log2)( VG_(clo_alignment) ) == -1 /* not a power of 2 */)
+      {
          VG_(message)(Vg_UserMsg, 
             "Invalid --alignment= setting.  "
-            "Should be a power of 2, >= %d, <= 4096.", VG_MIN_MALLOC_SZB);
+            "Should be a power of 2, >= %d, <= 4096.\n",
+            VG_MIN_MALLOC_SZB
+         );
          VG_(err_bad_option)("--alignment");
       }
    }
 
-   else VG_BOOL_CLO(arg, "--trace-malloc",  VG_(clo_trace_malloc))
+   else if VG_BOOL_CLO(arg, "--trace-malloc",  VG_(clo_trace_malloc)) {}
    else 
       return False;
 
@@ -98,9 +98,11 @@ void* VG_(cli_malloc) ( SizeT align, SizeT nbytes )
    // 'align' should be valid (ie. big enough and a power of two) by now.
    // VG_(arena_memalign)() will abort if it's not.
    if (VG_MIN_MALLOC_SZB == align)
-      return VG_(arena_malloc)   ( VG_AR_CLIENT, nbytes ); 
+      return VG_(arena_malloc)   ( VG_AR_CLIENT, "replacemalloc.cm.1", 
+                                   nbytes ); 
    else                                                                       
-      return VG_(arena_memalign) ( VG_AR_CLIENT, align, nbytes );
+      return VG_(arena_memalign) ( VG_AR_CLIENT, "replacemalloc.cm.2", 
+                                   align, nbytes );
 }                                                                             
 
 void VG_(cli_free) ( void* p )                                   

@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Nicholas Nethercote
+   Copyright (C) 2000-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -27,6 +27,8 @@
 
    The GNU General Public License is contained in the file COPYING.
 */
+
+#if defined(VGO_linux)
 
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
@@ -313,6 +315,8 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
    VG_(sigfillset)(&mask);
    VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
 
+   VG_(do_atfork_pre)(tid);
+
    /* Since this is the fork() form of clone, we don't need all that
       VG_(clone) stuff */
 #if defined(VGP_x86_linux) || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
@@ -329,7 +333,7 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
 # error Unknown platform
 #endif
 
-   if (!res.isError && res.res == 0) {
+   if (!sr_isError(res) && sr_Res(res) == 0) {
       /* child */
       VG_(do_atfork_child)(tid);
 
@@ -337,18 +341,24 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
 
       /* If --child-silent-after-fork=yes was specified, set the
-         logging file descriptor to an 'impossible' value.  This is
+         output file descriptors to 'impossible' values.  This is
          noticed by send_bytes_to_logging_sink in m_libcprint.c, which
-         duly stops writing any further logging output. */
-      if (!VG_(logging_to_socket) && VG_(clo_child_silent_after_fork))
-         VG_(clo_log_fd) = -1;
+         duly stops writing any further output. */
+      if (VG_(clo_child_silent_after_fork)) {
+         if (!VG_(log_output_sink).is_socket)
+            VG_(log_output_sink).fd = -1;
+         if (!VG_(xml_output_sink).is_socket)
+            VG_(xml_output_sink).fd = -1;
+      }
    } 
    else 
-   if (!res.isError && res.res > 0) {
+   if (!sr_isError(res) && sr_Res(res) > 0) {
       /* parent */
+      VG_(do_atfork_parent)(tid);
+
       if (VG_(clo_trace_syscalls))
-	  VG_(printf)("   clone(fork): process %d created child %d\n", 
-                      VG_(getpid)(), res.res);
+	  VG_(printf)("   clone(fork): process %d created child %ld\n",
+                      VG_(getpid)(), sr_Res(res));
 
       /* restore signal mask */
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
@@ -369,7 +379,7 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
 #define POST(name)      DEFN_POST_TEMPLATE(linux, name)
 
 // Combine two 32-bit values into a 64-bit value
-#define LOHI64(lo,hi)   ( (lo) | ((ULong)(hi) << 32) )
+#define LOHI64(lo,hi)   ( ((ULong)(lo)) | (((ULong)(hi)) << 32) )
 
 /* ---------------------------------------------------------------------
    *mount wrappers
@@ -381,7 +391,8 @@ PRE(sys_mount)
    // We are conservative and check everything, except the memory pointed to
    // by 'data'.
    *flags |= SfMayBlock;
-   PRINT( "sys_mount( %p, %p, %p, %p, %p )" ,ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_mount( %#lx(%s), %#lx(%s), %#lx(%s), %#lx, %#lx )",
+         ARG1,(Char*)ARG1, ARG2,(Char*)ARG2, ARG3,(Char*)ARG3, ARG4, ARG5);
    PRE_REG_READ5(long, "mount",
                  char *, source, char *, target, char *, type,
                  unsigned long, flags, void *, data);
@@ -392,14 +403,14 @@ PRE(sys_mount)
 
 PRE(sys_oldumount)
 {
-   PRINT("sys_oldumount( %p )", ARG1);
+   PRINT("sys_oldumount( %#lx )", ARG1);
    PRE_REG_READ1(long, "umount", char *, path);
    PRE_MEM_RASCIIZ( "umount(path)", ARG1);
 }
 
 PRE(sys_umount)
 {
-   PRINT("sys_umount( %p, %d )", ARG1, ARG2);
+   PRINT("sys_umount( %#lx, %ld )", ARG1, ARG2);
    PRE_REG_READ2(long, "umount2", char *, path, int, flags);
    PRE_MEM_RASCIIZ( "umount2(path)", ARG1);
 }
@@ -410,45 +421,45 @@ PRE(sys_umount)
 
 PRE(sys_setfsuid16)
 {
-   PRINT("sys_setfsuid16 ( %d )", ARG1);
+   PRINT("sys_setfsuid16 ( %ld )", ARG1);
    PRE_REG_READ1(long, "setfsuid16", vki_old_uid_t, uid);
 }
 
 PRE(sys_setfsuid)
 {
-   PRINT("sys_setfsuid ( %d )", ARG1);
+   PRINT("sys_setfsuid ( %ld )", ARG1);
    PRE_REG_READ1(long, "setfsuid", vki_uid_t, uid);
 }
 
 PRE(sys_setfsgid16)
 {
-   PRINT("sys_setfsgid16 ( %d )", ARG1);
+   PRINT("sys_setfsgid16 ( %ld )", ARG1);
    PRE_REG_READ1(long, "setfsgid16", vki_old_gid_t, gid);
 }
 
 PRE(sys_setfsgid)
 {
-   PRINT("sys_setfsgid ( %d )", ARG1);
+   PRINT("sys_setfsgid ( %ld )", ARG1);
    PRE_REG_READ1(long, "setfsgid", vki_gid_t, gid);
 }
 
 PRE(sys_setresuid16)
 {
-   PRINT("sys_setresuid16 ( %d, %d, %d )", ARG1, ARG2, ARG3);
+   PRINT("sys_setresuid16 ( %ld, %ld, %ld )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "setresuid16",
                  vki_old_uid_t, ruid, vki_old_uid_t, euid, vki_old_uid_t, suid);
 }
 
 PRE(sys_setresuid)
 {
-   PRINT("sys_setresuid ( %d, %d, %d )", ARG1, ARG2, ARG3);
+   PRINT("sys_setresuid ( %ld, %ld, %ld )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "setresuid",
                  vki_uid_t, ruid, vki_uid_t, euid, vki_uid_t, suid);
 }
 
 PRE(sys_getresuid16)
 {
-   PRINT("sys_getresuid16 ( %p, %p, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_getresuid16 ( %#lx, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getresuid16",
                  vki_old_uid_t *, ruid, vki_old_uid_t *, euid,
                  vki_old_uid_t *, suid);
@@ -468,7 +479,7 @@ POST(sys_getresuid16)
 
 PRE(sys_getresuid)
 {
-   PRINT("sys_getresuid ( %p, %p, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_getresuid ( %#lx, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getresuid", 
                  vki_uid_t *, ruid, vki_uid_t *, euid, vki_uid_t *, suid);
    PRE_MEM_WRITE( "getresuid(ruid)", ARG1, sizeof(vki_uid_t) );
@@ -487,7 +498,7 @@ POST(sys_getresuid)
 
 PRE(sys_setresgid16)
 {
-   PRINT("sys_setresgid16 ( %d, %d, %d )", ARG1, ARG2, ARG3);
+   PRINT("sys_setresgid16 ( %ld, %ld, %ld )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "setresgid16",
                  vki_old_gid_t, rgid, 
                  vki_old_gid_t, egid, vki_old_gid_t, sgid);
@@ -495,14 +506,14 @@ PRE(sys_setresgid16)
 
 PRE(sys_setresgid)
 {
-   PRINT("sys_setresgid ( %d, %d, %d )", ARG1, ARG2, ARG3);
+   PRINT("sys_setresgid ( %ld, %ld, %ld )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "setresgid",
                  vki_gid_t, rgid, vki_gid_t, egid, vki_gid_t, sgid);
 }
 
 PRE(sys_getresgid16)
 {
-   PRINT("sys_getresgid16 ( %p, %p, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_getresgid16 ( %#lx, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getresgid16",
                  vki_old_gid_t *, rgid, vki_old_gid_t *, egid,
                  vki_old_gid_t *, sgid);
@@ -522,7 +533,7 @@ POST(sys_getresgid16)
 
 PRE(sys_getresgid)
 {
-   PRINT("sys_getresgid ( %p, %p, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_getresgid ( %#lx, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getresgid", 
                  vki_gid_t *, rgid, vki_gid_t *, egid, vki_gid_t *, sgid);
    PRE_MEM_WRITE( "getresgid(rgid)", ARG1, sizeof(vki_gid_t) );
@@ -548,8 +559,8 @@ PRE(sys_exit_group)
    ThreadId     t;
    ThreadState* tst;
 
-   PRINT("exit_group( %d )", ARG1);
-   PRE_REG_READ1(void, "exit_group", int, exit_code);
+   PRINT("exit_group( %ld )", ARG1);
+   PRE_REG_READ1(void, "exit_group", int, status);
 
    tst = VG_(get_ThreadState)(tid);
 
@@ -577,7 +588,7 @@ PRE(sys_exit_group)
 
 PRE(sys_llseek)
 {
-   PRINT("sys_llseek ( %d, 0x%x, 0x%x, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_llseek ( %ld, 0x%lx, 0x%lx, %#lx, %ld )", ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "llseek",
                  unsigned int, fd, unsigned long, offset_high,
                  unsigned long, offset_low, vki_loff_t *, result,
@@ -625,7 +636,7 @@ zz 		    (Addr)&tx->field, sizeof(tx->field))
 
 PRE(sys_ioperm)
 {
-   PRINT("sys_ioperm ( %d, %d, %d )", ARG1, ARG2, ARG3 );
+   PRINT("sys_ioperm ( %ld, %ld, %ld )", ARG1, ARG2, ARG3 );
    PRE_REG_READ3(long, "ioperm",
                  unsigned long, from, unsigned long, num, int, turn_on);
 }
@@ -633,7 +644,7 @@ PRE(sys_ioperm)
 PRE(sys_syslog)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_syslog (%d, %p, %d)", ARG1,ARG2,ARG3);
+   PRINT("sys_syslog (%ld, %#lx, %ld)", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "syslog", int, type, char *, bufp, int, len);
    switch (ARG1) {
    // The kernel uses magic numbers here, rather than named constants,
@@ -664,7 +675,7 @@ PRE(sys_vhangup)
 
 PRE(sys_sysinfo)
 {
-   PRINT("sys_sysinfo ( %p )",ARG1);
+   PRINT("sys_sysinfo ( %#lx )",ARG1);
    PRE_REG_READ1(long, "sysinfo", struct sysinfo *, info);
    PRE_MEM_WRITE( "sysinfo(info)", ARG1, sizeof(struct vki_sysinfo) );
 }
@@ -682,7 +693,7 @@ PRE(sys_personality)
 PRE(sys_sysctl)
 {
    struct __vki_sysctl_args *args;
-   PRINT("sys_sysctl ( %p )", ARG1 );
+   PRINT("sys_sysctl ( %#lx )", ARG1 );
    args = (struct __vki_sysctl_args *)ARG1;
    PRE_REG_READ1(long, "sysctl", struct __sysctl_args *, args);
    PRE_MEM_WRITE( "sysctl(args)", ARG1, sizeof(struct __vki_sysctl_args) );
@@ -713,7 +724,7 @@ POST(sys_sysctl)
 PRE(sys_prctl)
 {
    *flags |= SfMayBlock;
-   PRINT( "sys_prctl ( %d, %d, %d, %d, %d )", ARG1, ARG2, ARG3, ARG4, ARG5 );
+   PRINT( "sys_prctl ( %ld, %ld, %ld, %ld, %ld )", ARG1, ARG2, ARG3, ARG4, ARG5 );
    switch (ARG1) {
    case VKI_PR_SET_PDEATHSIG:
       PRE_REG_READ2(int, "prctl", int, option, int, signal);
@@ -810,7 +821,7 @@ POST(sys_prctl)
 PRE(sys_sendfile)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_sendfile ( %d, %d, %p, %lu )", ARG1,ARG2,ARG3,ARG4);
+   PRINT("sys_sendfile ( %ld, %ld, %#lx, %lu )", ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(ssize_t, "sendfile",
                  int, out_fd, int, in_fd, vki_off_t *, offset,
                  vki_size_t, count);
@@ -827,7 +838,7 @@ POST(sys_sendfile)
 PRE(sys_sendfile64)
 {
    *flags |= SfMayBlock;
-   PRINT("sendfile64 ( %d, %d, %p, %lu )",ARG1,ARG2,ARG3,ARG4);
+   PRINT("sendfile64 ( %ld, %ld, %#lx, %lu )",ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(ssize_t, "sendfile64",
                  int, out_fd, int, in_fd, vki_loff_t *, offset,
                  vki_size_t, count);
@@ -853,7 +864,7 @@ PRE(sys_futex)
       ARG5 - u32 *uaddr2			REQUEUE,CMP_REQUEUE
       ARG6 - int val3				CMP_REQUEUE
     */
-   PRINT("sys_futex ( %p, %d, %d, %p, %p )", ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_futex ( %#lx, %ld, %ld, %#lx, %#lx )", ARG1,ARG2,ARG3,ARG4,ARG5);
    switch(ARG2) {
    case VKI_FUTEX_CMP_REQUEUE:
    case VKI_FUTEX_CMP_REQUEUE | VKI_FUTEX_PRIVATE_FLAG:
@@ -930,7 +941,7 @@ POST(sys_futex)
 
 PRE(sys_set_robust_list)
 {
-   PRINT("sys_set_robust_list ( %p, %d )", ARG1,ARG2);
+   PRINT("sys_set_robust_list ( %#lx, %ld )", ARG1,ARG2);
    PRE_REG_READ2(long, "set_robust_list", 
                  struct vki_robust_list_head *, head, vki_size_t, len);
 
@@ -943,7 +954,7 @@ PRE(sys_set_robust_list)
 
 PRE(sys_get_robust_list)
 {
-   PRINT("sys_get_robust_list ( %d, %p, %d )", ARG1,ARG2,ARG3);
+   PRINT("sys_get_robust_list ( %ld, %#lx, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "get_robust_list",
                  int, pid,
                  struct vki_robust_list_head **, head_ptr,
@@ -962,7 +973,7 @@ POST(sys_get_robust_list)
 PRE(sys_pselect6)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_pselect6 ( %d, %p, %p, %p, %p, %p )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+   PRINT("sys_pselect6 ( %ld, %#lx, %#lx, %#lx, %#lx, %#lx )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
    PRE_REG_READ6(long, "pselect6",
                  int, n, vki_fd_set *, readfds, vki_fd_set *, writefds,
                  vki_fd_set *, exceptfds, struct vki_timeval *, timeout,
@@ -988,7 +999,7 @@ PRE(sys_ppoll)
    UInt i;
    struct vki_pollfd* ufds = (struct vki_pollfd *)ARG1;
    *flags |= SfMayBlock;
-   PRINT("sys_ppoll ( %p, %d, %p, %p, %llu )\n", ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_ppoll ( %#lx, %ld, %#lx, %#lx, %llu )\n", ARG1,ARG2,ARG3,ARG4,(ULong)ARG5);
    PRE_REG_READ5(long, "ppoll",
                  struct vki_pollfd *, ufds, unsigned int, nfds,
                  struct vki_timespec *, tsp, vki_sigset_t *, sigmask,
@@ -1026,13 +1037,30 @@ POST(sys_ppoll)
 
 PRE(sys_epoll_create)
 {
-   PRINT("sys_epoll_create ( %d )", ARG1);
+   PRINT("sys_epoll_create ( %ld )", ARG1);
    PRE_REG_READ1(long, "epoll_create", int, size);
 }
 POST(sys_epoll_create)
 {
    vg_assert(SUCCESS);
    if (!ML_(fd_allowed)(RES, "epoll_create", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds))
+         ML_(record_fd_open_nameless) (tid, RES);
+   }
+}
+
+PRE(sys_epoll_create1)
+{
+   PRINT("sys_epoll_create1 ( %ld )", ARG1);
+   PRE_REG_READ1(long, "epoll_create1", int, flags);
+}
+POST(sys_epoll_create1)
+{
+   vg_assert(SUCCESS);
+   if (!ML_(fd_allowed)(RES, "epoll_create1", tid, True)) {
       VG_(close)(RES);
       SET_STATUS_Failure( VKI_EMFILE );
    } else {
@@ -1048,7 +1076,7 @@ PRE(sys_epoll_ctl)
       "EPOLL_CTL_DEL",
       "EPOLL_CTL_MOD"
    };
-   PRINT("sys_epoll_ctl ( %d, %s, %d, %p )", 
+   PRINT("sys_epoll_ctl ( %ld, %s, %ld, %#lx )",
          ARG1, ( ARG2<3 ? epoll_ctl_s[ARG2] : "?" ), ARG3, ARG4);
    PRE_REG_READ4(long, "epoll_ctl",
                  int, epfd, int, op, int, fd, struct vki_epoll_event *, event);
@@ -1059,7 +1087,7 @@ PRE(sys_epoll_ctl)
 PRE(sys_epoll_wait)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_epoll_wait ( %d, %p, %d, %d )", ARG1, ARG2, ARG3, ARG4);
+   PRINT("sys_epoll_wait ( %ld, %#lx, %ld, %ld )", ARG1, ARG2, ARG3, ARG4);
    PRE_REG_READ4(long, "epoll_wait",
                  int, epfd, struct vki_epoll_event *, events,
                  int, maxevents, int, timeout);
@@ -1070,6 +1098,69 @@ POST(sys_epoll_wait)
    vg_assert(SUCCESS);
    if (RES > 0)
       POST_MEM_WRITE( ARG2, sizeof(struct vki_epoll_event)*RES ) ;
+}
+
+PRE(sys_epoll_pwait)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_epoll_pwait ( %ld, %#lx, %ld, %ld, %#lx, %llu )", ARG1,ARG2,ARG3,ARG4,ARG5,(ULong)ARG6);
+   PRE_REG_READ6(long, "epoll_pwait",
+                 int, epfd, struct vki_epoll_event *, events,
+                 int, maxevents, int, timeout, vki_sigset_t *, sigmask,
+                 vki_size_t, sigsetsize);
+   PRE_MEM_WRITE( "epoll_pwait(events)", ARG2, sizeof(struct vki_epoll_event)*ARG3);
+   if (ARG4)
+      PRE_MEM_READ( "epoll_pwait(sigmask)", ARG5, sizeof(vki_sigset_t) );
+}
+POST(sys_epoll_pwait)
+{
+   vg_assert(SUCCESS);
+   if (RES > 0)
+      POST_MEM_WRITE( ARG2, sizeof(struct vki_epoll_event)*RES ) ;
+}
+
+PRE(sys_eventfd)
+{
+   PRINT("sys_eventfd ( %lu )", ARG1);
+   PRE_REG_READ1(long, "sys_eventfd", unsigned int, count);
+}
+POST(sys_eventfd)
+{
+   if (!ML_(fd_allowed)(RES, "eventfd", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds))
+         ML_(record_fd_open_nameless) (tid, RES);
+   }
+}
+
+PRE(sys_eventfd2)
+{
+   PRINT("sys_eventfd2 ( %lu, %ld )", ARG1,ARG2);
+   PRE_REG_READ2(long, "sys_eventfd2", unsigned int, count, int, flags);
+}
+POST(sys_eventfd2)
+{
+   if (!ML_(fd_allowed)(RES, "eventfd2", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds))
+         ML_(record_fd_open_nameless) (tid, RES);
+   }
+}
+
+// 64-bit version.
+PRE(sys_fallocate)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_fallocate ( %ld, %ld, %lld, %lld )",
+         ARG1, ARG2, (Long)ARG3, (Long)ARG4);
+   PRE_REG_READ4(long, "fallocate",
+                 int, fd, int, mode, vki_loff_t, offset, vki_loff_t, len);
+   if (!ML_(fd_allowed)(ARG1, "fallocate", tid, False))
+      SET_STATUS_Failure( VKI_EBADF );
 }
 
 /* ---------------------------------------------------------------------
@@ -1084,13 +1175,13 @@ PRE(sys_gettid)
 
 PRE(sys_set_tid_address)
 {
-   PRINT("sys_set_tid_address ( %p )", ARG1);
+   PRINT("sys_set_tid_address ( %#lx )", ARG1);
    PRE_REG_READ1(long, "set_tid_address", int *, tidptr);
 }
 
 PRE(sys_tkill)
 {
-   PRINT("sys_tgkill ( %d, %d )", ARG1,ARG2);
+   PRINT("sys_tgkill ( %ld, %ld )", ARG1,ARG2);
    PRE_REG_READ2(long, "tkill", int, tid, int, sig);
    if (!ML_(client_signal_OK)(ARG2)) {
       SET_STATUS_Failure( VKI_EINVAL );
@@ -1101,7 +1192,7 @@ PRE(sys_tkill)
    *flags |= SfPollAfter;
 
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tkill: sending signal %d to pid %d",
+      VG_(message)(Vg_DebugMsg, "tkill: sending signal %ld to pid %ld\n",
 		   ARG2, ARG1);
 
    /* If we're sending SIGKILL, check to see if the target is one of
@@ -1125,13 +1216,13 @@ PRE(sys_tkill)
 POST(sys_tkill)
 {
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tkill: sent signal %d to pid %d",
+      VG_(message)(Vg_DebugMsg, "tkill: sent signal %ld to pid %ld\n",
                    ARG2, ARG1);
 }
 
 PRE(sys_tgkill)
 {
-   PRINT("sys_tgkill ( %d, %d, %d )", ARG1,ARG2,ARG3);
+   PRINT("sys_tgkill ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "tgkill", int, tgid, int, tid, int, sig);
    if (!ML_(client_signal_OK)(ARG3)) {
       SET_STATUS_Failure( VKI_EINVAL );
@@ -1142,7 +1233,8 @@ PRE(sys_tgkill)
    *flags |= SfPollAfter;
 
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sending signal %d to pid %d/%d",
+      VG_(message)(Vg_DebugMsg,
+                   "tgkill: sending signal %ld to pid %ld/%ld\n",
 		   ARG3, ARG1, ARG2);
 
    /* If we're sending SIGKILL, check to see if the target is one of
@@ -1166,7 +1258,8 @@ PRE(sys_tgkill)
 POST(sys_tgkill)
 {
    if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sent signal %d to pid %d/%d",
+      VG_(message)(Vg_DebugMsg,
+                   "tgkill: sent signal %ld to pid %ld/%ld\n",
                    ARG3, ARG1, ARG2);
 }
 
@@ -1176,7 +1269,7 @@ POST(sys_tgkill)
 
 PRE(sys_fadvise64)
 {
-   PRINT("sys_fadvise64 ( %d, %lld, %lu, %d )",
+   PRINT("sys_fadvise64 ( %ld, %lld, %lu, %ld )",
          ARG1, LOHI64(ARG2,ARG3), ARG4, ARG5);
    PRE_REG_READ5(long, "fadvise64",
                  int, fd, vki_u32, offset_low, vki_u32, offset_high,
@@ -1185,7 +1278,7 @@ PRE(sys_fadvise64)
 
 PRE(sys_fadvise64_64)
 {
-   PRINT("sys_fadvise64_64 ( %d, %lld, %lld, %d )",
+   PRINT("sys_fadvise64_64 ( %ld, %lld, %lld, %ld )",
          ARG1, LOHI64(ARG2,ARG3), LOHI64(ARG4,ARG5), ARG6);
    PRE_REG_READ6(long, "fadvise64_64",
                  int, fd, vki_u32, offset_low, vki_u32, offset_high,
@@ -1202,7 +1295,7 @@ PRE(sys_fadvise64_64)
 
 PRE(sys_io_setup)
 {
-   PRINT("sys_io_setup ( %u, %p )", ARG1,ARG2);
+   PRINT("sys_io_setup ( %lu, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "io_setup",
                  unsigned, nr_events, vki_aio_context_t *, ctxp);
    PRE_MEM_WRITE( "io_setup(ctxp)", ARG2, sizeof(vki_aio_context_t) );
@@ -1218,9 +1311,9 @@ POST(sys_io_setup)
    r = *(struct vki_aio_ring **)ARG2;
    vg_assert(ML_(valid_client_addr)((Addr)r, size, tid, "io_setup"));
 
-   ML_(notify_aspacem_and_tool_of_mmap)( (Addr)r, size,
-                                         VKI_PROT_READ | VKI_PROT_WRITE,
-                                         VKI_MAP_ANONYMOUS, -1, 0 );
+   ML_(notify_core_and_tool_of_mmap)( (Addr)r, size,
+                                      VKI_PROT_READ | VKI_PROT_WRITE,
+                                      VKI_MAP_ANONYMOUS, -1, 0 );
 
    POST_MEM_WRITE( ARG2, sizeof(vki_aio_context_t) );
 }
@@ -1262,7 +1355,7 @@ PRE(sys_io_destroy)
 PRE(sys_io_getevents)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_io_getevents ( %llu, %lld, %lld, %p, %p )",
+   PRINT("sys_io_getevents ( %llu, %lld, %lld, %#lx, %#lx )",
          (ULong)ARG1,(Long)ARG2,(Long)ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "io_getevents",
                  vki_aio_context_t, ctx_id, long, min_nr, long, nr,
@@ -1308,7 +1401,7 @@ PRE(sys_io_submit)
 {
    Int i;
 
-   PRINT("sys_io_submit ( %llu, %ld, %p )", (ULong)ARG1,ARG2,ARG3);
+   PRINT("sys_io_submit ( %llu, %ld, %#lx )", (ULong)ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "io_submit",
                  vki_aio_context_t, ctx_id, long, nr,
                  struct iocb **, iocbpp);
@@ -1337,7 +1430,7 @@ PRE(sys_io_submit)
 
 PRE(sys_io_cancel)
 {
-   PRINT("sys_io_cancel ( %llu, %p, %p )", (ULong)ARG1,ARG2,ARG3);
+   PRINT("sys_io_cancel ( %llu, %#lx, %#lx )", (ULong)ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "io_cancel",
                  vki_aio_context_t, ctx_id, struct iocb *, iocb,
                  struct io_event *, result);
@@ -1355,7 +1448,7 @@ POST(sys_io_cancel)
 
 PRE(sys_mbind)
 {
-   PRINT("sys_mbind ( %p, %lu, %d, %p, %lu, %u )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+   PRINT("sys_mbind ( %#lx, %lu, %ld, %#lx, %lu, %lu )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
    PRE_REG_READ6(long, "mbind",
                  unsigned long, start, unsigned long, len,
                  unsigned long, policy, unsigned long *, nodemask,
@@ -1367,7 +1460,7 @@ PRE(sys_mbind)
 
 PRE(sys_set_mempolicy)
 {
-   PRINT("sys_set_mempolicy ( %d, %p, %d )", ARG1,ARG2,ARG3);
+   PRINT("sys_set_mempolicy ( %ld, %#lx, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "set_mempolicy",
                  int, policy, unsigned long *, nodemask,
                  unsigned long, maxnode);
@@ -1377,7 +1470,7 @@ PRE(sys_set_mempolicy)
 
 PRE(sys_get_mempolicy)
 {
-   PRINT("sys_get_mempolicy ( %p, %p, %d, %p, %x )", ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_get_mempolicy ( %#lx, %#lx, %ld, %#lx, %lx )", ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "get_mempolicy",
                  int *, policy, unsigned long *, nodemask,
                  unsigned long, maxnode, unsigned long, addr,
@@ -1419,14 +1512,14 @@ POST(sys_inotify_init)
 
 PRE(sys_inotify_add_watch)
 {
-   PRINT( "sys_inotify_add_watch ( %d, %p, %x )", ARG1,ARG2,ARG3);
+   PRINT( "sys_inotify_add_watch ( %ld, %#lx, %lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "inotify_add_watch", int, fd, char *, path, int, mask);
    PRE_MEM_RASCIIZ( "inotify_add_watch(path)", ARG2 );
 }
 
 PRE(sys_inotify_rm_watch)
 {
-   PRINT( "sys_inotify_rm_watch ( %d, %x )", ARG1,ARG2);
+   PRINT( "sys_inotify_rm_watch ( %ld, %lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "inotify_rm_watch", int, fd, int, wd);
 }
 
@@ -1436,8 +1529,8 @@ PRE(sys_inotify_rm_watch)
 
 PRE(sys_mq_open)
 {
-   PRINT("sys_mq_open( %p(%s), %d, %lld, %p )",
-         ARG1,ARG1,ARG2,(ULong)ARG3,ARG4);
+   PRINT("sys_mq_open( %#lx(%s), %ld, %lld, %#lx )",
+         ARG1,(char*)ARG1,ARG2,(ULong)ARG3,ARG4);
    PRE_REG_READ4(long, "mq_open",
                  const char *, name, int, oflag, vki_mode_t, mode,
                  struct mq_attr *, attr);
@@ -1464,7 +1557,7 @@ POST(sys_mq_open)
 
 PRE(sys_mq_unlink)
 {
-   PRINT("sys_mq_unlink ( %p(%s) )", ARG1,ARG1);
+   PRINT("sys_mq_unlink ( %#lx(%s) )", ARG1,(char*)ARG1);
    PRE_REG_READ1(long, "mq_unlink", const char *, name);
    PRE_MEM_RASCIIZ( "mq_unlink(name)", ARG1 );
 }
@@ -1472,7 +1565,7 @@ PRE(sys_mq_unlink)
 PRE(sys_mq_timedsend)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_mq_timedsend ( %d, %p, %llu, %d, %p )",
+   PRINT("sys_mq_timedsend ( %ld, %#lx, %llu, %ld, %#lx )",
          ARG1,ARG2,(ULong)ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "mq_timedsend",
                  vki_mqd_t, mqdes, const char *, msg_ptr, vki_size_t, msg_len,
@@ -1490,7 +1583,7 @@ PRE(sys_mq_timedsend)
 PRE(sys_mq_timedreceive)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_mq_timedreceive( %d, %p, %llu, %p, %p )",
+   PRINT("sys_mq_timedreceive( %ld, %#lx, %llu, %#lx, %#lx )",
          ARG1,ARG2,(ULong)ARG3,ARG4,ARG5);
    PRE_REG_READ5(ssize_t, "mq_timedreceive",
                  vki_mqd_t, mqdes, char *, msg_ptr, vki_size_t, msg_len,
@@ -1517,7 +1610,7 @@ POST(sys_mq_timedreceive)
 
 PRE(sys_mq_notify)
 {
-   PRINT("sys_mq_notify( %d, %p )", ARG1,ARG2 );
+   PRINT("sys_mq_notify( %ld, %#lx )", ARG1,ARG2 );
    PRE_REG_READ2(long, "mq_notify",
                  vki_mqd_t, mqdes, const struct sigevent *, notification);
    if (!ML_(fd_allowed)(ARG1, "mq_notify", tid, False))
@@ -1529,7 +1622,7 @@ PRE(sys_mq_notify)
 
 PRE(sys_mq_getsetattr)
 {
-   PRINT("sys_mq_getsetattr( %d, %p, %p )", ARG1,ARG2,ARG3 );
+   PRINT("sys_mq_getsetattr( %ld, %#lx, %#lx )", ARG1,ARG2,ARG3 );
    PRE_REG_READ3(long, "mq_getsetattr",
                  vki_mqd_t, mqdes, const struct mq_attr *, mqstat,
                  struct mq_attr *, omqstat);
@@ -1558,7 +1651,7 @@ POST(sys_mq_getsetattr)
 
 PRE(sys_clock_settime)
 {
-   PRINT("sys_clock_settime( %d, %p )", ARG1,ARG2);
+   PRINT("sys_clock_settime( %ld, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "clock_settime", 
                  vki_clockid_t, clk_id, const struct timespec *, tp);
    PRE_MEM_READ( "clock_settime(tp)", ARG2, sizeof(struct vki_timespec) );
@@ -1566,7 +1659,7 @@ PRE(sys_clock_settime)
 
 PRE(sys_clock_gettime)
 {
-   PRINT("sys_clock_gettime( %d, %p )" , ARG1,ARG2);
+   PRINT("sys_clock_gettime( %ld, %#lx )" , ARG1,ARG2);
    PRE_REG_READ2(long, "clock_gettime", 
                  vki_clockid_t, clk_id, struct timespec *, tp);
    PRE_MEM_WRITE( "clock_gettime(tp)", ARG2, sizeof(struct vki_timespec) );
@@ -1578,7 +1671,7 @@ POST(sys_clock_gettime)
 
 PRE(sys_clock_getres)
 {
-   PRINT("sys_clock_getres( %d, %p )" , ARG1,ARG2);
+   PRINT("sys_clock_getres( %ld, %#lx )" , ARG1,ARG2);
    // Nb: we can't use "RES" as the param name because that's a macro
    // defined above!
    PRE_REG_READ2(long, "clock_getres", 
@@ -1595,7 +1688,7 @@ POST(sys_clock_getres)
 PRE(sys_clock_nanosleep)
 {
    *flags |= SfMayBlock|SfPostOnFail;
-   PRINT("sys_clock_nanosleep( %d, %d, %p, %p )", ARG1,ARG2,ARG3,ARG4);
+   PRINT("sys_clock_nanosleep( %ld, %ld, %#lx, %#lx )", ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(int32_t, "clock_nanosleep",
                  vki_clockid_t, clkid, int, flags,
                  const struct timespec *, rqtp, struct timespec *, rmtp);
@@ -1615,7 +1708,7 @@ POST(sys_clock_nanosleep)
 
 PRE(sys_timer_create)
 {
-   PRINT("sys_timer_create( %d, %p, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_timer_create( %ld, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "timer_create",
                  vki_clockid_t, clockid, struct sigevent *, evp,
                  vki_timer_t *, timerid);
@@ -1630,7 +1723,7 @@ POST(sys_timer_create)
 
 PRE(sys_timer_settime)
 {
-   PRINT("sys_timer_settime( %lld, %d, %p, %p )", (ULong)ARG1,ARG2,ARG3,ARG4);
+   PRINT("sys_timer_settime( %lld, %ld, %#lx, %#lx )", (ULong)ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(long, "timer_settime", 
                  vki_timer_t, timerid, int, flags,
                  const struct itimerspec *, value,
@@ -1649,7 +1742,7 @@ POST(sys_timer_settime)
 
 PRE(sys_timer_gettime)
 {
-   PRINT("sys_timer_gettime( %lld, %p )", (ULong)ARG1,ARG2);
+   PRINT("sys_timer_gettime( %lld, %#lx )", (ULong)ARG1,ARG2);
    PRE_REG_READ2(long, "timer_gettime", 
                  vki_timer_t, timerid, struct itimerspec *, value);
    PRE_MEM_WRITE( "timer_gettime(value)", ARG2,
@@ -1662,14 +1755,134 @@ POST(sys_timer_gettime)
 
 PRE(sys_timer_getoverrun)
 {
-   PRINT("sys_timer_getoverrun( %p )", ARG1);
+   PRINT("sys_timer_getoverrun( %#lx )", ARG1);
    PRE_REG_READ1(long, "timer_getoverrun", vki_timer_t, timerid);
 }
 
 PRE(sys_timer_delete)
 {
-   PRINT("sys_timer_delete( %p )", ARG1);
+   PRINT("sys_timer_delete( %#lx )", ARG1);
    PRE_REG_READ1(long, "timer_delete", vki_timer_t, timerid);
+}
+
+/* ---------------------------------------------------------------------
+   timerfd* wrappers
+   See also http://lwn.net/Articles/260172/ for an overview.
+   See also /usr/src/linux/fs/timerfd.c for the implementation.
+   ------------------------------------------------------------------ */
+
+/* Returns True if running on 2.6.22, else False (or False if
+   cannot be determined). */
+static Bool linux_kernel_2_6_22(void)
+{
+   static Int result = -1;
+   Int fd, read;
+   HChar release[64];
+   SysRes res;
+
+   if (result == -1) {
+      res = VG_(open)("/proc/sys/kernel/osrelease", 0, 0);
+      if (sr_isError(res))
+         return False;
+      fd = sr_Res(res);
+      read = VG_(read)(fd, release, sizeof(release) - 1);
+      vg_assert(read >= 0);
+      release[read] = 0;
+      VG_(close)(fd);
+      //VG_(printf)("kernel release = %s\n", release);
+      result = (VG_(strncmp)(release, "2.6.22", 6) == 0
+                && (release[6] < '0' || release[6] > '9'));
+   }
+   vg_assert(result == 0 || result == 1);
+   return result == 1;
+}
+
+PRE(sys_timerfd_create)
+{
+   if (linux_kernel_2_6_22()) {
+      /* 2.6.22 kernel: timerfd system call. */
+      PRINT("sys_timerfd ( %ld, %ld, %#lx )", ARG1, ARG2, ARG3);
+      PRE_REG_READ3(long, "sys_timerfd",
+                    int, fd, int, clockid, const struct itimerspec *, tmr);
+      PRE_MEM_READ("timerfd(tmr)", ARG3,
+                   sizeof(struct vki_itimerspec) );
+      if ((Word)ARG1 != -1L && !ML_(fd_allowed)(ARG1, "timerfd", tid, False))
+         SET_STATUS_Failure( VKI_EBADF );
+   } else {
+      /* 2.6.24 and later kernels: timerfd_create system call. */
+      PRINT("sys_timerfd_create (%ld, %ld )", ARG1, ARG2);
+      PRE_REG_READ2(long, "timerfd_create", int, clockid, int, flags);
+   }
+}
+POST(sys_timerfd_create)
+{
+   if (linux_kernel_2_6_22())
+   {
+      /* 2.6.22 kernel: timerfd system call. */
+      if (!ML_(fd_allowed)(RES, "timerfd", tid, True)) {
+         VG_(close)(RES);
+         SET_STATUS_Failure( VKI_EMFILE );
+      } else {
+         if (VG_(clo_track_fds))
+            ML_(record_fd_open_nameless) (tid, RES);
+      }
+   }
+   else
+   {
+      /* 2.6.24 and later kernels: timerfd_create system call. */
+      if (!ML_(fd_allowed)(RES, "timerfd_create", tid, True)) {
+         VG_(close)(RES);
+         SET_STATUS_Failure( VKI_EMFILE );
+      } else {
+         if (VG_(clo_track_fds))
+            ML_(record_fd_open_nameless) (tid, RES);
+      }
+   }
+}
+
+PRE(sys_timerfd_gettime)
+{
+   PRINT("sys_timerfd_gettime ( %ld, %#lx )", ARG1, ARG2);
+   PRE_REG_READ2(long, "timerfd_gettime",
+                 int, ufd,
+                 struct vki_itimerspec*, otmr);
+   if (!ML_(fd_allowed)(ARG1, "timerfd_gettime", tid, False))
+      SET_STATUS_Failure(VKI_EBADF);
+   else
+      PRE_MEM_WRITE("timerfd_gettime(result)",
+                    ARG2, sizeof(struct vki_itimerspec));
+}
+POST(sys_timerfd_gettime)
+{
+   if (RES == 0)
+      POST_MEM_WRITE(ARG2, sizeof(struct vki_itimerspec));
+}
+
+PRE(sys_timerfd_settime)
+{
+   PRINT("sys_timerfd_settime ( %ld, %ld, %#lx, %#lx )", ARG1, ARG2, ARG3, ARG4);
+   PRE_REG_READ4(long, "timerfd_settime",
+                 int, ufd,
+                 int, flags,
+                 const struct vki_itimerspec*, utmr,
+                 struct vki_itimerspec*, otmr);
+   if (!ML_(fd_allowed)(ARG1, "timerfd_settime", tid, False))
+      SET_STATUS_Failure(VKI_EBADF);
+   else
+   {
+      PRE_MEM_READ("timerfd_settime(result)",
+                   ARG3, sizeof(struct vki_itimerspec));
+      if (ARG4)
+      {
+         PRE_MEM_WRITE("timerfd_settime(result)",
+                       ARG4, sizeof(struct vki_itimerspec));
+      }
+   }
+}
+POST(sys_timerfd_settime)
+{
+   if (RES == 0 && ARG4 != 0)
+      POST_MEM_WRITE(ARG4, sizeof(struct vki_itimerspec));
 }
 
 /* ---------------------------------------------------------------------
@@ -1678,7 +1891,7 @@ PRE(sys_timer_delete)
 
 PRE(sys_capget)
 {
-   PRINT("sys_capget ( %p, %p )", ARG1, ARG2 );
+   PRINT("sys_capget ( %#lx, %#lx )", ARG1, ARG2 );
    PRE_REG_READ2(long, "capget", 
                  vki_cap_user_header_t, header, vki_cap_user_data_t, data);
    PRE_MEM_READ( "capget(header)", ARG1, 
@@ -1694,7 +1907,7 @@ POST(sys_capget)
 
 PRE(sys_capset)
 {
-   PRINT("sys_capset ( %p, %p )", ARG1, ARG2 );
+   PRINT("sys_capset ( %#lx, %#lx )", ARG1, ARG2 );
    PRE_REG_READ2(long, "capset", 
                  vki_cap_user_header_t, header,
                  const vki_cap_user_data_t, data);
@@ -1716,7 +1929,7 @@ PRE(sys_getuid16)
 
 PRE(sys_setuid16)
 {
-   PRINT("sys_setuid16 ( %d )", ARG1);
+   PRINT("sys_setuid16 ( %ld )", ARG1);
    PRE_REG_READ1(long, "setuid16", vki_old_uid_t, uid);
 }
 
@@ -1728,7 +1941,7 @@ PRE(sys_getgid16)
 
 PRE(sys_setgid16)
 {
-   PRINT("sys_setgid16 ( %d )", ARG1);
+   PRINT("sys_setgid16 ( %ld )", ARG1);
    PRE_REG_READ1(long, "setgid16", vki_old_gid_t, gid);
 }
 
@@ -1746,19 +1959,19 @@ PRE(sys_getegid16)
 
 PRE(sys_setreuid16)
 {
-   PRINT("setreuid16 ( 0x%x, 0x%x )", ARG1, ARG2);
+   PRINT("setreuid16 ( 0x%lx, 0x%lx )", ARG1, ARG2);
    PRE_REG_READ2(long, "setreuid16", vki_old_uid_t, ruid, vki_old_uid_t, euid);
 }
 
 PRE(sys_setregid16)
 {
-   PRINT("sys_setregid16 ( %d, %d )", ARG1, ARG2);
+   PRINT("sys_setregid16 ( %ld, %ld )", ARG1, ARG2);
    PRE_REG_READ2(long, "setregid16", vki_old_gid_t, rgid, vki_old_gid_t, egid);
 }
 
 PRE(sys_getgroups16)
 {
-   PRINT("sys_getgroups16 ( %d, %p )", ARG1, ARG2);
+   PRINT("sys_getgroups16 ( %ld, %#lx )", ARG1, ARG2);
    PRE_REG_READ2(long, "getgroups16", int, size, vki_old_gid_t *, list);
    if (ARG1 > 0)
       PRE_MEM_WRITE( "getgroups16(list)", ARG2, ARG1 * sizeof(vki_old_gid_t) );
@@ -1772,7 +1985,7 @@ POST(sys_getgroups16)
 
 PRE(sys_setgroups16)
 {
-   PRINT("sys_setgroups16 ( %llu, %p )", (ULong)ARG1, ARG2);
+   PRINT("sys_setgroups16 ( %llu, %#lx )", (ULong)ARG1, ARG2);
    PRE_REG_READ2(long, "setgroups16", int, size, vki_old_gid_t *, list);
    if (ARG1 > 0)
       PRE_MEM_READ( "setgroups16(list)", ARG2, ARG1 * sizeof(vki_old_gid_t) );
@@ -1784,7 +1997,7 @@ PRE(sys_setgroups16)
 
 PRE(sys_chown16)
 {
-   PRINT("sys_chown16 ( %p, 0x%x, 0x%x )", ARG1,ARG2,ARG3);
+   PRINT("sys_chown16 ( %#lx, 0x%lx, 0x%lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "chown16",
                  const char *, path,
                  vki_old_uid_t, owner, vki_old_gid_t, group);
@@ -1793,7 +2006,7 @@ PRE(sys_chown16)
 
 PRE(sys_fchown16)
 {
-   PRINT("sys_fchown16 ( %d, %d, %d )", ARG1,ARG2,ARG3);
+   PRINT("sys_fchown16 ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "fchown16",
                  unsigned int, fd, vki_old_uid_t, owner, vki_old_gid_t, group);
 }
@@ -1805,7 +2018,7 @@ PRE(sys_fchown16)
 PRE(sys_setxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_setxattr ( %p, %p, %p, %llu, %d )",
+   PRINT("sys_setxattr ( %#lx, %#lx, %#lx, %llu, %ld )",
          ARG1, ARG2, ARG3, (ULong)ARG4, ARG5);
    PRE_REG_READ5(long, "setxattr",
                  char *, path, char *, name,
@@ -1818,7 +2031,7 @@ PRE(sys_setxattr)
 PRE(sys_lsetxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_lsetxattr ( %p, %p, %p, %llu, %d )",
+   PRINT("sys_lsetxattr ( %#lx, %#lx, %#lx, %llu, %ld )",
          ARG1, ARG2, ARG3, (ULong)ARG4, ARG5);
    PRE_REG_READ5(long, "lsetxattr",
                  char *, path, char *, name,
@@ -1831,7 +2044,7 @@ PRE(sys_lsetxattr)
 PRE(sys_fsetxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_fsetxattr ( %d, %p, %p, %llu, %d )",
+   PRINT("sys_fsetxattr ( %ld, %#lx, %#lx, %llu, %ld )",
          ARG1, ARG2, ARG3, (ULong)ARG4, ARG5);
    PRE_REG_READ5(long, "fsetxattr",
                  int, fd, char *, name, void *, value,
@@ -1843,7 +2056,7 @@ PRE(sys_fsetxattr)
 PRE(sys_getxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_getxattr ( %p, %p, %p, %llu )", ARG1,ARG2,ARG3, (ULong)ARG4);
+   PRINT("sys_getxattr ( %#lx, %#lx, %#lx, %llu )", ARG1,ARG2,ARG3, (ULong)ARG4);
    PRE_REG_READ4(ssize_t, "getxattr",
                  char *, path, char *, name, void *, value, vki_size_t, size);
    PRE_MEM_RASCIIZ( "getxattr(path)", ARG1 );
@@ -1861,7 +2074,7 @@ POST(sys_getxattr)
 PRE(sys_lgetxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_lgetxattr ( %p, %p, %p, %llu )", ARG1,ARG2,ARG3, (ULong)ARG4);
+   PRINT("sys_lgetxattr ( %#lx, %#lx, %#lx, %llu )", ARG1,ARG2,ARG3, (ULong)ARG4);
    PRE_REG_READ4(ssize_t, "lgetxattr",
                  char *, path, char *, name, void *, value, vki_size_t, size);
    PRE_MEM_RASCIIZ( "lgetxattr(path)", ARG1 );
@@ -1879,7 +2092,7 @@ POST(sys_lgetxattr)
 PRE(sys_fgetxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_fgetxattr ( %d, %p, %p, %llu )", ARG1, ARG2, ARG3, (ULong)ARG4);
+   PRINT("sys_fgetxattr ( %ld, %#lx, %#lx, %llu )", ARG1, ARG2, ARG3, (ULong)ARG4);
    PRE_REG_READ4(ssize_t, "fgetxattr",
                  int, fd, char *, name, void *, value, vki_size_t, size);
    PRE_MEM_RASCIIZ( "fgetxattr(name)", ARG2 );
@@ -1894,7 +2107,7 @@ POST(sys_fgetxattr)
 PRE(sys_listxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_listxattr ( %p, %p, %llu )", ARG1, ARG2, (ULong)ARG3);
+   PRINT("sys_listxattr ( %#lx, %#lx, %llu )", ARG1, ARG2, (ULong)ARG3);
    PRE_REG_READ3(ssize_t, "listxattr",
                  char *, path, char *, list, vki_size_t, size);
    PRE_MEM_RASCIIZ( "listxattr(path)", ARG1 );
@@ -1909,7 +2122,7 @@ POST(sys_listxattr)
 PRE(sys_llistxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_llistxattr ( %p, %p, %llu )", ARG1, ARG2, (ULong)ARG3);
+   PRINT("sys_llistxattr ( %#lx, %#lx, %llu )", ARG1, ARG2, (ULong)ARG3);
    PRE_REG_READ3(ssize_t, "llistxattr",
                  char *, path, char *, list, vki_size_t, size);
    PRE_MEM_RASCIIZ( "llistxattr(path)", ARG1 );
@@ -1924,7 +2137,7 @@ POST(sys_llistxattr)
 PRE(sys_flistxattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_flistxattr ( %d, %p, %llu )", ARG1, ARG2, (ULong)ARG3);
+   PRINT("sys_flistxattr ( %ld, %#lx, %llu )", ARG1, ARG2, (ULong)ARG3);
    PRE_REG_READ3(ssize_t, "flistxattr",
                  int, fd, char *, list, vki_size_t, size);
    PRE_MEM_WRITE( "flistxattr(list)", ARG2, ARG3 );
@@ -1938,7 +2151,7 @@ POST(sys_flistxattr)
 PRE(sys_removexattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_removexattr ( %p, %p )", ARG1, ARG2);
+   PRINT("sys_removexattr ( %#lx, %#lx )", ARG1, ARG2);
    PRE_REG_READ2(long, "removexattr", char *, path, char *, name);
    PRE_MEM_RASCIIZ( "removexattr(path)", ARG1 );
    PRE_MEM_RASCIIZ( "removexattr(name)", ARG2 );
@@ -1947,7 +2160,7 @@ PRE(sys_removexattr)
 PRE(sys_lremovexattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_lremovexattr ( %p, %p )", ARG1, ARG2);
+   PRINT("sys_lremovexattr ( %#lx, %#lx )", ARG1, ARG2);
    PRE_REG_READ2(long, "lremovexattr", char *, path, char *, name);
    PRE_MEM_RASCIIZ( "lremovexattr(path)", ARG1 );
    PRE_MEM_RASCIIZ( "lremovexattr(name)", ARG2 );
@@ -1956,7 +2169,7 @@ PRE(sys_lremovexattr)
 PRE(sys_fremovexattr)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_fremovexattr ( %d, %p )", ARG1, ARG2);
+   PRINT("sys_fremovexattr ( %ld, %#lx )", ARG1, ARG2);
    PRE_REG_READ2(long, "fremovexattr", int, fd, char *, name);
    PRE_MEM_RASCIIZ( "fremovexattr(name)", ARG2 );
 }
@@ -1967,7 +2180,7 @@ PRE(sys_fremovexattr)
 
 PRE(sys_sched_setparam)
 {
-   PRINT("sched_setparam ( %d, %p )", ARG1, ARG2 );
+   PRINT("sched_setparam ( %ld, %#lx )", ARG1, ARG2 );
    PRE_REG_READ2(long, "sched_setparam", 
                  vki_pid_t, pid, struct sched_param *, p);
    PRE_MEM_READ( "sched_setparam(p)", ARG2, sizeof(struct vki_sched_param) );
@@ -1979,7 +2192,7 @@ POST(sys_sched_setparam)
 
 PRE(sys_sched_getparam)
 {
-   PRINT("sched_getparam ( %d, %p )", ARG1, ARG2 );
+   PRINT("sched_getparam ( %ld, %#lx )", ARG1, ARG2 );
    PRE_REG_READ2(long, "sched_getparam", 
                  vki_pid_t, pid, struct sched_param *, p);
    PRE_MEM_WRITE( "sched_getparam(p)", ARG2, sizeof(struct vki_sched_param) );
@@ -1991,13 +2204,13 @@ POST(sys_sched_getparam)
 
 PRE(sys_sched_getscheduler)
 {
-   PRINT("sys_sched_getscheduler ( %d )", ARG1);
+   PRINT("sys_sched_getscheduler ( %ld )", ARG1);
    PRE_REG_READ1(long, "sched_getscheduler", vki_pid_t, pid);
 }
 
 PRE(sys_sched_setscheduler)
 {
-   PRINT("sys_sched_setscheduler ( %d, %d, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_sched_setscheduler ( %ld, %ld, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "sched_setscheduler", 
                  vki_pid_t, pid, int, policy, struct sched_param *, p);
    if (ARG3 != 0)
@@ -2014,19 +2227,19 @@ PRE(sys_sched_yield)
 
 PRE(sys_sched_get_priority_max)
 {
-   PRINT("sched_get_priority_max ( %d )", ARG1);
+   PRINT("sched_get_priority_max ( %ld )", ARG1);
    PRE_REG_READ1(long, "sched_get_priority_max", int, policy);
 }
 
 PRE(sys_sched_get_priority_min)
 {
-   PRINT("sched_get_priority_min ( %d )", ARG1);
+   PRINT("sched_get_priority_min ( %ld )", ARG1);
    PRE_REG_READ1(long, "sched_get_priority_min", int, policy);
 }
 
 PRE(sys_sched_setaffinity)
 {
-   PRINT("sched_setaffinity ( %d, %d, %p )", ARG1, ARG2, ARG3);
+   PRINT("sched_setaffinity ( %ld, %ld, %#lx )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "sched_setaffinity", 
                  vki_pid_t, pid, unsigned int, len, unsigned long *, mask);
    PRE_MEM_READ( "sched_setaffinity(mask)", ARG3, ARG2);
@@ -2034,7 +2247,7 @@ PRE(sys_sched_setaffinity)
 
 PRE(sys_sched_getaffinity)
 {
-   PRINT("sched_getaffinity ( %d, %d, %p )", ARG1, ARG2, ARG3);
+   PRINT("sched_getaffinity ( %ld, %ld, %#lx )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "sched_getaffinity", 
                  vki_pid_t, pid, unsigned int, len, unsigned long *, mask);
    PRE_MEM_WRITE( "sched_getaffinity(mask)", ARG3, ARG2);
@@ -2069,14 +2282,13 @@ PRE(sys_munlockall)
 // AMD64.
 PRE(sys_pipe)
 {
-   PRINT("sys_pipe ( %p )", ARG1);
+   PRINT("sys_pipe ( %#lx )", ARG1);
    PRE_REG_READ1(int, "pipe", int *, filedes);
    PRE_MEM_WRITE( "pipe(filedes)", ARG1, 2*sizeof(int) );
 }
 POST(sys_pipe)
 {
    Int *p = (Int *)ARG1;
-
    if (!ML_(fd_allowed)(p[0], "pipe", tid, True) ||
        !ML_(fd_allowed)(p[1], "pipe", tid, True)) {
       VG_(close)(p[0]);
@@ -2091,9 +2303,36 @@ POST(sys_pipe)
    }
 }
 
+/* pipe2 (a kernel 2.6.twentysomething invention) is like pipe, except
+   there's a second arg containing flags to be applied to the new file
+   descriptors.  It hardly seems worth the effort to factor out the
+   duplicated code, hence: */
+PRE(sys_pipe2)
+{
+   PRINT("sys_pipe2 ( %#lx, %#lx )", ARG1, ARG2);
+   PRE_REG_READ2(int, "pipe", int *, filedes, long, flags);
+   PRE_MEM_WRITE( "pipe2(filedes)", ARG1, 2*sizeof(int) );
+}
+POST(sys_pipe2)
+{
+   Int *p = (Int *)ARG1;
+   if (!ML_(fd_allowed)(p[0], "pipe2", tid, True) ||
+       !ML_(fd_allowed)(p[1], "pipe2", tid, True)) {
+      VG_(close)(p[0]);
+      VG_(close)(p[1]);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      POST_MEM_WRITE( ARG1, 2*sizeof(int) );
+      if (VG_(clo_track_fds)) {
+         ML_(record_fd_open_nameless)(tid, p[0]);
+         ML_(record_fd_open_nameless)(tid, p[1]);
+      }
+   }
+}
+
 PRE(sys_quotactl)
 {
-   PRINT("sys_quotactl (0x%x, %p, 0x%x, 0x%x )", ARG1,ARG2,ARG3, ARG4);
+   PRINT("sys_quotactl (0x%lx, %#lx, 0x%lx, 0x%lx )", ARG1,ARG2,ARG3, ARG4);
    PRE_REG_READ4(long, "quotactl",
                  unsigned int, cmd, const char *, special, vki_qid_t, id,
                  void *, addr);
@@ -2103,7 +2342,7 @@ PRE(sys_quotactl)
 PRE(sys_waitid)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_waitid( %d, %d, %p, %d, %p )", ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_waitid( %ld, %ld, %#lx, %ld, %#lx )", ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(int32_t, "sys_waitid",
                  int, which, vki_pid_t, pid, struct vki_siginfo *, infop,
                  int, options, struct vki_rusage *, ru);
@@ -2120,13 +2359,21 @@ POST(sys_waitid)
 
 PRE(sys_sync_file_range)
 {
-  PRINT("sys_sync_file_range ( %d, %lld, %lld, %d )",
-	ARG1,ARG2,ARG3,ARG4);
-  PRE_REG_READ4(long, "sync_file_range",
-		int, fd, vki_loff_t, offset, vki_loff_t, nbytes,
-		unsigned int, flags);
-  if (!ML_(fd_allowed)(ARG1, "sync_file_range", tid, False))
-     SET_STATUS_Failure( VKI_EBADF );
+   *flags |= SfMayBlock;
+   PRINT("sys_sync_file_range ( %ld, %ld, %ld, %ld )",
+         ARG1,ARG2,ARG3,ARG4);
+   PRE_REG_READ4(long, "sync_file_range",
+                 int, fd, vki_loff_t, offset, vki_loff_t, nbytes,
+                 unsigned int, flags);
+   if (!ML_(fd_allowed)(ARG1, "sync_file_range", tid, False))
+      SET_STATUS_Failure( VKI_EBADF );
+}
+
+PRE(sys_stime)
+{
+   PRINT("sys_stime ( %#lx )", ARG1);
+   PRE_REG_READ1(int, "stime", vki_time_t*, t);
+   PRE_MEM_READ( "stime(t)", ARG1, sizeof(vki_time_t) );
 }
 
 /* ---------------------------------------------------------------------
@@ -2136,7 +2383,7 @@ PRE(sys_sync_file_range)
 PRE(sys_utime)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_utime ( %p, %p )", ARG1,ARG2);
+   PRINT("sys_utime ( %#lx, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "utime", char *, filename, struct utimbuf *, buf);
    PRE_MEM_RASCIIZ( "utime(filename)", ARG1 );
    if (ARG2 != 0)
@@ -2149,7 +2396,7 @@ PRE(sys_utime)
 
 PRE(sys_lseek)
 {
-   PRINT("sys_lseek ( %d, %d, %d )", ARG1,ARG2,ARG3);
+   PRINT("sys_lseek ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(vki_off_t, "lseek",
                  unsigned int, fd, vki_off_t, offset, unsigned int, whence);
 }
@@ -2160,7 +2407,7 @@ PRE(sys_lseek)
 
 PRE(sys_sigpending)
 {
-   PRINT( "sys_sigpending ( %p )", ARG1 );
+   PRINT( "sys_sigpending ( %#lx )", ARG1 );
    PRE_REG_READ1(long, "sigpending", vki_old_sigset_t *, set);
    PRE_MEM_WRITE( "sigpending(set)", ARG1, sizeof(vki_old_sigset_t));
 }
@@ -2182,7 +2429,7 @@ PRE(sys_sigprocmask)
    vki_sigset_t bigger_set;
    vki_sigset_t bigger_oldset;
 
-   PRINT("sys_sigprocmask ( %d, %p, %p )",ARG1,ARG2,ARG3);
+   PRINT("sys_sigprocmask ( %ld, %#lx, %#lx )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "sigprocmask", 
                  int, how, vki_old_sigset_t *, set, vki_old_sigset_t *, oldset);
    if (ARG2 != 0)
@@ -2220,19 +2467,60 @@ POST(sys_sigprocmask)
 }
 #endif
 
+PRE(sys_signalfd)
+{
+   PRINT("sys_signalfd ( %d, %#lx, %llu )", (Int)ARG1,ARG2,(ULong)ARG3);
+   PRE_REG_READ3(long, "sys_signalfd",
+                 int, fd, vki_sigset_t *, sigmask, vki_size_t, sigsetsize);
+   PRE_MEM_READ( "signalfd(sigmask)", ARG2, sizeof(vki_sigset_t) );
+   if ((int)ARG1 != -1 && !ML_(fd_allowed)(ARG1, "signalfd", tid, False))
+      SET_STATUS_Failure( VKI_EBADF );
+}
+POST(sys_signalfd)
+{
+   if (!ML_(fd_allowed)(RES, "signalfd", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds))
+         ML_(record_fd_open_nameless) (tid, RES);
+   }
+}
+
+PRE(sys_signalfd4)
+{
+   PRINT("sys_signalfd4 ( %d, %#lx, %llu, %ld )", (Int)ARG1,ARG2,(ULong)ARG3,ARG4);
+   PRE_REG_READ4(long, "sys_signalfd4",
+                 int, fd, vki_sigset_t *, sigmask, vki_size_t, sigsetsize, int, flags);
+   PRE_MEM_READ( "signalfd(sigmask)", ARG2, sizeof(vki_sigset_t) );
+   if ((int)ARG1 != -1 && !ML_(fd_allowed)(ARG1, "signalfd", tid, False))
+      SET_STATUS_Failure( VKI_EBADF );
+}
+POST(sys_signalfd4)
+{
+   if (!ML_(fd_allowed)(RES, "signalfd4", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds))
+         ML_(record_fd_open_nameless) (tid, RES);
+   }
+}
+
+
 /* ---------------------------------------------------------------------
    rt_sig* wrappers
    ------------------------------------------------------------------ */
 
 PRE(sys_rt_sigaction)
 {
-   PRINT("sys_rt_sigaction ( %d, %p, %p, %d )", ARG1,ARG2,ARG3,ARG4);
+   PRINT("sys_rt_sigaction ( %ld, %#lx, %#lx, %ld )", ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(long, "rt_sigaction",
                  int, signum, const struct sigaction *, act,
                  struct sigaction *, oldact, vki_size_t, sigsetsize);
 
    if (ARG2 != 0) {
-      struct vki_sigaction *sa = (struct vki_sigaction *)ARG2;
+      vki_sigaction_toK_t *sa = (vki_sigaction_toK_t *)ARG2;
       PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
       PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
       PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
@@ -2240,27 +2528,27 @@ PRE(sys_rt_sigaction)
          PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
    }
    if (ARG3 != 0)
-      PRE_MEM_WRITE( "rt_sigaction(oldact)", ARG3, sizeof(struct vki_sigaction));
+      PRE_MEM_WRITE( "rt_sigaction(oldact)", ARG3, sizeof(vki_sigaction_fromK_t));
 
    // XXX: doesn't seem right to be calling do_sys_sigaction for
    // sys_rt_sigaction... perhaps this function should be renamed
    // VG_(do_sys_rt_sigaction)()  --njn
 
    SET_STATUS_from_SysRes(
-      VG_(do_sys_sigaction)(ARG1, (const struct vki_sigaction *)ARG2,
-                            (struct vki_sigaction *)ARG3)
+      VG_(do_sys_sigaction)(ARG1, (const vki_sigaction_toK_t *)ARG2,
+                            (vki_sigaction_fromK_t *)ARG3)
    );
 }
 POST(sys_rt_sigaction)
 {
    vg_assert(SUCCESS);
    if (RES == 0 && ARG3 != 0)
-      POST_MEM_WRITE( ARG3, sizeof(struct vki_sigaction));
+      POST_MEM_WRITE( ARG3, sizeof(vki_sigaction_fromK_t));
 }
 
 PRE(sys_rt_sigprocmask)
 {
-   PRINT("sys_rt_sigprocmask ( %d, %p, %p, %llu )",ARG1,ARG2,ARG3,(ULong)ARG4);
+   PRINT("sys_rt_sigprocmask ( %ld, %#lx, %#lx, %llu )",ARG1,ARG2,ARG3,(ULong)ARG4);
    PRE_REG_READ4(long, "rt_sigprocmask", 
                  int, how, vki_sigset_t *, set, vki_sigset_t *, oldset,
                  vki_size_t, sigsetsize);
@@ -2292,7 +2580,7 @@ POST(sys_rt_sigprocmask)
 
 PRE(sys_rt_sigpending)
 {
-   PRINT( "sys_rt_sigpending ( %p )", ARG1 );
+   PRINT( "sys_rt_sigpending ( %#lx )", ARG1 );
    PRE_REG_READ2(long, "rt_sigpending", 
                  vki_sigset_t *, set, vki_size_t, sigsetsize);
    PRE_MEM_WRITE( "rt_sigpending(set)", ARG1, sizeof(vki_sigset_t));
@@ -2305,7 +2593,7 @@ POST(sys_rt_sigpending)
 PRE(sys_rt_sigtimedwait)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_rt_sigtimedwait ( %p, %p, %p, %lld )",
+   PRINT("sys_rt_sigtimedwait ( %#lx, %#lx, %#lx, %lld )",
          ARG1,ARG2,ARG3,(ULong)ARG4);
    PRE_REG_READ4(long, "rt_sigtimedwait", 
                  const vki_sigset_t *, set, vki_siginfo_t *, info,
@@ -2326,7 +2614,7 @@ POST(sys_rt_sigtimedwait)
 
 PRE(sys_rt_sigqueueinfo)
 {
-   PRINT("sys_rt_sigqueueinfo(%d, %d, %p)", ARG1, ARG2, ARG3);
+   PRINT("sys_rt_sigqueueinfo(%ld, %ld, %#lx)", ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "rt_sigqueueinfo", 
                  int, pid, int, sig, vki_siginfo_t *, uinfo);
    if (ARG2 != 0)
@@ -2349,7 +2637,7 @@ PRE(sys_rt_sigsuspend)
       return EINVAL if it isn't.
     */
    *flags |= SfMayBlock;
-   PRINT("sys_rt_sigsuspend ( %p, %d )", ARG1,ARG2 );
+   PRINT("sys_rt_sigsuspend ( %#lx, %ld )", ARG1,ARG2 );
    PRE_REG_READ2(int, "rt_sigsuspend", vki_sigset_t *, mask, vki_size_t, size)
    if (ARG1 != (Addr)NULL) {
       PRE_MEM_READ( "rt_sigsuspend(mask)", ARG1, sizeof(vki_sigset_t) );
@@ -2459,12 +2747,12 @@ PRE(sys_openat)
 
    if (ARG3 & VKI_O_CREAT) {
       // 4-arg version
-      PRINT("sys_openat ( %d, %p(%s), %d, %d )",ARG1,ARG2,ARG2,ARG3,ARG4);
+      PRINT("sys_openat ( %ld, %#lx(%s), %ld, %ld )",ARG1,ARG2,(char*)ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "openat",
                     int, dfd, const char *, filename, int, flags, int, mode);
    } else {
       // 3-arg version
-      PRINT("sys_openat ( %d, %p(%s), %d )",ARG1,ARG2,ARG2,ARG3);
+      PRINT("sys_openat ( %ld, %#lx(%s), %ld )",ARG1,ARG2,(char*)ARG2,ARG3);
       PRE_REG_READ3(long, "openat",
                     int, dfd, const char *, filename, int, flags);
    }
@@ -2485,8 +2773,8 @@ PRE(sys_openat)
            || VG_(strcmp)((Char *)ARG2, "/proc/self/cmdline") == 0)) {
       sres = VG_(dup)( VG_(cl_cmdline_fd) );
       SET_STATUS_from_SysRes( sres );
-      if (!sres.isError) {
-         OffT off = VG_(lseek)( sres.res, 0, VKI_SEEK_SET );
+      if (!sr_isError(sres)) {
+         OffT off = VG_(lseek)( sr_Res(sres), 0, VKI_SEEK_SET );
          if (off < 0)
             SET_STATUS_Failure( VKI_EMFILE );
       }
@@ -2512,7 +2800,7 @@ POST(sys_openat)
 PRE(sys_mkdirat)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_mkdirat ( %d, %p(%s), %d )", ARG1,ARG2,ARG2,ARG3);
+   PRINT("sys_mkdirat ( %ld, %#lx(%s), %ld )", ARG1,ARG2,(char*)ARG2,ARG3);
    PRE_REG_READ3(long, "mkdirat",
                  int, dfd, const char *, pathname, int, mode);
    PRE_MEM_RASCIIZ( "mkdirat(pathname)", ARG2 );
@@ -2520,7 +2808,7 @@ PRE(sys_mkdirat)
 
 PRE(sys_mknodat)
 {
-   PRINT("sys_mknodat ( %d, %p(%s), 0x%x, 0x%x )", ARG1,ARG2,ARG2,ARG3,ARG4 );
+  PRINT("sys_mknodat ( %ld, %#lx(%s), 0x%lx, 0x%lx )", ARG1,ARG2,(char*)ARG2,ARG3,ARG4 );
    PRE_REG_READ4(long, "mknodat",
                  int, dfd, const char *, pathname, int, mode, unsigned, dev);
    PRE_MEM_RASCIIZ( "mknodat(pathname)", ARG2 );
@@ -2528,7 +2816,7 @@ PRE(sys_mknodat)
 
 PRE(sys_fchownat)
 {
-   PRINT("sys_fchownat ( %d, %p(%s), 0x%x, 0x%x )", ARG1,ARG2,ARG2,ARG3,ARG4);
+   PRINT("sys_fchownat ( %ld, %#lx(%s), 0x%lx, 0x%lx )", ARG1,ARG2,(char*)ARG2,ARG3,ARG4);
    PRE_REG_READ4(long, "fchownat",
                  int, dfd, const char *, path,
                  vki_uid_t, owner, vki_gid_t, group);
@@ -2537,17 +2825,29 @@ PRE(sys_fchownat)
 
 PRE(sys_futimesat)
 {
-   PRINT("sys_futimesat ( %d, %p(%s), %p )", ARG1,ARG2,ARG2,ARG3);
+   PRINT("sys_futimesat ( %ld, %#lx(%s), %#lx )", ARG1,ARG2,(char*)ARG2,ARG3);
    PRE_REG_READ3(long, "futimesat",
                  int, dfd, char *, filename, struct timeval *, tvp);
-   PRE_MEM_RASCIIZ( "futimesat(filename)", ARG2 );
+   if (ARG2 != 0)
+      PRE_MEM_RASCIIZ( "futimesat(filename)", ARG2 );
    if (ARG3 != 0)
-      PRE_MEM_READ( "futimesat(tvp)", ARG3, sizeof(struct vki_timeval) );
+      PRE_MEM_READ( "futimesat(tvp)", ARG3, 2 * sizeof(struct vki_timeval) );
+}
+
+PRE(sys_utimensat)
+{
+   PRINT("sys_utimensat ( %ld, %#lx(%s), %#lx, 0x%lx )", ARG1,ARG2,(char*)ARG2,ARG3,ARG4);
+   PRE_REG_READ4(long, "utimensat",
+                 int, dfd, char *, filename, struct timespec *, utimes, int, flags);
+   if (ARG2 != 0)
+      PRE_MEM_RASCIIZ( "utimensat(filename)", ARG2 );
+   if (ARG3 != 0)
+      PRE_MEM_READ( "utimensat(tvp)", ARG3, 2 * sizeof(struct vki_timespec) );
 }
 
 PRE(sys_newfstatat)
 {
-   PRINT("sys_newfstatat ( %d, %p(%s), %p )", ARG1,ARG2,ARG2,ARG3);
+   PRINT("sys_newfstatat ( %ld, %#lx(%s), %#lx )", ARG1,ARG2,(char*)ARG2,ARG3);
    PRE_REG_READ3(long, "fstatat",
                  int, dfd, char *, file_name, struct stat *, buf);
    PRE_MEM_RASCIIZ( "fstatat(file_name)", ARG2 );
@@ -2562,14 +2862,14 @@ POST(sys_newfstatat)
 PRE(sys_unlinkat)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_unlinkat ( %d, %p(%s) )", ARG1,ARG2,ARG2);
+   PRINT("sys_unlinkat ( %ld, %#lx(%s) )", ARG1,ARG2,(char*)ARG2);
    PRE_REG_READ2(long, "unlinkat", int, dfd, const char *, pathname);
    PRE_MEM_RASCIIZ( "unlinkat(pathname)", ARG2 );
 }
 
 PRE(sys_renameat)
 {
-   PRINT("sys_renameat ( %d, %p(%s), %d, %p(%s) )", ARG1,ARG2,ARG2,ARG3,ARG4,ARG4);
+   PRINT("sys_renameat ( %ld, %#lx(%s), %ld, %#lx(%s) )", ARG1,ARG2,(char*)ARG2,ARG3,ARG4,(char*)ARG4);
    PRE_REG_READ4(long, "renameat",
                  int, olddfd, const char *, oldpath,
                  int, newdfd, const char *, newpath);
@@ -2580,7 +2880,7 @@ PRE(sys_renameat)
 PRE(sys_linkat)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_linkat ( %d, %p(%s), %d, %p(%s), %d )",ARG1,ARG2,ARG2,ARG3,ARG4,ARG4,ARG5);
+   PRINT("sys_linkat ( %ld, %#lx(%s), %ld, %#lx(%s), %ld )",ARG1,ARG2,(char*)ARG2,ARG3,ARG4,(char*)ARG4,ARG5);
    PRE_REG_READ5(long, "linkat",
                  int, olddfd, const char *, oldpath,
                  int, newdfd, const char *, newpath,
@@ -2592,7 +2892,7 @@ PRE(sys_linkat)
 PRE(sys_symlinkat)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_symlinkat ( %p(%s), %d, %p(%s) )",ARG1,ARG1,ARG2,ARG3,ARG3);
+   PRINT("sys_symlinkat ( %#lx(%s), %ld, %#lx(%s) )",ARG1,(char*)ARG1,ARG2,ARG3,(char*)ARG3);
    PRE_REG_READ3(long, "symlinkat",
                  const char *, oldpath, int, newdfd, const char *, newpath);
    PRE_MEM_RASCIIZ( "symlinkat(oldpath)", ARG1 );
@@ -2604,7 +2904,7 @@ PRE(sys_readlinkat)
    HChar name[25];
    Word  saved = SYSNO;
 
-   PRINT("sys_readlinkat ( %d, %p(%s), %p, %llu )", ARG1,ARG2,ARG2,ARG3,(ULong)ARG4);
+   PRINT("sys_readlinkat ( %ld, %#lx(%s), %#lx, %llu )", ARG1,ARG2,(char*)ARG2,ARG3,(ULong)ARG4);
    PRE_REG_READ4(long, "readlinkat",
                  int, dfd, const char *, path, char *, buf, int, bufsiz);
    PRE_MEM_RASCIIZ( "readlinkat(path)", ARG2 );
@@ -2632,7 +2932,7 @@ PRE(sys_readlinkat)
 
 PRE(sys_fchmodat)
 {
-   PRINT("sys_fchmodat ( %d, %p(%s), %d )", ARG1,ARG2,ARG2,ARG3);
+   PRINT("sys_fchmodat ( %ld, %#lx(%s), %ld )", ARG1,ARG2,(char*)ARG2,ARG3);
    PRE_REG_READ3(long, "fchmodat",
                  int, dfd, const char *, path, vki_mode_t, mode);
    PRE_MEM_RASCIIZ( "fchmodat(path)", ARG2 );
@@ -2640,7 +2940,7 @@ PRE(sys_fchmodat)
 
 PRE(sys_faccessat)
 {
-   PRINT("sys_faccessat ( %d, %p(%s), %d )", ARG1,ARG2,ARG2,ARG3);
+   PRINT("sys_faccessat ( %ld, %#lx(%s), %ld )", ARG1,ARG2,(char*)ARG2,ARG3);
    PRE_REG_READ3(long, "faccessat",
                  int, dfd, const char *, pathname, int, mode);
    PRE_MEM_RASCIIZ( "faccessat(pathname)", ARG2 );
@@ -2652,8 +2952,8 @@ PRE(sys_faccessat)
 
 PRE(sys_request_key)
 {
-   PRINT("sys_request_key ( %p(%s), %p(%s), %p(%s), %d )",
-         ARG1,ARG1,ARG2,ARG2,ARG3,ARG3,ARG4);
+   PRINT("sys_request_key ( %#lx(%s), %#lx(%s), %#lx(%s), %ld )",
+         ARG1,(char*)ARG1,ARG2,(char*)ARG2,ARG3,(char*)ARG3,ARG4);
    PRE_REG_READ4(long, "request_key",
                  const char *, type, const char *, description, 
                  const char *, callout_info, vki_key_serial_t, keyring);
@@ -2665,8 +2965,8 @@ PRE(sys_request_key)
 
 PRE(sys_add_key)
 {
-   PRINT("sys_add_key ( %p(%s), %p(%s), %p, %d, %d )",
-         ARG1,ARG1,ARG2,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_add_key ( %#lx(%s), %#lx(%s), %#lx, %ld, %ld )",
+         ARG1,(char*)ARG1,ARG2,(char*)ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "add_key",
                  const char *, type, const char *, description,
                  const void *, payload, vki_size_t, plen, 
@@ -2681,19 +2981,19 @@ PRE(sys_keyctl)
 {
    switch (ARG1 /* option */) {
    case VKI_KEYCTL_GET_KEYRING_ID:
-      PRINT("sys_keyctl ( KEYCTL_GET_KEYRING_ID, %d, %d )", ARG2,ARG3);
+      PRINT("sys_keyctl ( KEYCTL_GET_KEYRING_ID, %ld, %ld )", ARG2,ARG3);
       PRE_REG_READ3(long, "keyctl(KEYCTL_GET_KEYRING_ID)",
                     int, option, vki_key_serial_t, id, int, create);
       break;
    case VKI_KEYCTL_JOIN_SESSION_KEYRING:
-      PRINT("sys_keyctl ( KEYCTL_JOIN_SESSION_KEYRING, %p(%s) )", ARG2,ARG2);
+      PRINT("sys_keyctl ( KEYCTL_JOIN_SESSION_KEYRING, %#lx(%s) )", ARG2,(char*)ARG2);
       PRE_REG_READ2(long, "keyctl(KEYCTL_JOIN_SESSION_KEYRING)",
                     int, option, const char *, name);
       if (ARG2 != (UWord)NULL)
          PRE_MEM_RASCIIZ("keyctl(KEYCTL_JOIN_SESSION_KEYRING, name)", ARG2);
       break;
    case VKI_KEYCTL_UPDATE:
-      PRINT("sys_keyctl ( KEYCTL_UPDATE, %d, %p, %d )", ARG2,ARG3,ARG4);
+      PRINT("sys_keyctl ( KEYCTL_UPDATE, %ld, %#lx, %ld )", ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "keyctl(KEYCTL_UPDATE)",
                     int, option, vki_key_serial_t, key,
                     const void *, payload, vki_size_t, plen);
@@ -2701,23 +3001,23 @@ PRE(sys_keyctl)
          PRE_MEM_READ("keyctl(KEYCTL_UPDATE, payload)", ARG3, ARG4);
       break;
    case VKI_KEYCTL_REVOKE:
-      PRINT("sys_keyctl ( KEYCTL_REVOKE, %d )", ARG2);
+      PRINT("sys_keyctl ( KEYCTL_REVOKE, %ld )", ARG2);
       PRE_REG_READ2(long, "keyctl(KEYCTL_REVOKE)",
                     int, option, vki_key_serial_t, id);
       break;
    case VKI_KEYCTL_CHOWN:
-      PRINT("sys_keyctl ( KEYCTL_CHOWN, %d, %d, %d )", ARG2,ARG3,ARG4);
+      PRINT("sys_keyctl ( KEYCTL_CHOWN, %ld, %ld, %ld )", ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "keyctl(KEYCTL_CHOWN)",
                     int, option, vki_key_serial_t, id,
                     vki_uid_t, uid, vki_gid_t, gid);
       break;
    case VKI_KEYCTL_SETPERM:
-      PRINT("sys_keyctl ( KEYCTL_SETPERM, %d, %d )", ARG2,ARG3);
+      PRINT("sys_keyctl ( KEYCTL_SETPERM, %ld, %ld )", ARG2,ARG3);
       PRE_REG_READ3(long, "keyctl(KEYCTL_SETPERM)",
                     int, option, vki_key_serial_t, id, vki_key_perm_t, perm);
       break;
    case VKI_KEYCTL_DESCRIBE:
-      PRINT("sys_keyctl ( KEYCTL_DESCRIBE, %d, %p, %d )", ARG2,ARG3,ARG4);
+      PRINT("sys_keyctl ( KEYCTL_DESCRIBE, %ld, %#lx, %ld )", ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "keyctl(KEYCTL_DESCRIBE)",
                     int, option, vki_key_serial_t, id,
                     char *, buffer, vki_size_t, buflen);
@@ -2725,23 +3025,23 @@ PRE(sys_keyctl)
          PRE_MEM_WRITE("keyctl(KEYCTL_DESCRIBE, buffer)", ARG3, ARG4);
       break;
    case VKI_KEYCTL_CLEAR:
-      PRINT("sys_keyctl ( KEYCTL_CLEAR, %d )", ARG2);
+      PRINT("sys_keyctl ( KEYCTL_CLEAR, %ld )", ARG2);
       PRE_REG_READ2(long, "keyctl(KEYCTL_CLEAR)",
                     int, option, vki_key_serial_t, keyring);
       break;
    case VKI_KEYCTL_LINK:
-      PRINT("sys_keyctl ( KEYCTL_LINK, %d, %d )", ARG2,ARG3);
+      PRINT("sys_keyctl ( KEYCTL_LINK, %ld, %ld )", ARG2,ARG3);
       PRE_REG_READ3(long, "keyctl(KEYCTL_LINK)", int, option,
                     vki_key_serial_t, keyring, vki_key_serial_t, key);
       break;
    case VKI_KEYCTL_UNLINK:
-      PRINT("sys_keyctl ( KEYCTL_UNLINK, %d, %d )", ARG2,ARG3);
+      PRINT("sys_keyctl ( KEYCTL_UNLINK, %ld, %ld )", ARG2,ARG3);
       PRE_REG_READ3(long, "keyctl(KEYCTL_UNLINK)", int, option,
                     vki_key_serial_t, keyring, vki_key_serial_t, key);
       break;
    case VKI_KEYCTL_SEARCH:
-      PRINT("sys_keyctl ( KEYCTL_SEARCH, %d, %p(%s), %p(%s), %d )",
-            ARG2,ARG3,ARG3,ARG4,ARG4,ARG5);
+      PRINT("sys_keyctl ( KEYCTL_SEARCH, %ld, %#lx(%s), %#lx(%s), %ld )",
+            ARG2,ARG3,(char*)ARG3,ARG4,(char*)ARG4,ARG5);
       PRE_REG_READ5(long, "keyctl(KEYCTL_SEARCH)",
                     int, option, vki_key_serial_t, keyring, 
                     const char *, type, const char *, description,
@@ -2750,7 +3050,7 @@ PRE(sys_keyctl)
       PRE_MEM_RASCIIZ("sys_keyctl(KEYCTL_SEARCH, description)", ARG4);
       break;
    case VKI_KEYCTL_READ:
-      PRINT("sys_keyctl ( KEYCTL_READ, %d, %p, %d )", ARG2,ARG3,ARG4);
+      PRINT("sys_keyctl ( KEYCTL_READ, %ld, %#lx, %ld )", ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "keyctl(KEYCTL_READ)",
                     int, option, vki_key_serial_t, keyring, 
                     char *, buffer, vki_size_t, buflen);
@@ -2758,7 +3058,7 @@ PRE(sys_keyctl)
          PRE_MEM_WRITE("keyctl(KEYCTL_READ, buffer)", ARG3, ARG4);
       break;
    case VKI_KEYCTL_INSTANTIATE:
-      PRINT("sys_keyctl ( KEYCTL_INSTANTIATE, %d, %p, %d, %d )",
+      PRINT("sys_keyctl ( KEYCTL_INSTANTIATE, %ld, %#lx, %ld, %ld )",
             ARG2,ARG3,ARG4,ARG5);
       PRE_REG_READ5(long, "keyctl(KEYCTL_INSTANTIATE)",
                     int, option, vki_key_serial_t, key, 
@@ -2768,28 +3068,28 @@ PRE(sys_keyctl)
          PRE_MEM_READ("keyctl(KEYCTL_INSTANTIATE, payload)", ARG3, ARG4);
       break;
    case VKI_KEYCTL_NEGATE:
-      PRINT("sys_keyctl ( KEYCTL_NEGATE, %d, %u, %d )", ARG2,ARG3,ARG4);
+      PRINT("sys_keyctl ( KEYCTL_NEGATE, %ld, %lu, %ld )", ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "keyctl(KEYCTL_NEGATE)",
                     int, option, vki_key_serial_t, key, 
                     unsigned, timeout, vki_key_serial_t, keyring);
       break;
    case VKI_KEYCTL_SET_REQKEY_KEYRING:
-      PRINT("sys_keyctl ( KEYCTL_SET_REQKEY_KEYRING, %d )", ARG2);
+      PRINT("sys_keyctl ( KEYCTL_SET_REQKEY_KEYRING, %ld )", ARG2);
       PRE_REG_READ2(long, "keyctl(KEYCTL_SET_REQKEY_KEYRING)",
                     int, option, int, reqkey_defl);
       break;
    case VKI_KEYCTL_SET_TIMEOUT:
-      PRINT("sys_keyctl ( KEYCTL_SET_TIMEOUT, %d, %d )", ARG2,ARG3);
+      PRINT("sys_keyctl ( KEYCTL_SET_TIMEOUT, %ld, %ld )", ARG2,ARG3);
       PRE_REG_READ3(long, "keyctl(KEYCTL_SET_TIMEOUT)",
                     int, option, vki_key_serial_t, key, unsigned, timeout);
       break;
    case VKI_KEYCTL_ASSUME_AUTHORITY:
-      PRINT("sys_keyctl ( KEYCTL_ASSUME_AUTHORITY, %d )", ARG2);
+      PRINT("sys_keyctl ( KEYCTL_ASSUME_AUTHORITY, %ld )", ARG2);
       PRE_REG_READ2(long, "keyctl(KEYCTL_ASSUME_AUTHORITY)",
                     int, option, vki_key_serial_t, key);
       break;
    default:
-      PRINT("sys_keyctl ( %d ) ", ARG1);
+      PRINT("sys_keyctl ( %ld ) ", ARG1);
       PRE_REG_READ1(long, "keyctl", int, option);
       break;
    }
@@ -2815,32 +3115,2209 @@ POST(sys_keyctl)
    ioprio_ wrappers
    ------------------------------------------------------------------ */
 
-/* _syscall3(int, ioprio_set, int, which, int, who, int, ioprio); */
-
 PRE(sys_ioprio_set)
 {
    PRINT("sys_ioprio_set ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(int, "ioprio_set", int, which, int, who, int, ioprio);
 }
 
-
-/* XXX I don't think this is really the right place for this.
-   Move it elsewhere in this file? */
-PRE(sys_utimensat)
+PRE(sys_ioprio_get)
 {
-   PRINT("sys_utimensat ( %d, %p(%s), %p )", ARG1,ARG2,ARG2,ARG3);
-   PRE_REG_READ3(long, "utimensat",
-                 int, dfd, char *, filename, struct timespec *, tvp);
-   PRE_MEM_RASCIIZ( "utimensat(filename)", ARG2 );
-   if (ARG3 != 0)
-      PRE_MEM_READ( "utimensat(tvp)", ARG3, sizeof(struct vki_timespec) );
+   PRINT("sys_ioprio_get ( %ld, %ld )", ARG1,ARG2);
+   PRE_REG_READ2(int, "ioprio_get", int, which, int, who);
+}
+
+/* ---------------------------------------------------------------------
+   _module wrappers
+   ------------------------------------------------------------------ */
+
+PRE(sys_init_module)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_init_module ( %#lx, %llu, %#lx(\"%s\") )",
+         ARG1, (ULong)ARG2, ARG3, (char*)ARG3);
+   PRE_REG_READ3(long, "init_module",
+                 void *, umod, unsigned long, len, const char *, uargs);
+   PRE_MEM_READ( "init_module(umod)", ARG1, ARG2 );
+   PRE_MEM_RASCIIZ( "init_module(uargs)", ARG3 );
+}
+
+PRE(sys_delete_module)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_delete_module ( %#lx(\"%s\"), 0x%lx )", ARG1,(char*)ARG1, ARG2);
+   PRE_REG_READ2(long, "delete_module",
+                 const char *, name_user, unsigned int, flags);
+   PRE_MEM_RASCIIZ("delete_module(name_user)", ARG1);
+}
+
+/* ---------------------------------------------------------------------
+   oprofile-related wrappers
+   ------------------------------------------------------------------ */
+
+#if defined(VGP_x86_linux)
+PRE(sys_lookup_dcookie)
+{
+   PRINT("sys_lookup_dcookie (0x%llx, %#lx, %ld)",
+         LOHI64(ARG1,ARG2), ARG3, ARG4);
+   PRE_REG_READ4(long, "lookup_dcookie",
+                 vki_u32, cookie_low32, vki_u32, cookie_high32,
+                 char *, buf, vki_size_t, len);
+   PRE_MEM_WRITE( "lookup_dcookie(buf)", ARG3, ARG4);
+}
+POST(sys_lookup_dcookie)
+{
+   vg_assert(SUCCESS);
+   if (ARG3 != (Addr)NULL)
+      POST_MEM_WRITE( ARG3, RES);
+}
+#endif
+
+#if defined(VGP_amd64_linux)
+PRE(sys_lookup_dcookie)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_lookup_dcookie ( %llu, %#lx, %llu )",
+	 (ULong)ARG1, ARG2, (ULong)ARG3);
+   PRE_REG_READ3(int, "lookup_dcookie",
+                 unsigned long long, cookie, char *, buf, vki_size_t, len);
+
+   PRE_MEM_WRITE( "sys_lookup_dcookie(buf)", ARG2, ARG3 );
+}
+
+POST(sys_lookup_dcookie)
+{
+   vg_assert(SUCCESS);
+   if (ARG2 != (Addr)NULL)
+     POST_MEM_WRITE( ARG2, RES );
+}
+#endif
+
+/* ---------------------------------------------------------------------
+   fcntl wrappers
+   ------------------------------------------------------------------ */
+
+PRE(sys_fcntl)
+{
+   switch (ARG2) {
+   // These ones ignore ARG3.
+   case VKI_F_GETFD:
+   case VKI_F_GETFL:
+   case VKI_F_GETOWN:
+   case VKI_F_GETSIG:
+   case VKI_F_GETLEASE:
+      PRINT("sys_fcntl ( %ld, %ld )", ARG1,ARG2);
+      PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
+      break;
+
+   // These ones use ARG3 as "arg".
+   case VKI_F_DUPFD:
+   case VKI_F_SETFD:
+   case VKI_F_SETFL:
+   case VKI_F_SETLEASE:
+   case VKI_F_NOTIFY:
+   case VKI_F_SETOWN:
+   case VKI_F_SETSIG:
+      PRINT("sys_fcntl[ARG3=='arg'] ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd, unsigned long, arg);
+      break;
+
+   // These ones use ARG3 as "lock".
+   case VKI_F_GETLK:
+   case VKI_F_SETLK:
+   case VKI_F_SETLKW:
+#  if defined(VGP_x86_linux)
+   case VKI_F_GETLK64:
+   case VKI_F_SETLK64:
+   case VKI_F_SETLKW64:
+#  endif
+      PRINT("sys_fcntl[ARG3=='lock'] ( %ld, %ld, %#lx )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct flock64 *, lock);
+      break;
+
+   default:
+      PRINT("sys_fcntl[UNKNOWN] ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
+      I_die_here;
+      break;
+   }
+
+#  if defined(VGP_x86_linux)
+   if (ARG2 == VKI_F_SETLKW || ARG2 == VKI_F_SETLKW64)
+#  else
+   if (ARG2 == VKI_F_SETLKW)
+#  endif
+      *flags |= SfMayBlock;
+}
+
+POST(sys_fcntl)
+{
+   vg_assert(SUCCESS);
+   if (ARG2 == VKI_F_DUPFD) {
+      if (!ML_(fd_allowed)(RES, "fcntl(DUPFD)", tid, True)) {
+         VG_(close)(RES);
+         SET_STATUS_Failure( VKI_EMFILE );
+      } else {
+         if (VG_(clo_track_fds))
+            ML_(record_fd_open_named)(tid, RES);
+      }
+   }
+}
+
+// XXX: wrapper only suitable for 32-bit systems
+PRE(sys_fcntl64)
+{
+   switch (ARG2) {
+   // These ones ignore ARG3.
+   case VKI_F_GETFD:
+   case VKI_F_GETFL:
+   case VKI_F_GETOWN:
+   case VKI_F_SETOWN:
+   case VKI_F_GETSIG:
+   case VKI_F_SETSIG:
+   case VKI_F_GETLEASE:
+      PRINT("sys_fcntl64 ( %ld, %ld )", ARG1,ARG2);
+      PRE_REG_READ2(long, "fcntl64", unsigned int, fd, unsigned int, cmd);
+      break;
+
+   // These ones use ARG3 as "arg".
+   case VKI_F_DUPFD:
+   case VKI_F_SETFD:
+   case VKI_F_SETFL:
+   case VKI_F_SETLEASE:
+   case VKI_F_NOTIFY:
+      PRINT("sys_fcntl64[ARG3=='arg'] ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl64",
+                    unsigned int, fd, unsigned int, cmd, unsigned long, arg);
+      break;
+
+   // These ones use ARG3 as "lock".
+   case VKI_F_GETLK:
+   case VKI_F_SETLK:
+   case VKI_F_SETLKW:
+#  if defined(VGP_x86_linux)
+   case VKI_F_GETLK64:
+   case VKI_F_SETLK64:
+   case VKI_F_SETLKW64:
+#  endif
+      PRINT("sys_fcntl64[ARG3=='lock'] ( %ld, %ld, %#lx )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl64",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct flock64 *, lock);
+      break;
+   }
+   
+#  if defined(VGP_x86_linux)
+   if (ARG2 == VKI_F_SETLKW || ARG2 == VKI_F_SETLKW64)
+#  else
+   if (ARG2 == VKI_F_SETLKW)
+#  endif
+      *flags |= SfMayBlock;
+}
+
+POST(sys_fcntl64)
+{
+   vg_assert(SUCCESS);
+   if (ARG2 == VKI_F_DUPFD) {
+      if (!ML_(fd_allowed)(RES, "fcntl64(DUPFD)", tid, True)) {
+         VG_(close)(RES);
+         SET_STATUS_Failure( VKI_EMFILE );
+      } else {
+         if (VG_(clo_track_fds))
+            ML_(record_fd_open_named)(tid, RES);
+      }
+   }
+}
+
+/* ---------------------------------------------------------------------
+   ioctl wrappers
+   ------------------------------------------------------------------ */
+
+PRE(sys_ioctl)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_ioctl ( %ld, 0x%lx, %#lx )",ARG1,ARG2,ARG3);
+   PRE_REG_READ3(long, "ioctl",
+                 unsigned int, fd, unsigned int, request, unsigned long, arg);
+
+   // We first handle the ones that don't use ARG3 (even as a
+   // scalar/non-pointer argument).
+   switch (ARG2 /* request */) {
+
+      /* linux/soundcard interface (ALSA) */
+   case VKI_SNDRV_PCM_IOCTL_HW_FREE:
+   case VKI_SNDRV_PCM_IOCTL_HWSYNC:
+   case VKI_SNDRV_PCM_IOCTL_PREPARE:
+   case VKI_SNDRV_PCM_IOCTL_RESET:
+   case VKI_SNDRV_PCM_IOCTL_START:
+   case VKI_SNDRV_PCM_IOCTL_DROP:
+   case VKI_SNDRV_PCM_IOCTL_DRAIN:
+   case VKI_SNDRV_PCM_IOCTL_RESUME:
+   case VKI_SNDRV_PCM_IOCTL_XRUN:
+   case VKI_SNDRV_PCM_IOCTL_UNLINK:
+   case VKI_SNDRV_TIMER_IOCTL_START:
+   case VKI_SNDRV_TIMER_IOCTL_STOP:
+   case VKI_SNDRV_TIMER_IOCTL_CONTINUE:
+   case VKI_SNDRV_TIMER_IOCTL_PAUSE:
+      PRINT("sys_ioctl ( %ld, 0x%lx )",ARG1,ARG2);
+      PRE_REG_READ2(long, "ioctl",
+                    unsigned int, fd, unsigned int, request);
+      return;
+
+   default:
+      PRINT("sys_ioctl ( %ld, 0x%lx, 0x%lx )",ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "ioctl",
+                    unsigned int, fd, unsigned int, request, unsigned long, arg);
+      break;
+   }
+
+   // We now handle those that do look at ARG3 (and unknown ones fall into
+   // this category).  Nb: some of these may well belong in the
+   // doesn't-use-ARG3 switch above.
+   switch (ARG2 /* request */) {
+   case VKI_TCSETS:
+   case VKI_TCSETSW:
+   case VKI_TCSETSF:
+      PRE_MEM_READ( "ioctl(TCSET{S,SW,SF})", ARG3, sizeof(struct vki_termios) );
+      break; 
+   case VKI_TCGETS:
+      PRE_MEM_WRITE( "ioctl(TCGETS)", ARG3, sizeof(struct vki_termios) );
+      break;
+   case VKI_TCSETA:
+   case VKI_TCSETAW:
+   case VKI_TCSETAF:
+      PRE_MEM_READ( "ioctl(TCSET{A,AW,AF})", ARG3, sizeof(struct vki_termio) );
+      break;
+   case VKI_TCGETA:
+      PRE_MEM_WRITE( "ioctl(TCGETA)", ARG3, sizeof(struct vki_termio) );
+      break;
+   case VKI_TCSBRK:
+   case VKI_TCXONC:
+   case VKI_TCSBRKP:
+   case VKI_TCFLSH:
+      /* These just take an int by value */
+      break;
+   case VKI_TIOCGWINSZ:
+      PRE_MEM_WRITE( "ioctl(TIOCGWINSZ)", ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCSWINSZ:
+      PRE_MEM_READ( "ioctl(TIOCSWINSZ)",  ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCMBIS:
+      PRE_MEM_READ( "ioctl(TIOCMBIS)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMBIC:
+      PRE_MEM_READ( "ioctl(TIOCMBIC)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMSET:
+      PRE_MEM_READ( "ioctl(TIOCMSET)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMGET:
+      PRE_MEM_WRITE( "ioctl(TIOCMGET)",   ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCLINUX:
+      PRE_MEM_READ( "ioctl(TIOCLINUX)",   ARG3, sizeof(char *) );
+      if (*(char *)ARG3 == 11) {
+	 PRE_MEM_READ( "ioctl(TIOCLINUX, 11)", ARG3, 2 * sizeof(char *) );
+      }
+      break;
+   case VKI_TIOCGPGRP:
+      /* Get process group ID for foreground processing group. */
+      PRE_MEM_WRITE( "ioctl(TIOCGPGRP)", ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSPGRP:
+      /* Set a process group ID? */
+      PRE_MEM_WRITE( "ioctl(TIOCGPGRP)", ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCGPTN: /* Get Pty Number (of pty-mux device) */
+      PRE_MEM_WRITE( "ioctl(TIOCGPTN)", ARG3, sizeof(int) );
+      break;
+   case VKI_TIOCSCTTY:
+      /* Just takes an int value.  */
+      break;
+   case VKI_TIOCSPTLCK: /* Lock/unlock Pty */
+      PRE_MEM_READ( "ioctl(TIOCSPTLCK)", ARG3, sizeof(int) );
+      break;
+   case VKI_FIONBIO:
+      PRE_MEM_READ( "ioctl(FIONBIO)",    ARG3, sizeof(int) );
+      break;
+   case VKI_FIOASYNC:
+      PRE_MEM_READ( "ioctl(FIOASYNC)",   ARG3, sizeof(int) );
+      break;
+   case VKI_FIONREAD:                /* identical to SIOCINQ */
+      PRE_MEM_WRITE( "ioctl(FIONREAD)",  ARG3, sizeof(int) );
+      break;
+
+   case VKI_TIOCSERGETLSR:
+      PRE_MEM_WRITE( "ioctl(TIOCSERGETLSR)", ARG3, sizeof(int) );
+      break;
+   case VKI_TIOCGICOUNT:
+      PRE_MEM_WRITE( "ioctl(TIOCGICOUNT)", ARG3,
+                     sizeof(struct vki_serial_icounter_struct) );
+      break;
+
+   case VKI_SG_SET_COMMAND_Q:
+      PRE_MEM_READ( "ioctl(SG_SET_COMMAND_Q)", ARG3, sizeof(int) );
+      break;
+   case VKI_SG_IO:
+      PRE_MEM_WRITE( "ioctl(SG_IO)", ARG3, sizeof(vki_sg_io_hdr_t) );
+      break;
+   case VKI_SG_GET_SCSI_ID:
+      PRE_MEM_WRITE( "ioctl(SG_GET_SCSI_ID)", ARG3, sizeof(vki_sg_scsi_id_t) );
+      break;
+   case VKI_SG_SET_RESERVED_SIZE:
+      PRE_MEM_READ( "ioctl(SG_SET_RESERVED_SIZE)", ARG3, sizeof(int) );
+      break;
+   case VKI_SG_SET_TIMEOUT:
+      PRE_MEM_READ( "ioctl(SG_SET_TIMEOUT)", ARG3, sizeof(int) );
+      break;
+   case VKI_SG_GET_RESERVED_SIZE:
+      PRE_MEM_WRITE( "ioctl(SG_GET_RESERVED_SIZE)", ARG3, sizeof(int) );
+      break;
+   case VKI_SG_GET_TIMEOUT:
+      break;
+   case VKI_SG_GET_VERSION_NUM:
+      PRE_MEM_WRITE(  "ioctl(SG_GET_VERSION_NUM)",  ARG3, sizeof(int) );
+      break;
+   case VKI_SG_EMULATED_HOST: /* 0x2203 */
+      PRE_MEM_WRITE( "ioctl(SG_EMULATED_HOST)",    ARG3, sizeof(int) );
+      break;
+   case VKI_SG_GET_SG_TABLESIZE: /* 0x227f */
+      PRE_MEM_WRITE( "ioctl(SG_GET_SG_TABLESIZE)", ARG3, sizeof(int) );
+      break;
+
+   case VKI_IIOCGETCPS:
+      PRE_MEM_WRITE( "ioctl(IIOCGETCPS)", ARG3,
+		     VKI_ISDN_MAX_CHANNELS * 2 * sizeof(unsigned long) );
+      break;
+   case VKI_IIOCNETGPN:
+      PRE_MEM_READ( "ioctl(IIOCNETGPN)",
+		     (Addr)&((vki_isdn_net_ioctl_phone *)ARG3)->name,
+		     sizeof(((vki_isdn_net_ioctl_phone *)ARG3)->name) );
+      PRE_MEM_WRITE( "ioctl(IIOCNETGPN)", ARG3,
+		     sizeof(vki_isdn_net_ioctl_phone) );
+      break;
+
+      /* These all use struct ifreq AFAIK */
+   case VKI_SIOCGIFINDEX:        /* get iface index              */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFINDEX)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFINDEX)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFFLAGS:        /* get flags                    */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFFLAGS)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFFLAGS)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFHWADDR:       /* Get hardware address         */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFHWADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFHWADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFMTU:          /* get MTU size                 */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMTU)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMTU)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFADDR:         /* get PA address               */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFNETMASK:      /* get network PA mask          */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFNETMASK)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFNETMASK)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFMETRIC:       /* get metric                   */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMETRIC)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMETRIC)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFMAP:          /* Get device parameters        */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMAP)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMAP)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFTXQLEN:       /* Get the tx queue length      */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFTXQLEN)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFTXQLEN)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFDSTADDR:      /* get remote PA address        */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFDSTADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFDSTADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFBRDADDR:      /* get broadcast PA address     */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFBRDADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFBRDADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFNAME:         /* get iface name               */
+      PRE_MEM_READ( "ioctl(SIOCGIFNAME)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_ifindex,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_ifindex) );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFNAME)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGMIIPHY:         /* get hardware entry           */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMIIPHY)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMIIPHY)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGMIIREG:         /* get hardware entry registers */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMIIREG)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCGIFMIIREG)",
+                     (Addr)&((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->phy_id,
+                     sizeof(((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->phy_id) );
+      PRE_MEM_READ( "ioctl(SIOCGIFMIIREG)",
+                     (Addr)&((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->reg_num,
+                     sizeof(((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->reg_num) );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMIIREG)", ARG3, 
+		     sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFCONF:         /* get iface list               */
+      /* WAS:
+	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
+	 KERNEL_DO_SYSCALL(tid,RES);
+	 if (!VG_(is_kerror)(RES) && RES == 0)
+	 POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
+      */
+      PRE_MEM_READ( "ioctl(SIOCGIFCONF)",
+                    (Addr)&((struct vki_ifconf *)ARG3)->ifc_len,
+                    sizeof(((struct vki_ifconf *)ARG3)->ifc_len));
+      PRE_MEM_READ( "ioctl(SIOCGIFCONF)",
+                    (Addr)&((struct vki_ifconf *)ARG3)->vki_ifc_buf,
+                    sizeof(((struct vki_ifconf *)ARG3)->vki_ifc_buf));
+      if ( ARG3 ) {
+	 // TODO len must be readable and writable
+	 // buf pointer only needs to be readable
+	 struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
+	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF).ifc_buf",
+			(Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
+      }
+      break;
+   case VKI_SIOCGSTAMP:
+      PRE_MEM_WRITE( "ioctl(SIOCGSTAMP)", ARG3, sizeof(struct vki_timeval));
+      break;
+   case VKI_SIOCGSTAMPNS:
+      PRE_MEM_WRITE( "ioctl(SIOCGSTAMPNS)", ARG3, sizeof(struct vki_timespec));
+      break;
+      /* SIOCOUTQ is an ioctl that, when called on a socket, returns
+	 the number of bytes currently in that socket's send buffer.
+	 It writes this value as an int to the memory location
+	 indicated by the third argument of ioctl(2). */
+   case VKI_SIOCOUTQ:
+      PRE_MEM_WRITE( "ioctl(SIOCOUTQ)", ARG3, sizeof(int));
+      break;
+   case VKI_SIOCGRARP:           /* get RARP table entry         */
+   case VKI_SIOCGARP:            /* get ARP table entry          */
+      PRE_MEM_WRITE( "ioctl(SIOCGARP)", ARG3, sizeof(struct vki_arpreq));
+      break;
+                    
+   case VKI_SIOCSIFFLAGS:        /* set flags                    */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFFLAGS)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFFLAGS)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_flags,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_flags) );
+      break;
+   case VKI_SIOCSIFMAP:          /* Set device parameters        */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFMAP)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFMAP)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->ifr_map,
+                     sizeof(((struct vki_ifreq *)ARG3)->ifr_map) );
+      break;
+   case VKI_SIOCSIFTXQLEN:       /* Set the tx queue length      */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFTXQLEN)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFTXQLEN)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->ifr_qlen,
+                     sizeof(((struct vki_ifreq *)ARG3)->ifr_qlen) );
+      break;
+   case VKI_SIOCSIFADDR:         /* set PA address               */
+   case VKI_SIOCSIFDSTADDR:      /* set remote PA address        */
+   case VKI_SIOCSIFBRDADDR:      /* set broadcast PA address     */
+   case VKI_SIOCSIFNETMASK:      /* set network PA mask          */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIF*ADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIF*ADDR)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->ifr_addr,
+                     sizeof(((struct vki_ifreq *)ARG3)->ifr_addr) );
+      break;
+   case VKI_SIOCSIFMETRIC:       /* set metric                   */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFMETRIC)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFMETRIC)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_metric,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_metric) );
+      break;
+   case VKI_SIOCSIFMTU:          /* set MTU size                 */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFMTU)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFMTU)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_mtu,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_mtu) );
+      break;
+   case VKI_SIOCSIFHWADDR:       /* set hardware address         */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFHWADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFHWADDR)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->ifr_hwaddr,
+                     sizeof(((struct vki_ifreq *)ARG3)->ifr_hwaddr) );
+      break;
+   case VKI_SIOCSMIIREG:         /* set hardware entry registers */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSMIIREG)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSMIIREG)",
+                     (Addr)&((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->phy_id,
+                     sizeof(((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->phy_id) );
+      PRE_MEM_READ( "ioctl(SIOCSMIIREG)",
+                     (Addr)&((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->reg_num,
+                     sizeof(((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->reg_num) );
+      PRE_MEM_READ( "ioctl(SIOCSMIIREG)",
+                     (Addr)&((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->val_in,
+                     sizeof(((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->val_in) );
+      break;
+      /* Routing table calls.  */
+   case VKI_SIOCADDRT:           /* add routing table entry      */
+   case VKI_SIOCDELRT:           /* delete routing table entry   */
+      PRE_MEM_READ( "ioctl(SIOCADDRT/DELRT)", ARG3, 
+		    sizeof(struct vki_rtentry));
+      break;
+
+      /* RARP cache control calls. */
+   case VKI_SIOCDRARP:           /* delete RARP table entry      */
+   case VKI_SIOCSRARP:           /* set RARP table entry         */
+      /* ARP cache control calls. */
+   case VKI_SIOCSARP:            /* set ARP table entry          */
+   case VKI_SIOCDARP:            /* delete ARP table entry       */
+      PRE_MEM_READ( "ioctl(SIOCSIFFLAGS)", ARG3, sizeof(struct vki_ifreq));
+      break;
+
+   case VKI_SIOCGPGRP:
+      PRE_MEM_WRITE( "ioctl(SIOCGPGRP)", ARG3, sizeof(int) );
+      break;
+   case VKI_SIOCSPGRP:
+      PRE_MEM_READ( "ioctl(SIOCSPGRP)", ARG3, sizeof(int) );
+      //tst->sys_flags &= ~SfMayBlock;
+      break;
+
+      /* linux/soundcard interface (OSS) */
+   case VKI_SNDCTL_SEQ_GETOUTCOUNT:
+   case VKI_SNDCTL_SEQ_GETINCOUNT:
+   case VKI_SNDCTL_SEQ_PERCMODE:
+   case VKI_SNDCTL_SEQ_TESTMIDI:
+   case VKI_SNDCTL_SEQ_RESETSAMPLES:
+   case VKI_SNDCTL_SEQ_NRSYNTHS:
+   case VKI_SNDCTL_SEQ_NRMIDIS:
+   case VKI_SNDCTL_SEQ_GETTIME:
+   case VKI_SNDCTL_DSP_GETFMTS:
+   case VKI_SNDCTL_DSP_GETTRIGGER:
+   case VKI_SNDCTL_DSP_GETODELAY:
+   case VKI_SNDCTL_DSP_GETSPDIF:
+   case VKI_SNDCTL_DSP_GETCAPS:
+   case VKI_SOUND_PCM_READ_RATE:
+   case VKI_SOUND_PCM_READ_CHANNELS:
+   case VKI_SOUND_PCM_READ_BITS:
+#if !defined(VGA_ppc32) && !defined(VGA_ppc64)
+   case (VKI_SOUND_PCM_READ_BITS|0x40000000): /* what the fuck ? */
+#endif
+   case VKI_SOUND_PCM_READ_FILTER:
+      PRE_MEM_WRITE( "ioctl(SNDCTL_XXX|SOUND_XXX (SIOR, int))", 
+		     ARG3, sizeof(int));
+      break;
+   case VKI_SNDCTL_SEQ_CTRLRATE:
+   case VKI_SNDCTL_DSP_SPEED:
+   case VKI_SNDCTL_DSP_STEREO:
+   case VKI_SNDCTL_DSP_GETBLKSIZE: 
+   case VKI_SNDCTL_DSP_CHANNELS:
+   case VKI_SOUND_PCM_WRITE_FILTER:
+   case VKI_SNDCTL_DSP_SUBDIVIDE:
+   case VKI_SNDCTL_DSP_SETFRAGMENT:
+   case VKI_SNDCTL_DSP_GETCHANNELMASK:
+   case VKI_SNDCTL_DSP_BIND_CHANNEL:
+   case VKI_SNDCTL_TMR_TIMEBASE:
+   case VKI_SNDCTL_TMR_TEMPO:
+   case VKI_SNDCTL_TMR_SOURCE:
+   case VKI_SNDCTL_MIDI_PRETIME:
+   case VKI_SNDCTL_MIDI_MPUMODE:
+      PRE_MEM_READ( "ioctl(SNDCTL_XXX|SOUND_XXX (SIOWR, int))", 
+		     ARG3, sizeof(int));
+      PRE_MEM_WRITE( "ioctl(SNDCTL_XXX|SOUND_XXX (SIOWR, int))", 
+		     ARG3, sizeof(int));
+      break;
+   case VKI_SNDCTL_DSP_GETOSPACE:
+   case VKI_SNDCTL_DSP_GETISPACE:
+      PRE_MEM_WRITE( "ioctl(SNDCTL_XXX|SOUND_XXX (SIOR, audio_buf_info))",
+                     ARG3, sizeof(vki_audio_buf_info));
+      break;
+   case VKI_SNDCTL_DSP_NONBLOCK:
+      break;
+   case VKI_SNDCTL_DSP_SETTRIGGER:
+      PRE_MEM_READ( "ioctl(SNDCTL_XXX|SOUND_XXX (SIOW, int))", 
+		     ARG3, sizeof(int));
+      break;
+
+   case VKI_SNDCTL_DSP_POST:
+   case VKI_SNDCTL_DSP_RESET:
+   case VKI_SNDCTL_DSP_SYNC:
+   case VKI_SNDCTL_DSP_SETSYNCRO:
+   case VKI_SNDCTL_DSP_SETDUPLEX:
+      break;
+
+      /* linux/soundcard interface (ALSA) */
+   case VKI_SNDRV_PCM_IOCTL_PAUSE:
+   case VKI_SNDRV_PCM_IOCTL_LINK:
+      /* these just take an int by value */
+      break;
+
+      /* Real Time Clock (/dev/rtc) ioctls */
+   case VKI_RTC_UIE_ON:
+   case VKI_RTC_UIE_OFF:
+   case VKI_RTC_AIE_ON:
+   case VKI_RTC_AIE_OFF:
+   case VKI_RTC_PIE_ON:
+   case VKI_RTC_PIE_OFF:
+   case VKI_RTC_IRQP_SET:
+      break;
+   case VKI_RTC_RD_TIME:
+   case VKI_RTC_ALM_READ:
+      PRE_MEM_WRITE( "ioctl(RTC_RD_TIME/ALM_READ)", 
+		     ARG3, sizeof(struct vki_rtc_time));
+      break;
+   case VKI_RTC_ALM_SET:
+      PRE_MEM_READ( "ioctl(RTC_ALM_SET)", ARG3, sizeof(struct vki_rtc_time));
+      break;
+   case VKI_RTC_IRQP_READ:
+      PRE_MEM_WRITE( "ioctl(RTC_IRQP_READ)", ARG3, sizeof(unsigned long));
+      break;
+
+      /* Block devices */
+   case VKI_BLKROSET:
+      PRE_MEM_READ( "ioctl(BLKROSET)", ARG3, sizeof(int));
+      break;
+   case VKI_BLKROGET:
+      PRE_MEM_WRITE( "ioctl(BLKROGET)", ARG3, sizeof(int));
+      break;
+   case VKI_BLKGETSIZE:
+      PRE_MEM_WRITE( "ioctl(BLKGETSIZE)", ARG3, sizeof(unsigned long));
+      break;
+   case VKI_BLKRASET:
+      break;
+   case VKI_BLKRAGET:
+      PRE_MEM_WRITE( "ioctl(BLKRAGET)", ARG3, sizeof(long));
+      break;
+   case VKI_BLKFRASET:
+      break;
+   case VKI_BLKFRAGET:
+      PRE_MEM_WRITE( "ioctl(BLKFRAGET)", ARG3, sizeof(long));
+      break;
+   case VKI_BLKSECTGET:
+      PRE_MEM_WRITE( "ioctl(BLKSECTGET)", ARG3, sizeof(unsigned short));
+      break;
+   case VKI_BLKSSZGET:
+      PRE_MEM_WRITE( "ioctl(BLKSSZGET)", ARG3, sizeof(int));
+      break;
+   case VKI_BLKBSZGET:
+      PRE_MEM_WRITE( "ioctl(BLKBSZGET)", ARG3, sizeof(int));
+      break;
+   case VKI_BLKBSZSET:
+      PRE_MEM_READ( "ioctl(BLKBSZSET)", ARG3, sizeof(int));
+      break;
+   case VKI_BLKGETSIZE64:
+      PRE_MEM_WRITE( "ioctl(BLKGETSIZE64)", ARG3, sizeof(unsigned long long));
+      break;
+
+      /* Hard disks */
+   case VKI_HDIO_GETGEO: /* 0x0301 */
+      PRE_MEM_WRITE( "ioctl(HDIO_GETGEO)", ARG3, sizeof(struct vki_hd_geometry));
+      break;
+   case VKI_HDIO_GET_DMA: /* 0x030b */
+      PRE_MEM_WRITE( "ioctl(HDIO_GET_DMA)", ARG3, sizeof(long));
+      break;
+   case VKI_HDIO_GET_IDENTITY: /* 0x030d */
+      PRE_MEM_WRITE( "ioctl(HDIO_GET_IDENTITY)", ARG3,
+                     VKI_SIZEOF_STRUCT_HD_DRIVEID );
+      break;
+
+      /* CD ROM stuff (??)  */
+   case VKI_CDROM_GET_MCN:
+      PRE_MEM_READ( "ioctl(CDROM_GET_MCN)", ARG3,
+                    sizeof(struct vki_cdrom_mcn) );
+      break;
+   case VKI_CDROM_SEND_PACKET:
+      PRE_MEM_READ( "ioctl(CDROM_SEND_PACKET)", ARG3,
+                    sizeof(struct vki_cdrom_generic_command));
+      break;
+   case VKI_CDROMSUBCHNL:
+      PRE_MEM_READ( "ioctl(CDROMSUBCHNL (cdsc_format, char))",
+		    (Addr) &(((struct vki_cdrom_subchnl*) ARG3)->cdsc_format),
+		    sizeof(((struct vki_cdrom_subchnl*) ARG3)->cdsc_format));
+      PRE_MEM_WRITE( "ioctl(CDROMSUBCHNL)", ARG3, 
+		     sizeof(struct vki_cdrom_subchnl));
+      break;
+   case VKI_CDROMREADMODE2:
+      PRE_MEM_READ( "ioctl(CDROMREADMODE2)", ARG3, VKI_CD_FRAMESIZE_RAW0 );
+      break;
+   case VKI_CDROMREADTOCHDR:
+      PRE_MEM_WRITE( "ioctl(CDROMREADTOCHDR)", ARG3, 
+		     sizeof(struct vki_cdrom_tochdr));
+      break;
+   case VKI_CDROMREADTOCENTRY:
+      PRE_MEM_READ( "ioctl(CDROMREADTOCENTRY (cdte_format, char))",
+		    (Addr) &(((struct vki_cdrom_tocentry*) ARG3)->cdte_format),
+		    sizeof(((struct vki_cdrom_tocentry*) ARG3)->cdte_format));
+      PRE_MEM_READ( "ioctl(CDROMREADTOCENTRY (cdte_track, char))",
+		    (Addr) &(((struct vki_cdrom_tocentry*) ARG3)->cdte_track), 
+		    sizeof(((struct vki_cdrom_tocentry*) ARG3)->cdte_track));
+      PRE_MEM_WRITE( "ioctl(CDROMREADTOCENTRY)", ARG3, 
+		     sizeof(struct vki_cdrom_tocentry));
+      break;
+   case VKI_CDROMMULTISESSION: /* 0x5310 */
+      PRE_MEM_WRITE( "ioctl(CDROMMULTISESSION)", ARG3,
+		     sizeof(struct vki_cdrom_multisession));
+      break;
+   case VKI_CDROMVOLREAD: /* 0x5313 */
+      PRE_MEM_WRITE( "ioctl(CDROMVOLREAD)", ARG3,
+		     sizeof(struct vki_cdrom_volctrl));
+      break;
+   case VKI_CDROMREADRAW: /* 0x5314 */
+      PRE_MEM_READ( "ioctl(CDROMREADRAW)", ARG3, sizeof(struct vki_cdrom_msf));
+      PRE_MEM_WRITE( "ioctl(CDROMREADRAW)", ARG3, VKI_CD_FRAMESIZE_RAW);
+      break;
+   case VKI_CDROMREADAUDIO: /* 0x530e */
+      PRE_MEM_READ( "ioctl(CDROMREADAUDIO)", ARG3,
+		     sizeof (struct vki_cdrom_read_audio));
+      if ( ARG3 ) {
+         /* ToDo: don't do any of the following if the structure is invalid */
+         struct vki_cdrom_read_audio *cra = (struct vki_cdrom_read_audio *) ARG3;
+	 PRE_MEM_WRITE( "ioctl(CDROMREADAUDIO).buf",
+	                (Addr)(cra->buf), cra->nframes * VKI_CD_FRAMESIZE_RAW);
+      }
+      break;      
+   case VKI_CDROMPLAYMSF:
+      PRE_MEM_READ( "ioctl(CDROMPLAYMSF)", ARG3, sizeof(struct vki_cdrom_msf));
+      break;
+      /* The following two are probably bogus (should check args
+	 for readability).  JRS 20021117 */
+   case VKI_CDROM_DRIVE_STATUS: /* 0x5326 */
+   case VKI_CDROM_CLEAR_OPTIONS: /* 0x5321 */
+      break;
+
+   case VKI_FIGETBSZ:
+      PRE_MEM_WRITE( "ioctl(FIGETBSZ)", ARG3, sizeof(unsigned long));
+      break;
+   case VKI_FIBMAP:
+      PRE_MEM_READ( "ioctl(FIBMAP)", ARG3, sizeof(unsigned long));
+      break;
+
+   case VKI_FBIOGET_VSCREENINFO: /* 0x4600 */
+      PRE_MEM_WRITE( "ioctl(FBIOGET_VSCREENINFO)", ARG3,
+                     sizeof(struct vki_fb_var_screeninfo));
+      break;
+   case VKI_FBIOGET_FSCREENINFO: /* 0x4602 */
+      PRE_MEM_WRITE( "ioctl(FBIOGET_FSCREENINFO)", ARG3,
+                     sizeof(struct vki_fb_fix_screeninfo));
+      break;
+
+   case VKI_PPCLAIM:
+   case VKI_PPEXCL:
+   case VKI_PPYIELD:
+   case VKI_PPRELEASE:
+      break;
+   case VKI_PPSETMODE:
+      PRE_MEM_READ( "ioctl(PPSETMODE)",   ARG3, sizeof(int) );
+      break;
+   case VKI_PPGETMODE:
+      PRE_MEM_WRITE( "ioctl(PPGETMODE)",  ARG3, sizeof(int) );
+      break;
+   case VKI_PPSETPHASE:
+      PRE_MEM_READ(  "ioctl(PPSETPHASE)", ARG3, sizeof(int) );
+      break;
+   case VKI_PPGETPHASE:
+      PRE_MEM_WRITE( "ioctl(PPGETPHASE)", ARG3, sizeof(int) );
+      break;
+   case VKI_PPGETMODES:
+      PRE_MEM_WRITE( "ioctl(PPGETMODES)", ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_PPSETFLAGS:
+      PRE_MEM_READ(  "ioctl(PPSETFLAGS)", ARG3, sizeof(int) );
+      break;
+   case VKI_PPGETFLAGS:
+      PRE_MEM_WRITE( "ioctl(PPGETFLAGS)", ARG3, sizeof(int) );
+      break;
+   case VKI_PPRSTATUS:
+      PRE_MEM_WRITE( "ioctl(PPRSTATUS)",  ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPRDATA:
+      PRE_MEM_WRITE( "ioctl(PPRDATA)",    ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPRCONTROL:
+      PRE_MEM_WRITE( "ioctl(PPRCONTROL)", ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPWDATA:
+      PRE_MEM_READ(  "ioctl(PPWDATA)",    ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPWCONTROL:
+      PRE_MEM_READ(  "ioctl(PPWCONTROL)", ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPFCONTROL:
+      PRE_MEM_READ(  "ioctl(PPFCONTROL)", ARG3, 2 * sizeof(unsigned char) );
+      break;
+   case VKI_PPDATADIR:
+      PRE_MEM_READ(  "ioctl(PPDATADIR)",  ARG3, sizeof(int) );
+      break;
+   case VKI_PPNEGOT:
+      PRE_MEM_READ(  "ioctl(PPNEGOT)",    ARG3, sizeof(int) );
+      break;
+   case VKI_PPWCTLONIRQ:
+      PRE_MEM_READ(  "ioctl(PPWCTLONIRQ)",ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPCLRIRQ:
+      PRE_MEM_WRITE( "ioctl(PPCLRIRQ)",   ARG3, sizeof(int) );
+      break;
+   case VKI_PPSETTIME:
+      PRE_MEM_READ(  "ioctl(PPSETTIME)",  ARG3, sizeof(struct vki_timeval) );
+      break;
+   case VKI_PPGETTIME:
+      PRE_MEM_WRITE( "ioctl(PPGETTIME)",  ARG3, sizeof(struct vki_timeval) );
+      break;
+
+   case VKI_GIO_FONT:
+      PRE_MEM_WRITE( "ioctl(GIO_FONT)", ARG3, 32 * 256 );
+      break;
+   case VKI_PIO_FONT:
+      PRE_MEM_READ( "ioctl(PIO_FONT)", ARG3, 32 * 256 );
+      break;
+
+   case VKI_GIO_FONTX:
+      PRE_MEM_READ( "ioctl(GIO_FONTX)", ARG3, sizeof(struct vki_consolefontdesc) );
+      if ( ARG3 ) {
+         /* ToDo: don't do any of the following if the structure is invalid */
+         struct vki_consolefontdesc *cfd = (struct vki_consolefontdesc *)ARG3;
+         PRE_MEM_WRITE( "ioctl(GIO_FONTX).chardata", (Addr)cfd->chardata,
+                        32 * cfd->charcount );
+      }
+      break;
+   case VKI_PIO_FONTX:
+      PRE_MEM_READ( "ioctl(PIO_FONTX)", ARG3, sizeof(struct vki_consolefontdesc) );
+      if ( ARG3 ) {
+         /* ToDo: don't do any of the following if the structure is invalid */
+         struct vki_consolefontdesc *cfd = (struct vki_consolefontdesc *)ARG3;
+         PRE_MEM_READ( "ioctl(PIO_FONTX).chardata", (Addr)cfd->chardata,
+                       32 * cfd->charcount );
+      }
+      break;
+
+   case VKI_PIO_FONTRESET:
+      break;
+
+   case VKI_GIO_CMAP:
+      PRE_MEM_WRITE( "ioctl(GIO_CMAP)", ARG3, 16 * 3 );
+      break;
+   case VKI_PIO_CMAP:
+      PRE_MEM_READ( "ioctl(PIO_CMAP)", ARG3, 16 * 3 );
+      break;
+
+   case VKI_KIOCSOUND:
+   case VKI_KDMKTONE:
+      break;
+
+   case VKI_KDGETLED:
+      PRE_MEM_WRITE( "ioctl(KDGETLED)", ARG3, sizeof(char) );
+      break;
+   case VKI_KDSETLED:
+      break;
+
+   case VKI_KDGKBTYPE:
+      PRE_MEM_WRITE( "ioctl(KDGKBTYPE)", ARG3, sizeof(char) );
+      break;
+
+   case VKI_KDADDIO:
+   case VKI_KDDELIO:
+   case VKI_KDENABIO:
+   case VKI_KDDISABIO:
+      break;
+
+   case VKI_KDSETMODE:
+      break;
+   case VKI_KDGETMODE:
+      PRE_MEM_WRITE( "ioctl(KDGETMODE)", ARG3, sizeof(int) );
+      break;
+
+   case VKI_KDMAPDISP:
+   case VKI_KDUNMAPDISP:
+      break;
+
+   case VKI_GIO_SCRNMAP:
+      PRE_MEM_WRITE( "ioctl(GIO_SCRNMAP)", ARG3, VKI_E_TABSZ );
+      break;
+   case VKI_PIO_SCRNMAP:
+      PRE_MEM_READ( "ioctl(PIO_SCRNMAP)", ARG3, VKI_E_TABSZ  );
+      break;
+   case VKI_GIO_UNISCRNMAP:
+      PRE_MEM_WRITE( "ioctl(GIO_UNISCRNMAP)", ARG3,
+                     VKI_E_TABSZ * sizeof(unsigned short) );
+      break;
+   case VKI_PIO_UNISCRNMAP:
+      PRE_MEM_READ( "ioctl(PIO_UNISCRNMAP)", ARG3,
+                    VKI_E_TABSZ * sizeof(unsigned short) );
+      break;
+
+   case VKI_GIO_UNIMAP:
+      if ( ARG3 ) {
+         struct vki_unimapdesc *desc = (struct vki_unimapdesc *) ARG3;
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entry_ct,
+                       sizeof(unsigned short));
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entries,
+                       sizeof(struct vki_unipair *));
+         PRE_MEM_WRITE( "ioctl(GIO_UNIMAP).entries", (Addr)desc->entries,
+                        desc->entry_ct * sizeof(struct vki_unipair));
+      }
+      break;
+   case VKI_PIO_UNIMAP:
+      if ( ARG3 ) {
+         struct vki_unimapdesc *desc = (struct vki_unimapdesc *) ARG3;
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entry_ct,
+                       sizeof(unsigned short) );
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entries,
+                       sizeof(struct vki_unipair *) );
+         PRE_MEM_READ( "ioctl(PIO_UNIMAP).entries", (Addr)desc->entries,
+                       desc->entry_ct * sizeof(struct vki_unipair) );
+      }
+      break;
+   case VKI_PIO_UNIMAPCLR:
+      PRE_MEM_READ( "ioctl(GIO_UNIMAP)", ARG3, sizeof(struct vki_unimapinit));
+      break;
+
+   case VKI_KDGKBMODE:
+      PRE_MEM_WRITE( "ioctl(KDGKBMODE)", ARG3, sizeof(int) );
+      break;
+   case VKI_KDSKBMODE:
+      break;
+      
+   case VKI_KDGKBMETA:
+      PRE_MEM_WRITE( "ioctl(KDGKBMETA)", ARG3, sizeof(int) );
+      break;
+   case VKI_KDSKBMETA:
+      break;
+      
+   case VKI_KDGKBLED:
+      PRE_MEM_WRITE( "ioctl(KDGKBLED)", ARG3, sizeof(char) );
+      break;
+   case VKI_KDSKBLED:
+      break;
+      
+   case VKI_KDGKBENT:
+      PRE_MEM_READ( "ioctl(KDGKBENT).kb_table",
+                    (Addr)&((struct vki_kbentry *)ARG3)->kb_table,
+                    sizeof(((struct vki_kbentry *)ARG3)->kb_table) );
+      PRE_MEM_READ( "ioctl(KDGKBENT).kb_index",
+                    (Addr)&((struct vki_kbentry *)ARG3)->kb_index,
+                    sizeof(((struct vki_kbentry *)ARG3)->kb_index) );
+      PRE_MEM_WRITE( "ioctl(KDGKBENT).kb_value",
+		     (Addr)&((struct vki_kbentry *)ARG3)->kb_value,
+		     sizeof(((struct vki_kbentry *)ARG3)->kb_value) );
+      break;
+   case VKI_KDSKBENT:
+      PRE_MEM_READ( "ioctl(KDSKBENT).kb_table",
+                    (Addr)&((struct vki_kbentry *)ARG3)->kb_table,
+                    sizeof(((struct vki_kbentry *)ARG3)->kb_table) );
+      PRE_MEM_READ( "ioctl(KDSKBENT).kb_index",
+                    (Addr)&((struct vki_kbentry *)ARG3)->kb_index,
+                    sizeof(((struct vki_kbentry *)ARG3)->kb_index) );
+      PRE_MEM_READ( "ioctl(KDSKBENT).kb_value",
+                    (Addr)&((struct vki_kbentry *)ARG3)->kb_value,
+                    sizeof(((struct vki_kbentry *)ARG3)->kb_value) );
+      break;
+      
+   case VKI_KDGKBSENT:
+      PRE_MEM_READ( "ioctl(KDGKBSENT).kb_func",
+                    (Addr)&((struct vki_kbsentry *)ARG3)->kb_func,
+                    sizeof(((struct vki_kbsentry *)ARG3)->kb_func) );
+      PRE_MEM_WRITE( "ioctl(KDGKSENT).kb_string",
+		     (Addr)((struct vki_kbsentry *)ARG3)->kb_string,
+		     sizeof(((struct vki_kbsentry *)ARG3)->kb_string) );
+      break;
+   case VKI_KDSKBSENT:
+      PRE_MEM_READ( "ioctl(KDSKBSENT).kb_func",
+                    (Addr)&((struct vki_kbsentry *)ARG3)->kb_func,
+                    sizeof(((struct vki_kbsentry *)ARG3)->kb_func) );
+      PRE_MEM_RASCIIZ( "ioctl(KDSKBSENT).kb_string",
+                       (Addr)((struct vki_kbsentry *)ARG3)->kb_string );
+      break;
+      
+   case VKI_KDGKBDIACR:
+      PRE_MEM_WRITE( "ioctl(KDGKBDIACR)", ARG3, sizeof(struct vki_kbdiacrs) );
+      break;
+   case VKI_KDSKBDIACR:
+      PRE_MEM_READ( "ioctl(KDSKBDIACR)", ARG3, sizeof(struct vki_kbdiacrs) );
+      break;
+      
+   case VKI_KDGETKEYCODE:
+      PRE_MEM_READ( "ioctl(KDGETKEYCODE).scancode",
+                    (Addr)&((struct vki_kbkeycode *)ARG3)->scancode,
+                    sizeof(((struct vki_kbkeycode *)ARG3)->scancode) );
+      PRE_MEM_WRITE( "ioctl(KDGETKEYCODE).keycode",
+		     (Addr)((struct vki_kbkeycode *)ARG3)->keycode,
+		     sizeof(((struct vki_kbkeycode *)ARG3)->keycode) );
+      break;
+   case VKI_KDSETKEYCODE:
+      PRE_MEM_READ( "ioctl(KDSETKEYCODE).scancode",
+                    (Addr)&((struct vki_kbkeycode *)ARG3)->scancode,
+                    sizeof(((struct vki_kbkeycode *)ARG3)->scancode) );
+      PRE_MEM_READ( "ioctl(KDSETKEYCODE).keycode",
+                    (Addr)((struct vki_kbkeycode *)ARG3)->keycode,
+                    sizeof(((struct vki_kbkeycode *)ARG3)->keycode) );
+      break;
+      
+   case VKI_KDSIGACCEPT:
+      break;
+
+   case VKI_KDKBDREP:
+      PRE_MEM_READ( "ioctl(KBKBDREP)", ARG3, sizeof(struct vki_kbd_repeat) );
+      break;
+
+   case VKI_KDFONTOP:
+      if ( ARG3 ) {
+         struct vki_console_font_op *op = (struct vki_console_font_op *) ARG3;
+         PRE_MEM_READ( "ioctl(KDFONTOP)", (Addr)op,
+                       sizeof(struct vki_console_font_op) );
+         switch ( op->op ) {
+            case VKI_KD_FONT_OP_SET:
+               PRE_MEM_READ( "ioctl(KDFONTOP,KD_FONT_OP_SET).data",
+                             (Addr)op->data,
+                             (op->width + 7) / 8 * 32 * op->charcount );
+               break;
+            case VKI_KD_FONT_OP_GET:
+               if ( op->data )
+                  PRE_MEM_WRITE( "ioctl(KDFONTOP,KD_FONT_OP_GET).data",
+                                 (Addr)op->data,
+                                 (op->width + 7) / 8 * 32 * op->charcount );
+               break;
+            case VKI_KD_FONT_OP_SET_DEFAULT:
+               if ( op->data )
+                  PRE_MEM_RASCIIZ( "ioctl(KDFONTOP,KD_FONT_OP_SET_DEFAULT).data",
+                                   (Addr)op->data );
+               break;
+            case VKI_KD_FONT_OP_COPY:
+               break;
+         }
+      }
+      break;
+
+   case VKI_VT_OPENQRY:
+      PRE_MEM_WRITE( "ioctl(VT_OPENQRY)", ARG3, sizeof(int) );
+      break;
+   case VKI_VT_GETMODE:
+      PRE_MEM_WRITE( "ioctl(VT_GETMODE)", ARG3, sizeof(struct vki_vt_mode) );
+      break;
+   case VKI_VT_SETMODE:
+      PRE_MEM_READ( "ioctl(VT_SETMODE)", ARG3, sizeof(struct vki_vt_mode) );
+      break;
+   case VKI_VT_GETSTATE:
+      PRE_MEM_WRITE( "ioctl(VT_GETSTATE).v_active",
+                     (Addr) &(((struct vki_vt_stat*) ARG3)->v_active),
+                     sizeof(((struct vki_vt_stat*) ARG3)->v_active));
+      PRE_MEM_WRITE( "ioctl(VT_GETSTATE).v_state",
+                     (Addr) &(((struct vki_vt_stat*) ARG3)->v_state),
+                     sizeof(((struct vki_vt_stat*) ARG3)->v_state));
+      break;
+   case VKI_VT_RELDISP:
+   case VKI_VT_ACTIVATE:
+   case VKI_VT_WAITACTIVE:
+   case VKI_VT_DISALLOCATE:
+      break;
+   case VKI_VT_RESIZE:
+      PRE_MEM_READ( "ioctl(VT_RESIZE)", ARG3, sizeof(struct vki_vt_sizes) );
+      break;
+   case VKI_VT_RESIZEX:
+      PRE_MEM_READ( "ioctl(VT_RESIZEX)", ARG3, sizeof(struct vki_vt_consize) );
+      break;
+   case VKI_VT_LOCKSWITCH:
+   case VKI_VT_UNLOCKSWITCH:
+      break;
+
+   case VKI_USBDEVFS_CONTROL:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_ctrltransfer *vkuc = (struct vki_usbdevfs_ctrltransfer *)ARG3;
+         PRE_MEM_READ( "ioctl(USBDEVFS_CONTROL).bRequestType", (Addr)&vkuc->bRequestType, sizeof(vkuc->bRequestType));
+         PRE_MEM_READ( "ioctl(USBDEVFS_CONTROL).bRequest", (Addr)&vkuc->bRequest, sizeof(vkuc->bRequest));
+         PRE_MEM_READ( "ioctl(USBDEVFS_CONTROL).wValue", (Addr)&vkuc->wValue, sizeof(vkuc->wValue));
+         PRE_MEM_READ( "ioctl(USBDEVFS_CONTROL).wIndex", (Addr)&vkuc->wIndex, sizeof(vkuc->wIndex));
+         PRE_MEM_READ( "ioctl(USBDEVFS_CONTROL).wLength", (Addr)&vkuc->wLength, sizeof(vkuc->wLength));
+         PRE_MEM_READ( "ioctl(USBDEVFS_CONTROL).timeout", (Addr)&vkuc->timeout, sizeof(vkuc->timeout));
+         if (vkuc->bRequestType & 0x80)
+            PRE_MEM_WRITE( "ioctl(USBDEVFS_CONTROL).data", (Addr)vkuc->data, vkuc->wLength);
+         else
+            PRE_MEM_READ( "ioctl(USBDEVFS_CONTROL).data", (Addr)vkuc->data, vkuc->wLength);
+      }
+      break;
+   case VKI_USBDEVFS_BULK:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_bulktransfer *vkub = (struct vki_usbdevfs_bulktransfer *)ARG3;
+         PRE_MEM_READ( "ioctl(USBDEVFS_BULK)", ARG3, sizeof(struct vki_usbdevfs_bulktransfer));
+         if (vkub->ep & 0x80)
+            PRE_MEM_WRITE( "ioctl(USBDEVFS_BULK).data", (Addr)vkub->data, vkub->len);
+         else
+            PRE_MEM_READ( "ioctl(USBDEVFS_BULK).data", (Addr)vkub->data, vkub->len);
+         break;
+      }
+   case VKI_USBDEVFS_GETDRIVER:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_getdriver *vkugd = (struct vki_usbdevfs_getdriver *) ARG3;
+         PRE_MEM_WRITE( "ioctl(USBDEVFS_GETDRIVER)", (Addr)&vkugd->driver, sizeof(vkugd->driver));
+         break;
+      }
+   case VKI_USBDEVFS_SUBMITURB:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_urb *vkuu = (struct vki_usbdevfs_urb *)ARG3;
+
+         /* Not the whole struct needs to be initialized */
+         PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).endpoint", (Addr)&vkuu->endpoint, sizeof(vkuu->endpoint));
+         PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).type", (Addr)&vkuu->type, sizeof(vkuu->type));
+         PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).flags", (Addr)&vkuu->flags, sizeof(vkuu->flags));
+         PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).buffer", (Addr)&vkuu->buffer, sizeof(vkuu->buffer));
+         PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).signr", (Addr)&vkuu->signr, sizeof(vkuu->signr));
+         PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).status", (Addr)&vkuu->status, sizeof(vkuu->status));
+         if (vkuu->type == VKI_USBDEVFS_URB_TYPE_CONTROL) {
+            struct vki_usbdevfs_setuppacket *vkusp = (struct vki_usbdevfs_setuppacket *)vkuu->buffer;
+            PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).buffer_length", (Addr)&vkuu->buffer_length, sizeof(vkuu->buffer_length));
+            PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).buffer.setup_packet", (Addr)vkusp, sizeof(*vkusp));
+            if (vkusp->bRequestType & 0x80)
+               PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).buffer.data", (Addr)(vkusp+1), vkuu->buffer_length - sizeof(*vkusp));
+            else
+               PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).buffer.data", (Addr)(vkusp+1), vkuu->buffer_length - sizeof(*vkusp));
+            PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).actual_length", (Addr)&vkuu->actual_length, sizeof(vkuu->actual_length));
+         } else if (vkuu->type == VKI_USBDEVFS_URB_TYPE_ISO) {
+            int total_length = 0;
+            int i;
+            PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).number_of_packets", (Addr)&vkuu->number_of_packets, sizeof(vkuu->number_of_packets));
+            for(i=0; i<vkuu->number_of_packets; i++) {
+               PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).iso_frame_desc[].length", (Addr)&vkuu->iso_frame_desc[i].length, sizeof(vkuu->iso_frame_desc[i].length));
+               PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).iso_frame_desc[].actual_length", (Addr)&vkuu->iso_frame_desc[i].actual_length, sizeof(vkuu->iso_frame_desc[i].actual_length));
+               PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).iso_frame_desc[].status", (Addr)&vkuu->iso_frame_desc[i].status, sizeof(vkuu->iso_frame_desc[i].status));
+               total_length += vkuu->iso_frame_desc[i].length;
+            }
+            if (vkuu->endpoint & 0x80)
+               PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).buffer", (Addr)vkuu->buffer, total_length);
+            else
+               PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).buffer", (Addr)vkuu->buffer, total_length);
+            PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).error_count", (Addr)&vkuu->error_count, sizeof(vkuu->error_count));
+         } else {
+            PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).buffer_length", (Addr)&vkuu->buffer_length, sizeof(vkuu->buffer_length));
+            if (vkuu->endpoint & 0x80)
+               PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).buffer", (Addr)vkuu->buffer, vkuu->buffer_length);
+            else
+               PRE_MEM_READ( "ioctl(USBDEVFS_SUBMITURB).buffer", (Addr)vkuu->buffer, vkuu->buffer_length);
+            PRE_MEM_WRITE( "ioctl(USBDEVFS_SUBMITURB).actual_length", (Addr)&vkuu->actual_length, sizeof(vkuu->actual_length));
+         }
+         break;
+      }
+   case VKI_USBDEVFS_DISCARDURB:
+      break;
+   case VKI_USBDEVFS_REAPURB:
+      if ( ARG3 ) {
+         PRE_MEM_WRITE( "ioctl(USBDEVFS_REAPURB)", ARG3, sizeof(struct vki_usbdevfs_urb **));
+         break;
+      }
+   case VKI_USBDEVFS_REAPURBNDELAY:
+      if ( ARG3 ) {
+         PRE_MEM_WRITE( "ioctl(USBDEVFS_REAPURBNDELAY)", ARG3, sizeof(struct vki_usbdevfs_urb **));
+         break;
+      }
+   case VKI_USBDEVFS_CONNECTINFO:
+      PRE_MEM_WRITE( "ioctl(USBDEVFS_CONNECTINFO)", ARG3, sizeof(struct vki_usbdevfs_connectinfo));
+      break;
+   case VKI_USBDEVFS_IOCTL:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_ioctl *vkui = (struct vki_usbdevfs_ioctl *)ARG3;
+         UInt dir2, size2;
+         PRE_MEM_READ("ioctl(USBDEVFS_IOCTL)", (Addr)vkui, sizeof(struct vki_usbdevfs_ioctl));
+         dir2  = _VKI_IOC_DIR(vkui->ioctl_code);
+         size2 = _VKI_IOC_SIZE(vkui->ioctl_code);
+         if (size2 > 0) {
+            if (dir2 & _VKI_IOC_WRITE)
+               PRE_MEM_READ("ioctl(USBDEVFS_IOCTL).dataWrite", (Addr)vkui->data, size2);
+            else if (dir2 & _VKI_IOC_READ)
+               PRE_MEM_WRITE("ioctl(USBDEVFS_IOCTL).dataRead", (Addr)vkui->data, size2);
+         }
+      }
+      break;
+
+      /* I2C (/dev/i2c-*) ioctls */
+   case VKI_I2C_SLAVE:
+   case VKI_I2C_SLAVE_FORCE:
+   case VKI_I2C_TENBIT:
+   case VKI_I2C_PEC:
+      break;
+   case VKI_I2C_FUNCS:
+      PRE_MEM_WRITE( "ioctl(I2C_FUNCS)", ARG3, sizeof(unsigned long) );
+      break;
+
+      /* Wireless extensions ioctls */
+   case VKI_SIOCSIWCOMMIT:
+   case VKI_SIOCSIWNWID:
+   case VKI_SIOCSIWFREQ:
+   case VKI_SIOCSIWMODE:
+   case VKI_SIOCSIWSENS:
+   case VKI_SIOCSIWRANGE:
+   case VKI_SIOCSIWPRIV:
+   case VKI_SIOCSIWSTATS:
+   case VKI_SIOCSIWSPY:
+   case VKI_SIOCSIWTHRSPY:
+   case VKI_SIOCSIWAP:
+   case VKI_SIOCSIWSCAN:
+   case VKI_SIOCSIWESSID:
+   case VKI_SIOCSIWRATE:
+   case VKI_SIOCSIWNICKN:
+   case VKI_SIOCSIWRTS:
+   case VKI_SIOCSIWFRAG:
+   case VKI_SIOCSIWTXPOW:
+   case VKI_SIOCSIWRETRY:
+   case VKI_SIOCSIWENCODE:
+   case VKI_SIOCSIWPOWER:
+   case VKI_SIOCSIWGENIE:
+   case VKI_SIOCSIWMLME:
+   case VKI_SIOCSIWAUTH:
+   case VKI_SIOCSIWENCODEEXT:
+   case VKI_SIOCSIWPMKSA:
+      break;
+   case VKI_SIOCGIWNAME:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWNAME)",
+                       (Addr)((struct vki_iwreq *)ARG3)->u.name,
+                       sizeof(((struct vki_iwreq *)ARG3)->u.name));
+      }
+      break;
+   case VKI_SIOCGIWNWID:
+   case VKI_SIOCGIWSENS:
+   case VKI_SIOCGIWRATE:
+   case VKI_SIOCGIWRTS:
+   case VKI_SIOCGIWFRAG:
+   case VKI_SIOCGIWTXPOW:
+   case VKI_SIOCGIWRETRY:
+   case VKI_SIOCGIWPOWER:
+   case VKI_SIOCGIWAUTH:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIW[NWID|SENS|RATE|RTS|FRAG|TXPOW|"
+                       "RETRY|PARAM|AUTH])",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.nwid,
+                       sizeof(struct vki_iw_param));
+      }
+      break;
+   case VKI_SIOCGIWFREQ:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWFREQ",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.freq,
+                       sizeof(struct vki_iw_freq));
+      }
+      break;
+   case VKI_SIOCGIWMODE:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWMODE",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.mode,
+                       sizeof(__vki_u32));
+      }
+      break;
+   case VKI_SIOCGIWRANGE:
+   case VKI_SIOCGIWPRIV:
+   case VKI_SIOCGIWSTATS:
+   case VKI_SIOCGIWSPY:
+   case VKI_SIOCGIWTHRSPY:
+   case VKI_SIOCGIWAPLIST:
+   case VKI_SIOCGIWSCAN:
+   case VKI_SIOCGIWESSID:
+   case VKI_SIOCGIWNICKN:
+   case VKI_SIOCGIWENCODE:
+   case VKI_SIOCGIWGENIE:
+   case VKI_SIOCGIWENCODEEXT:
+      if (ARG3) {
+         struct vki_iw_point* point;
+         point = &((struct vki_iwreq *)ARG3)->u.data;
+         PRE_MEM_WRITE("ioctl(SIOCGIW[RANGE|PRIV|STATS|SPY|THRSPY|"
+                       "APLIST|SCAN|ESSID|NICKN|ENCODE|GENIE|ENCODEEXT])",
+                       (Addr)point->pointer, point->length);
+      }
+      break;
+   case VKI_SIOCGIWAP:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWAP)",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.ap_addr,
+                       sizeof(struct vki_sockaddr));
+      }
+      break;
+
+   default:
+      ML_(PRE_unknown_ioctl)(tid, ARG2, ARG3);
+      break;
+   }   
+}
+
+POST(sys_ioctl)
+{
+   vg_assert(SUCCESS);
+   switch (ARG2 /* request */) {
+   case VKI_TCSETS:
+   case VKI_TCSETSW:
+   case VKI_TCSETSF:
+      break; 
+   case VKI_TCGETS:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_termios) );
+      break;
+   case VKI_TCSETA:
+   case VKI_TCSETAW:
+   case VKI_TCSETAF:
+      break;
+   case VKI_TCGETA:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_termio) );
+      break;
+   case VKI_TCSBRK:
+   case VKI_TCXONC:
+   case VKI_TCSBRKP:
+   case VKI_TCFLSH:
+      break;
+   case VKI_TIOCGWINSZ:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCSWINSZ:
+   case VKI_TIOCMBIS:
+   case VKI_TIOCMBIC:
+   case VKI_TIOCMSET:
+      break;
+   case VKI_TIOCMGET:
+      POST_MEM_WRITE( ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCLINUX:
+      POST_MEM_WRITE( ARG3, sizeof(char *) );
+      break;
+   case VKI_TIOCGPGRP:
+      /* Get process group ID for foreground processing group. */
+      POST_MEM_WRITE( ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSPGRP:
+      /* Set a process group ID? */
+      POST_MEM_WRITE( ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCGPTN: /* Get Pty Number (of pty-mux device) */
+      POST_MEM_WRITE( ARG3, sizeof(int));
+      break;
+   case VKI_TIOCSCTTY:
+      break;
+   case VKI_TIOCSPTLCK: /* Lock/unlock Pty */
+      break;
+   case VKI_FIONBIO:
+      break;
+   case VKI_FIOASYNC:
+      break;
+   case VKI_FIONREAD:                /* identical to SIOCINQ */
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+
+   case VKI_TIOCSERGETLSR:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_TIOCGICOUNT:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_serial_icounter_struct) );
+      break;
+
+   case VKI_SG_SET_COMMAND_Q:
+      break;
+   case VKI_SG_IO:
+      POST_MEM_WRITE(ARG3, sizeof(vki_sg_io_hdr_t));
+      break;
+   case VKI_SG_GET_SCSI_ID:
+      POST_MEM_WRITE(ARG3, sizeof(vki_sg_scsi_id_t));
+      break;
+   case VKI_SG_SET_RESERVED_SIZE:
+      break;
+   case VKI_SG_SET_TIMEOUT:
+      break;
+   case VKI_SG_GET_RESERVED_SIZE:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_SG_GET_TIMEOUT:
+      break;
+   case VKI_SG_GET_VERSION_NUM:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_SG_EMULATED_HOST:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_SG_GET_SG_TABLESIZE:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;      
+
+   case VKI_IIOCGETCPS:
+      POST_MEM_WRITE( ARG3, VKI_ISDN_MAX_CHANNELS * 2 * sizeof(unsigned long) );
+      break;
+   case VKI_IIOCNETGPN:
+      POST_MEM_WRITE( ARG3, sizeof(vki_isdn_net_ioctl_phone) );
+      break;
+
+      /* These all use struct ifreq AFAIK */
+   case VKI_SIOCGIFINDEX:        /* get iface index              */
+      POST_MEM_WRITE( (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_ifindex,
+                      sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_ifindex) );
+      break;
+   case VKI_SIOCGIFFLAGS:        /* get flags                    */
+      POST_MEM_WRITE( (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_flags,
+                      sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_flags) );
+      break;
+   case VKI_SIOCGIFHWADDR:       /* Get hardware address         */
+      POST_MEM_WRITE( (Addr)&((struct vki_ifreq *)ARG3)->ifr_hwaddr,
+                      sizeof(((struct vki_ifreq *)ARG3)->ifr_hwaddr) );
+      break;
+   case VKI_SIOCGIFMTU:          /* get MTU size                 */
+      POST_MEM_WRITE( (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_mtu,
+                      sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_mtu) );
+      break;
+   case VKI_SIOCGIFADDR:         /* get PA address               */
+   case VKI_SIOCGIFDSTADDR:      /* get remote PA address        */
+   case VKI_SIOCGIFBRDADDR:      /* get broadcast PA address     */
+   case VKI_SIOCGIFNETMASK:      /* get network PA mask          */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_ifreq *)ARG3)->ifr_addr,
+                sizeof(((struct vki_ifreq *)ARG3)->ifr_addr) );
+      break;
+   case VKI_SIOCGIFMETRIC:       /* get metric                   */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_metric,
+                sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_metric) );
+      break;
+   case VKI_SIOCGIFMAP:          /* Get device parameters        */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_ifreq *)ARG3)->ifr_map,
+                sizeof(((struct vki_ifreq *)ARG3)->ifr_map) );
+      break;
+     break;
+   case VKI_SIOCGIFTXQLEN:       /* Get the tx queue length      */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_ifreq *)ARG3)->ifr_qlen,
+                sizeof(((struct vki_ifreq *)ARG3)->ifr_qlen) );
+      break;
+   case VKI_SIOCGIFNAME:         /* get iface name               */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_name,
+                sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_name) );
+      break;
+   case VKI_SIOCGMIIPHY:         /* get hardware entry           */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->phy_id,
+                sizeof(((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->phy_id) );
+      break;
+   case VKI_SIOCGMIIREG:         /* get hardware entry registers */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->val_out,
+                sizeof(((struct vki_mii_ioctl_data *)&((struct vki_ifreq *)ARG3)->vki_ifr_data)->val_out) );
+      break;
+   case VKI_SIOCGIFCONF:         /* get iface list               */
+      /* WAS:
+	 PRE_MEM_WRITE("ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
+	 KERNEL_DO_SYSCALL(tid,RES);
+	 if (!VG_(is_kerror)(RES) && RES == 0)
+	 POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
+      */
+      if (RES == 0 && ARG3 ) {
+	 struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
+	 if (ifc->vki_ifc_buf != NULL)
+	    POST_MEM_WRITE( (Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
+      }
+      break;
+   case VKI_SIOCGSTAMP:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_timeval) );
+      break;
+   case VKI_SIOCGSTAMPNS:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_timespec) );
+      break;
+      /* SIOCOUTQ is an ioctl that, when called on a socket, returns
+	 the number of bytes currently in that socket's send buffer.
+	 It writes this value as an int to the memory location
+	 indicated by the third argument of ioctl(2). */
+   case VKI_SIOCOUTQ:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_SIOCGRARP:           /* get RARP table entry         */
+   case VKI_SIOCGARP:            /* get ARP table entry          */
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_arpreq));
+      break;
+                    
+   case VKI_SIOCSIFFLAGS:        /* set flags                    */
+   case VKI_SIOCSIFMAP:          /* Set device parameters        */
+   case VKI_SIOCSIFTXQLEN:       /* Set the tx queue length      */
+   case VKI_SIOCSIFDSTADDR:      /* set remote PA address        */
+   case VKI_SIOCSIFBRDADDR:      /* set broadcast PA address     */
+   case VKI_SIOCSIFNETMASK:      /* set network PA mask          */
+   case VKI_SIOCSIFMETRIC:       /* set metric                   */
+   case VKI_SIOCSIFADDR:         /* set PA address               */
+   case VKI_SIOCSIFMTU:          /* set MTU size                 */
+   case VKI_SIOCSIFHWADDR:       /* set hardware address         */
+   case VKI_SIOCSMIIREG:         /* set hardware entry registers */
+      break;
+      /* Routing table calls.  */
+   case VKI_SIOCADDRT:           /* add routing table entry      */
+   case VKI_SIOCDELRT:           /* delete routing table entry   */
+      break;
+
+      /* RARP cache control calls. */
+   case VKI_SIOCDRARP:           /* delete RARP table entry      */
+   case VKI_SIOCSRARP:           /* set RARP table entry         */
+      /* ARP cache control calls. */
+   case VKI_SIOCSARP:            /* set ARP table entry          */
+   case VKI_SIOCDARP:            /* delete ARP table entry       */
+      break;
+
+   case VKI_SIOCGPGRP:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_SIOCSPGRP:
+      break;
+
+      /* linux/soundcard interface (OSS) */
+   case VKI_SNDCTL_SEQ_GETOUTCOUNT:
+   case VKI_SNDCTL_SEQ_GETINCOUNT:
+   case VKI_SNDCTL_SEQ_PERCMODE:
+   case VKI_SNDCTL_SEQ_TESTMIDI:
+   case VKI_SNDCTL_SEQ_RESETSAMPLES:
+   case VKI_SNDCTL_SEQ_NRSYNTHS:
+   case VKI_SNDCTL_SEQ_NRMIDIS:
+   case VKI_SNDCTL_SEQ_GETTIME:
+   case VKI_SNDCTL_DSP_GETFMTS:
+   case VKI_SNDCTL_DSP_GETTRIGGER:
+   case VKI_SNDCTL_DSP_GETODELAY:
+   case VKI_SNDCTL_DSP_GETSPDIF:
+   case VKI_SNDCTL_DSP_GETCAPS:
+   case VKI_SOUND_PCM_READ_RATE:
+   case VKI_SOUND_PCM_READ_CHANNELS:
+   case VKI_SOUND_PCM_READ_BITS:
+#if !defined(VGA_ppc32) && !defined(VGA_ppc64)
+   case (VKI_SOUND_PCM_READ_BITS|0x40000000): /* what the fuck ? */
+#endif
+   case VKI_SOUND_PCM_READ_FILTER:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_SNDCTL_SEQ_CTRLRATE:
+   case VKI_SNDCTL_DSP_SPEED:
+   case VKI_SNDCTL_DSP_STEREO:
+   case VKI_SNDCTL_DSP_GETBLKSIZE: 
+   case VKI_SNDCTL_DSP_CHANNELS:
+   case VKI_SOUND_PCM_WRITE_FILTER:
+   case VKI_SNDCTL_DSP_SUBDIVIDE:
+   case VKI_SNDCTL_DSP_SETFRAGMENT:
+   case VKI_SNDCTL_DSP_GETCHANNELMASK:
+   case VKI_SNDCTL_DSP_BIND_CHANNEL:
+   case VKI_SNDCTL_TMR_TIMEBASE:
+   case VKI_SNDCTL_TMR_TEMPO:
+   case VKI_SNDCTL_TMR_SOURCE:
+   case VKI_SNDCTL_MIDI_PRETIME:
+   case VKI_SNDCTL_MIDI_MPUMODE:
+      break;
+   case VKI_SNDCTL_DSP_GETOSPACE:
+   case VKI_SNDCTL_DSP_GETISPACE:
+      POST_MEM_WRITE(ARG3, sizeof(vki_audio_buf_info));
+      break;
+   case VKI_SNDCTL_DSP_NONBLOCK:
+      break;
+   case VKI_SNDCTL_DSP_SETTRIGGER:
+      break;
+
+   case VKI_SNDCTL_DSP_POST:
+   case VKI_SNDCTL_DSP_RESET:
+   case VKI_SNDCTL_DSP_SYNC:
+   case VKI_SNDCTL_DSP_SETSYNCRO:
+   case VKI_SNDCTL_DSP_SETDUPLEX:
+      break;
+
+      /* linux/soundcard interface (ALSA) */
+   case VKI_SNDRV_PCM_IOCTL_HW_FREE:
+   case VKI_SNDRV_PCM_IOCTL_HWSYNC:
+   case VKI_SNDRV_PCM_IOCTL_PREPARE:
+   case VKI_SNDRV_PCM_IOCTL_RESET:
+   case VKI_SNDRV_PCM_IOCTL_START:
+   case VKI_SNDRV_PCM_IOCTL_DROP:
+   case VKI_SNDRV_PCM_IOCTL_DRAIN:
+   case VKI_SNDRV_PCM_IOCTL_RESUME:
+   case VKI_SNDRV_PCM_IOCTL_XRUN:
+   case VKI_SNDRV_PCM_IOCTL_UNLINK:
+   case VKI_SNDRV_TIMER_IOCTL_START:
+   case VKI_SNDRV_TIMER_IOCTL_STOP:
+   case VKI_SNDRV_TIMER_IOCTL_CONTINUE:
+   case VKI_SNDRV_TIMER_IOCTL_PAUSE:
+      break;
+
+      /* Real Time Clock (/dev/rtc) ioctls */
+   case VKI_RTC_UIE_ON:
+   case VKI_RTC_UIE_OFF:
+   case VKI_RTC_AIE_ON:
+   case VKI_RTC_AIE_OFF:
+   case VKI_RTC_PIE_ON:
+   case VKI_RTC_PIE_OFF:
+   case VKI_RTC_IRQP_SET:
+      break;
+   case VKI_RTC_RD_TIME:
+   case VKI_RTC_ALM_READ:
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_rtc_time));
+      break;
+   case VKI_RTC_ALM_SET:
+      break;
+   case VKI_RTC_IRQP_READ:
+      POST_MEM_WRITE(ARG3, sizeof(unsigned long));
+      break;
+
+      /* Block devices */
+   case VKI_BLKROSET:
+      break;
+   case VKI_BLKROGET:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_BLKGETSIZE:
+      POST_MEM_WRITE(ARG3, sizeof(unsigned long));
+      break;
+   case VKI_BLKRASET:
+      break;
+   case VKI_BLKRAGET:
+      POST_MEM_WRITE(ARG3, sizeof(long));
+      break;
+   case VKI_BLKFRASET:
+      break;
+   case VKI_BLKFRAGET:
+      POST_MEM_WRITE(ARG3, sizeof(long));
+      break;
+   case VKI_BLKSECTGET:
+      POST_MEM_WRITE(ARG3, sizeof(unsigned short));
+      break;
+   case VKI_BLKSSZGET:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_BLKBSZGET:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_BLKBSZSET:
+      break;
+   case VKI_BLKGETSIZE64:
+      POST_MEM_WRITE(ARG3, sizeof(unsigned long long));
+      break;
+
+      /* Hard disks */
+   case VKI_HDIO_GETGEO: /* 0x0301 */
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_hd_geometry));
+      break;
+   case VKI_HDIO_GET_DMA: /* 0x030b */
+      POST_MEM_WRITE(ARG3, sizeof(long));
+      break;
+   case VKI_HDIO_GET_IDENTITY: /* 0x030d */
+      POST_MEM_WRITE(ARG3, VKI_SIZEOF_STRUCT_HD_DRIVEID );
+      break;
+
+      /* CD ROM stuff (??)  */
+   case VKI_CDROMSUBCHNL:
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_cdrom_subchnl));
+      break;
+   case VKI_CDROMREADTOCHDR:
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_cdrom_tochdr));
+      break;
+   case VKI_CDROMREADTOCENTRY:
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_cdrom_tocentry));
+      break;
+   case VKI_CDROMMULTISESSION:
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_cdrom_multisession));
+      break;
+   case VKI_CDROMVOLREAD:
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_cdrom_volctrl));
+      break;
+   case VKI_CDROMREADRAW:
+      POST_MEM_WRITE(ARG3, VKI_CD_FRAMESIZE_RAW);
+      break;
+   case VKI_CDROMREADAUDIO:
+   {
+      struct vki_cdrom_read_audio *cra = (struct vki_cdrom_read_audio *) ARG3;
+      POST_MEM_WRITE( (Addr)(cra->buf), cra->nframes * VKI_CD_FRAMESIZE_RAW);
+      break;
+   }
+      
+   case VKI_CDROMPLAYMSF:
+      break;
+      /* The following two are probably bogus (should check args
+	 for readability).  JRS 20021117 */
+   case VKI_CDROM_DRIVE_STATUS: /* 0x5326 */
+   case VKI_CDROM_CLEAR_OPTIONS: /* 0x5321 */
+      break;
+
+   case VKI_FIGETBSZ:
+      POST_MEM_WRITE(ARG3, sizeof(unsigned long));
+      break;
+   case VKI_FIBMAP:
+      POST_MEM_WRITE(ARG3, sizeof(unsigned long));
+      break;
+
+   case VKI_FBIOGET_VSCREENINFO: //0x4600
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_fb_var_screeninfo));
+      break;
+   case VKI_FBIOGET_FSCREENINFO: //0x4602
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_fb_fix_screeninfo));
+      break;
+
+   case VKI_PPCLAIM:
+   case VKI_PPEXCL:
+   case VKI_PPYIELD:
+   case VKI_PPRELEASE:
+   case VKI_PPSETMODE:
+   case VKI_PPSETPHASE:
+   case VKI_PPSETFLAGS:
+   case VKI_PPWDATA:
+   case VKI_PPWCONTROL:
+   case VKI_PPFCONTROL:
+   case VKI_PPDATADIR:
+   case VKI_PPNEGOT:
+   case VKI_PPWCTLONIRQ:
+   case VKI_PPSETTIME:
+      break;
+   case VKI_PPGETMODE:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_PPGETPHASE:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_PPGETMODES:
+      POST_MEM_WRITE( ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_PPGETFLAGS:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_PPRSTATUS:
+      POST_MEM_WRITE( ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPRDATA:
+      POST_MEM_WRITE( ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPRCONTROL:
+      POST_MEM_WRITE( ARG3, sizeof(unsigned char) );
+      break;
+   case VKI_PPCLRIRQ:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_PPGETTIME:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_timeval) );
+      break;
+
+   case VKI_GIO_FONT:
+      POST_MEM_WRITE( ARG3, 32 * 256 );
+      break;
+   case VKI_PIO_FONT:
+      break;
+
+   case VKI_GIO_FONTX:
+      POST_MEM_WRITE( (Addr)((struct vki_consolefontdesc *)ARG3)->chardata,
+                      32 * ((struct vki_consolefontdesc *)ARG3)->charcount );
+      break;
+   case VKI_PIO_FONTX:
+      break;
+
+   case VKI_PIO_FONTRESET:
+      break;
+
+   case VKI_GIO_CMAP:
+      POST_MEM_WRITE( ARG3, 16 * 3 );
+      break;
+   case VKI_PIO_CMAP:
+      break;
+
+   case VKI_KIOCSOUND:
+   case VKI_KDMKTONE:
+      break;
+
+   case VKI_KDGETLED:
+      POST_MEM_WRITE( ARG3, sizeof(char) );
+      break;
+   case VKI_KDSETLED:
+      break;
+
+   case VKI_KDGKBTYPE:
+      POST_MEM_WRITE( ARG3, sizeof(char) );
+      break;
+
+   case VKI_KDADDIO:
+   case VKI_KDDELIO:
+   case VKI_KDENABIO:
+   case VKI_KDDISABIO:
+      break;
+
+   case VKI_KDSETMODE:
+      break;
+   case VKI_KDGETMODE:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+
+   case VKI_KDMAPDISP:
+   case VKI_KDUNMAPDISP:
+      break;
+
+   case VKI_GIO_SCRNMAP:
+      POST_MEM_WRITE( ARG3, VKI_E_TABSZ );
+      break;
+   case VKI_PIO_SCRNMAP:
+      break;
+   case VKI_GIO_UNISCRNMAP:
+      POST_MEM_WRITE( ARG3, VKI_E_TABSZ * sizeof(unsigned short) );
+      break;
+   case VKI_PIO_UNISCRNMAP:
+      break;
+
+   case VKI_GIO_UNIMAP:
+      if ( ARG3 ) {
+         struct vki_unimapdesc *desc = (struct vki_unimapdesc *) ARG3;
+         POST_MEM_WRITE( (Addr)&desc->entry_ct, sizeof(desc->entry_ct));
+         POST_MEM_WRITE( (Addr)desc->entries,
+      	                 desc->entry_ct * sizeof(struct vki_unipair) );
+      }
+      break;
+   case VKI_PIO_UNIMAP:
+      break;
+   case VKI_PIO_UNIMAPCLR:
+      break;
+
+   case VKI_KDGKBMODE:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_KDSKBMODE:
+      break;
+      
+   case VKI_KDGKBMETA:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_KDSKBMETA:
+      break;
+      
+   case VKI_KDGKBLED:
+      POST_MEM_WRITE( ARG3, sizeof(char) );
+      break;
+   case VKI_KDSKBLED:
+      break;
+      
+   case VKI_KDGKBENT:
+      POST_MEM_WRITE( (Addr)&((struct vki_kbentry *)ARG3)->kb_value,
+                      sizeof(((struct vki_kbentry *)ARG3)->kb_value) );
+      break;
+   case VKI_KDSKBENT:
+      break;
+      
+   case VKI_KDGKBSENT:
+      POST_MEM_WRITE( (Addr)((struct vki_kbsentry *)ARG3)->kb_string,
+                      sizeof(((struct vki_kbsentry *)ARG3)->kb_string) );
+      break;
+   case VKI_KDSKBSENT:
+      break;
+      
+   case VKI_KDGKBDIACR:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_kbdiacrs) );
+      break;
+   case VKI_KDSKBDIACR:
+      break;
+      
+   case VKI_KDGETKEYCODE:
+      POST_MEM_WRITE( (Addr)((struct vki_kbkeycode *)ARG3)->keycode,
+                      sizeof(((struct vki_kbkeycode *)ARG3)->keycode) );
+      break;
+   case VKI_KDSETKEYCODE:
+      break;
+      
+   case VKI_KDSIGACCEPT:
+      break;
+
+   case VKI_KDKBDREP:
+      break;
+
+   case VKI_KDFONTOP:
+      if ( ARG3 ) {
+         struct vki_console_font_op *op = (struct vki_console_font_op *) ARG3;
+         switch ( op->op ) {
+            case VKI_KD_FONT_OP_SET:
+               break;
+            case VKI_KD_FONT_OP_GET:
+               if ( op->data )
+                  POST_MEM_WRITE( (Addr) op->data,
+                                  (op->width + 7) / 8 * 32 * op->charcount );
+               break;
+            case VKI_KD_FONT_OP_SET_DEFAULT:
+               break;
+            case VKI_KD_FONT_OP_COPY:
+               break;
+         }
+         POST_MEM_WRITE( (Addr) op, sizeof(*op));
+      }
+      break;
+
+   case VKI_VT_OPENQRY:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_VT_GETMODE:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_vt_mode) );
+      break;
+   case VKI_VT_SETMODE:
+      break;
+   case VKI_VT_GETSTATE:
+      POST_MEM_WRITE( (Addr) &(((struct vki_vt_stat*) ARG3)->v_active),
+                      sizeof(((struct vki_vt_stat*) ARG3)->v_active) );
+      POST_MEM_WRITE( (Addr) &(((struct vki_vt_stat*) ARG3)->v_state),
+                      sizeof(((struct vki_vt_stat*) ARG3)->v_state) );
+      break;
+   case VKI_VT_RELDISP:
+   case VKI_VT_ACTIVATE:
+   case VKI_VT_WAITACTIVE:
+   case VKI_VT_DISALLOCATE:
+      break;
+   case VKI_VT_RESIZE:
+      break;
+   case VKI_VT_RESIZEX:
+      break;
+   case VKI_VT_LOCKSWITCH:
+   case VKI_VT_UNLOCKSWITCH:
+      break;
+
+   case VKI_USBDEVFS_CONTROL:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_ctrltransfer *vkuc = (struct vki_usbdevfs_ctrltransfer *)ARG3;
+         if (vkuc->bRequestType & 0x80)
+            POST_MEM_WRITE((Addr)vkuc->data, RES);
+         break;
+      }
+   case VKI_USBDEVFS_BULK:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_bulktransfer *vkub = (struct vki_usbdevfs_bulktransfer *)ARG3;
+         if (vkub->ep & 0x80)
+            POST_MEM_WRITE((Addr)vkub->data, RES);
+         break;
+      }
+   case VKI_USBDEVFS_GETDRIVER:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_getdriver *vkugd = (struct vki_usbdevfs_getdriver *)ARG3;
+         POST_MEM_WRITE((Addr)&vkugd->driver, sizeof(vkugd->driver));
+         break;
+      }
+   case VKI_USBDEVFS_REAPURB:
+   case VKI_USBDEVFS_REAPURBNDELAY:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_urb **vkuu = (struct vki_usbdevfs_urb**)ARG3;
+         POST_MEM_WRITE((Addr)vkuu, sizeof(*vkuu));
+         if (!*vkuu)
+            break;
+         POST_MEM_WRITE((Addr) &((*vkuu)->status),sizeof((*vkuu)->status));
+         if ((*vkuu)->type == VKI_USBDEVFS_URB_TYPE_CONTROL) {
+            struct vki_usbdevfs_setuppacket *vkusp = (struct vki_usbdevfs_setuppacket *)(*vkuu)->buffer;
+            if (vkusp->bRequestType & 0x80)
+               POST_MEM_WRITE((Addr)(vkusp+1), (*vkuu)->buffer_length - sizeof(*vkusp));
+            POST_MEM_WRITE((Addr)&(*vkuu)->actual_length, sizeof((*vkuu)->actual_length));
+         } else if ((*vkuu)->type == VKI_USBDEVFS_URB_TYPE_ISO) {
+            char *bp = (*vkuu)->buffer;
+            int i;
+            for(i=0; i<(*vkuu)->number_of_packets; i++) {
+               POST_MEM_WRITE((Addr)&(*vkuu)->iso_frame_desc[i].actual_length, sizeof((*vkuu)->iso_frame_desc[i].actual_length));
+               POST_MEM_WRITE((Addr)&(*vkuu)->iso_frame_desc[i].status, sizeof((*vkuu)->iso_frame_desc[i].status));
+               if ((*vkuu)->endpoint & 0x80)
+                  POST_MEM_WRITE((Addr)bp, (*vkuu)->iso_frame_desc[i].actual_length);
+               bp += (*vkuu)->iso_frame_desc[i].length; // FIXME: or actual_length??
+            }
+            POST_MEM_WRITE((Addr)&(*vkuu)->error_count, sizeof((*vkuu)->error_count));
+         } else {
+            if ((*vkuu)->endpoint & 0x80)
+               POST_MEM_WRITE((Addr)(*vkuu)->buffer, (*vkuu)->actual_length);
+            POST_MEM_WRITE((Addr)&(*vkuu)->actual_length, sizeof((*vkuu)->actual_length));
+         }
+         break;
+      }
+   case VKI_USBDEVFS_CONNECTINFO:
+      POST_MEM_WRITE(ARG3, sizeof(struct vki_usbdevfs_connectinfo));
+      break;
+   case VKI_USBDEVFS_IOCTL:
+      if ( ARG3 ) {
+         struct vki_usbdevfs_ioctl *vkui = (struct vki_usbdevfs_ioctl *)ARG3;
+         UInt dir2, size2;
+         dir2  = _VKI_IOC_DIR(vkui->ioctl_code);
+         size2 = _VKI_IOC_SIZE(vkui->ioctl_code);
+         if (size2 > 0) {
+            if (dir2 & _VKI_IOC_READ) 
+               POST_MEM_WRITE((Addr)vkui->data, size2);
+         }
+      }
+      break;
+
+      /* I2C (/dev/i2c-*) ioctls */
+   case VKI_I2C_SLAVE:
+   case VKI_I2C_SLAVE_FORCE:
+   case VKI_I2C_TENBIT:
+   case VKI_I2C_PEC:
+      break;
+   case VKI_I2C_FUNCS:
+      POST_MEM_WRITE( ARG3, sizeof(unsigned long) );
+      break;
+
+      /* Wireless extensions ioctls */
+   case VKI_SIOCSIWCOMMIT:
+   case VKI_SIOCSIWNWID:
+   case VKI_SIOCSIWFREQ:
+   case VKI_SIOCSIWMODE:
+   case VKI_SIOCSIWSENS:
+   case VKI_SIOCSIWRANGE:
+   case VKI_SIOCSIWPRIV:
+   case VKI_SIOCSIWSTATS:
+   case VKI_SIOCSIWSPY:
+   case VKI_SIOCSIWTHRSPY:
+   case VKI_SIOCSIWAP:
+   case VKI_SIOCSIWSCAN:
+   case VKI_SIOCSIWESSID:
+   case VKI_SIOCSIWRATE:
+   case VKI_SIOCSIWNICKN:
+   case VKI_SIOCSIWRTS:
+   case VKI_SIOCSIWFRAG:
+   case VKI_SIOCSIWTXPOW:
+   case VKI_SIOCSIWRETRY:
+   case VKI_SIOCSIWENCODE:
+   case VKI_SIOCSIWPOWER:
+   case VKI_SIOCSIWGENIE:
+   case VKI_SIOCSIWMLME:
+   case VKI_SIOCSIWAUTH:
+   case VKI_SIOCSIWENCODEEXT:
+   case VKI_SIOCSIWPMKSA:
+      break;
+   case VKI_SIOCGIWNAME:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)((struct vki_iwreq *)ARG3)->u.name,
+                        sizeof(((struct vki_iwreq *)ARG3)->u.name));
+      }
+      break;
+   case VKI_SIOCGIWNWID:
+   case VKI_SIOCGIWSENS:
+   case VKI_SIOCGIWRATE:
+   case VKI_SIOCGIWRTS:
+   case VKI_SIOCGIWFRAG:
+   case VKI_SIOCGIWTXPOW:
+   case VKI_SIOCGIWRETRY:
+   case VKI_SIOCGIWPOWER:
+   case VKI_SIOCGIWAUTH:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.param,
+                        sizeof(struct vki_iw_param));
+      }
+      break;
+   case VKI_SIOCGIWFREQ:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.freq,
+                        sizeof(struct vki_iw_freq));
+      }
+      break;
+   case VKI_SIOCGIWMODE:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.mode,
+                       sizeof(__vki_u32));
+      }
+      break;
+   case VKI_SIOCGIWRANGE:
+   case VKI_SIOCGIWPRIV:
+   case VKI_SIOCGIWSTATS:
+   case VKI_SIOCGIWSPY:
+   case VKI_SIOCGIWTHRSPY:
+   case VKI_SIOCGIWAPLIST:
+   case VKI_SIOCGIWSCAN:
+   case VKI_SIOCGIWESSID:
+   case VKI_SIOCGIWNICKN:
+   case VKI_SIOCGIWENCODE:
+   case VKI_SIOCGIWGENIE:
+   case VKI_SIOCGIWENCODEEXT:
+      if (ARG3) {
+         struct vki_iw_point* point;
+         point = &((struct vki_iwreq *)ARG3)->u.data;
+         POST_MEM_WRITE((Addr)point->pointer, point->length);
+      }
+      break;
+   case VKI_SIOCGIWAP:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.ap_addr,
+                        sizeof(struct vki_sockaddr));
+      }
+      break;
+
+   default:
+      ML_(POST_unknown_ioctl)(tid, RES, ARG2, ARG3);
+      break;
+   }
+}
+
+/* ---------------------------------------------------------------------
+   socketcall wrapper helpers
+   ------------------------------------------------------------------ */
+
+void 
+ML_(linux_PRE_sys_getsockopt) ( ThreadId tid, 
+                                UWord arg0, UWord arg1, UWord arg2,
+                                UWord arg3, UWord arg4 )
+{
+   /* int getsockopt(int s, int level, int optname, 
+                     void *optval, socklen_t *optlen); */
+   Addr optval_p = arg3;
+   Addr optlen_p = arg4;
+   /* vg_assert(sizeof(socklen_t) == sizeof(UInt)); */
+   if (optval_p != (Addr)NULL) {
+      ML_(buf_and_len_pre_check) ( tid, optval_p, optlen_p,
+                                   "socketcall.getsockopt(optval)",
+                                   "socketcall.getsockopt(optlen)" );
+      if (arg1 == VKI_SOL_SCTP &&
+          (arg2 == VKI_SCTP_GET_PEER_ADDRS || 
+           arg2 == VKI_SCTP_GET_LOCAL_ADDRS))
+      {
+         struct vki_sctp_getaddrs *ga = (struct vki_sctp_getaddrs*)arg3;
+         int address_bytes = sizeof(struct vki_sockaddr_in6) * ga->addr_num;
+         PRE_MEM_WRITE( "socketcall.getsockopt(optval.addrs)",
+                        (Addr)ga->addrs, address_bytes );
+      }
+   }
+}
+
+void 
+ML_(linux_POST_sys_getsockopt) ( ThreadId tid,
+                                 SysRes res,
+                                 UWord arg0, UWord arg1, UWord arg2,
+                                 UWord arg3, UWord arg4 )
+{
+   Addr optval_p = arg3;
+   Addr optlen_p = arg4;
+   vg_assert(!sr_isError(res)); /* guaranteed by caller */
+   if (optval_p != (Addr)NULL) {
+      ML_(buf_and_len_post_check) ( tid, res, optval_p, optlen_p,
+                                    "socketcall.getsockopt(optlen_out)" );
+      if (arg1 == VKI_SOL_SCTP &&
+          (arg2 == VKI_SCTP_GET_PEER_ADDRS ||
+           arg2 == VKI_SCTP_GET_LOCAL_ADDRS))
+      {
+         struct vki_sctp_getaddrs *ga = (struct vki_sctp_getaddrs*)arg3;    
+         struct vki_sockaddr *a = ga->addrs;
+         int i;
+         for (i = 0; i < ga->addr_num; i++) {
+            int sl = 0;
+            if (a->sa_family == VKI_AF_INET)
+               sl = sizeof(struct vki_sockaddr_in);
+            else if (a->sa_family == VKI_AF_INET6)
+               sl = sizeof(struct vki_sockaddr_in6);
+            else {
+               VG_(message)(Vg_UserMsg, "Warning: getsockopt: unhandled "
+                                        "address type %d\n", a->sa_family);
+            }
+            a = (struct vki_sockaddr*)((char*)a + sl);
+         }
+         POST_MEM_WRITE( (Addr)ga->addrs, (char*)a - (char*)ga->addrs );    
+      }
+   }
 }
 
 #undef PRE
 #undef POST
 
+#endif // defined(VGO_linux)
+
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-
-

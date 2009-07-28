@@ -1,4 +1,5 @@
 
+#include "config.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,14 +46,33 @@
         : /*in*/  "m"(_addr) \
         : "memory", "cc" \
      )
-#else
-#  define XCHG_M_R(_addr,_lval) \
-      do { int tmp = *(int*)(& _addr); \
-           *(int*)(& _addr) = (_lval); \
-           _lval = tmp; \
-      } while (0)
+
+#elif defined(PLAT_ppc32_linux) || defined(PLAT_ppc64_linux) \
+      || defined(PLAT_ppc32_aix5) || defined(PLAT_ppc64_aix5)
+#  if defined(HAVE_BUILTIN_ATOMIC)
+#    define XCHG_M_R(_addr,_lval)                                           \
+        do {                                                                \
+          int tmp;                                                          \
+          while ((tmp = *(int*)(& _addr)),                                  \
+                 ! __sync_bool_compare_and_swap((int*)&_addr, tmp, _lval))  \
+            ;                                                               \
+          _lval = tmp;                                                      \
+        } while (0)
+#  else
+#    warning "XCHG_M_R() implementation is missing. Either" \
+             "provide one or use a newer gcc version."
+#    define XCHG_M_R(_addr,_lval) \
+        do { int tmp = *(int*)(& _addr); \
+             *(int*)(& _addr) = (_lval); \
+             _lval = tmp; \
+        } while (0)
+#  endif
 #  define XCHG_M_R_with_redundant_LOCK(_addr,_lval) \
       XCHG_M_R(_addr,_lval)
+
+#else
+#  error "Unsupported architecture"
+
 #endif
 
 int x = 0;

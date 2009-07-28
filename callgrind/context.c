@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2007, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -43,7 +43,8 @@ void CLG_(init_fn_stack)(fn_stack* s)
   CLG_ASSERT(s != 0);
 
   s->size   = N_FNSTACK_INITIAL_ENTRIES;   
-  s->bottom = (fn_node**) CLG_MALLOC(s->size * sizeof(fn_node*));
+  s->bottom = (fn_node**) CLG_MALLOC("cl.context.ifs.1",
+                                     s->size * sizeof(fn_node*));
   s->top    = s->bottom;
   s->bottom[0] = 0;
 }
@@ -74,7 +75,8 @@ void CLG_(init_cxt_table)()
    
    cxts.size    = N_CXT_INITIAL_ENTRIES;
    cxts.entries = 0;
-   cxts.table   = (Context**) CLG_MALLOC(cxts.size * sizeof(Context*));
+   cxts.table   = (Context**) CLG_MALLOC("cl.context.ict.1",
+                                         cxts.size * sizeof(Context*));
 
    for (i = 0; i < cxts.size; i++)
      cxts.table[i] = 0;
@@ -93,7 +95,8 @@ static void resize_cxt_table(void)
     UInt new_idx;
 
     new_size  = 2* cxts.size +3;
-    new_table = (Context**) CLG_MALLOC(new_size * sizeof(Context*));
+    new_table = (Context**) CLG_MALLOC("cl.context.rct.1",
+                                       new_size * sizeof(Context*));
 
     if (!new_table) return;
 
@@ -171,7 +174,7 @@ static Bool is_cxt(UWord hash, fn_node** fn, Context* cxt)
  */
 static Context* new_cxt(fn_node** fn)
 {
-    Context* new;
+    Context* cxt;
     UInt idx, offset;
     UWord hash;
     int size, recs;
@@ -190,7 +193,8 @@ static Context* new_cxt(fn_node** fn)
     if (10 * cxts.entries / cxts.size > 8)
         resize_cxt_table();
 
-    new = (Context*) CLG_MALLOC(sizeof(Context)+sizeof(fn_node*)*size);
+    cxt = (Context*) CLG_MALLOC("cl.context.nc.1",
+                                sizeof(Context)+sizeof(fn_node*)*size);
 
     // hash value calculation similar to cxt_hash_val(), but additionally
     // copying function pointers in one run
@@ -198,33 +202,33 @@ static Context* new_cxt(fn_node** fn)
     offset = 0;
     while(*fn != 0) {
         hash = (hash<<7) + (hash>>25) + (UWord)(*fn);
-        new->fn[offset] = *fn;
+	cxt->fn[offset] = *fn;
         offset++;
         fn--;
         if (offset >= size) break;
     }
     if (offset < size) size = offset;
 
-    new->size        = size;
-    new->base_number = CLG_(stat).context_counter;
-    new->hash        = hash;
+    cxt->size        = size;
+    cxt->base_number = CLG_(stat).context_counter;
+    cxt->hash        = hash;
 
     CLG_(stat).context_counter += recs;
     CLG_(stat).distinct_contexts++;
 
     /* insert into Context hash table */
     idx = (UInt) (hash % cxts.size);
-    new->next = cxts.table[idx];
-    cxts.table[idx] = new;
+    cxt->next = cxts.table[idx];
+    cxts.table[idx] = cxt;
 
 #if CLG_ENABLE_DEBUG
     CLG_DEBUGIF(3) {
-      VG_(printf)("  new_cxt ox%p: ", new);
-      CLG_(print_cxt)(12, new, 0);
+      VG_(printf)("  new_cxt ox%p: ", cxt);
+      CLG_(print_cxt)(12, cxt, 0);
     }
 #endif
 
-    return new;
+    return cxt;
 }
 
 /* get the Context structure for current context */
@@ -272,7 +276,7 @@ Context* CLG_(get_cxt)(fn_node** fn)
 
 /**
  * Change execution context by calling a new function from current context
- *
+ * Pushing 0x0 specifies a marker for a signal handler entry
  */
 void CLG_(push_cxt)(fn_node* fn)
 {
@@ -290,7 +294,7 @@ void CLG_(push_cxt)(fn_node* fn)
   cs->entry[cs->sp].cxt = CLG_(current_state).cxt;
   cs->entry[cs->sp].fn_sp = CLG_(current_fn_stack).top - CLG_(current_fn_stack).bottom;
 
-  if (*(CLG_(current_fn_stack).top) == fn) return;
+  if (fn && (*(CLG_(current_fn_stack).top) == fn)) return;
   if (fn && (fn->group>0) &&
       ((*(CLG_(current_fn_stack).top))->group == fn->group)) return;
 
@@ -298,13 +302,14 @@ void CLG_(push_cxt)(fn_node* fn)
   fn_entries = CLG_(current_fn_stack).top - CLG_(current_fn_stack).bottom;
   if (fn_entries == CLG_(current_fn_stack).size-1) {
     int new_size = CLG_(current_fn_stack).size *2;
-    fn_node** new = (fn_node**) CLG_MALLOC(new_size * sizeof(fn_node*));
+    fn_node** new_array = (fn_node**) CLG_MALLOC("cl.context.pc.1",
+						 new_size * sizeof(fn_node*));
     int i;
     for(i=0;i<CLG_(current_fn_stack).size;i++)
-      new[i] = CLG_(current_fn_stack).bottom[i];
+      new_array[i] = CLG_(current_fn_stack).bottom[i];
     VG_(free)(CLG_(current_fn_stack).bottom);
-    CLG_(current_fn_stack).top = new + fn_entries;
-    CLG_(current_fn_stack).bottom = new;
+    CLG_(current_fn_stack).top = new_array + fn_entries;
+    CLG_(current_fn_stack).bottom = new_array;
 
     CLG_DEBUG(0, "Resize Context Stack: %d => %d (pushing '%s')\n", 
 	     CLG_(current_fn_stack).size, new_size,
@@ -313,11 +318,10 @@ void CLG_(push_cxt)(fn_node* fn)
     CLG_(current_fn_stack).size = new_size;
   }
 
-  if (*(CLG_(current_fn_stack).top) == 0) {
+  if (fn && (*(CLG_(current_fn_stack).top) == 0)) {
     UInt *pactive;
 
     /* this is first function: increment its active count */
-    CLG_ASSERT(fn != 0);
     pactive = CLG_(get_fn_entry)(fn->number);
     (*pactive)++;
   }
@@ -326,10 +330,10 @@ void CLG_(push_cxt)(fn_node* fn)
   *(CLG_(current_fn_stack).top) = fn;
   CLG_(current_state).cxt = CLG_(get_cxt)(CLG_(current_fn_stack).top);
 
-  CLG_DEBUG(5, "- push_cxt(fn '%s'): new cxt %d, fn_sp %d\n", 
+  CLG_DEBUG(5, "- push_cxt(fn '%s'): new cxt %d, fn_sp %ld\n",
 	    fn ? fn->name : (Char*)"0x0",
 	    CLG_(current_state).cxt ?
 	      CLG_(current_state).cxt->base_number : -1,
-	    CLG_(current_fn_stack).top - CLG_(current_fn_stack).bottom);
+	    CLG_(current_fn_stack).top - CLG_(current_fn_stack).bottom + 0L);
 }
 			       

@@ -1,2 +1,2 @@
 prog: malloc_free_fill
-vgopts: --malloc-fill=0x55 --free-fill=0x77
+vgopts: -q --malloc-fill=0x55 --free-fill=0x77

@@ -8,7 +8,7 @@
    This file is part of Helgrind, a Valgrind tool for detecting errors
    in threaded programs.
 
-   Copyright (C) 2007-2007 OpenWorks LLP
+   Copyright (C) 2007-2009 OpenWorks LLP
        info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -38,10 +38,11 @@
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_threadstate.h"
+#include "pub_tool_wordfm.h"
 
-#define HG_(str) VGAPPEND(vgHelgrind_,str)
-#include "hg_wordfm.h"
-#include "hg_wordset.h"
+#include "hg_basics.h"
+#include "hg_wordset.h"     /* self */
 
 //------------------------------------------------------------------//
 //--- Word Cache                                                 ---//
@@ -62,8 +63,8 @@ typedef
 typedef
    struct {
       WCacheEnt ent[N_WCACHE_STAT_MAX];
-      Word      dynMax; /* 1 .. N_WCACHE_STAT_MAX inclusive */
-      Word      inUse;  /* 0 .. dynMax inclusive */
+      UWord     dynMax; /* 1 .. N_WCACHE_STAT_MAX inclusive */
+      UWord     inUse;  /* 0 .. dynMax inclusive */
    }
    WCache;
 
@@ -77,7 +78,7 @@ typedef
 
 #define WCache_LOOKUP_AND_RETURN(_retty,_zzcache,_zzarg1,_zzarg2)    \
    do {                                                              \
-      Word    _i;                                                    \
+      UWord   _i;                                                    \
       UWord   _arg1  = (UWord)(_zzarg1);                             \
       UWord   _arg2  = (UWord)(_zzarg2);                             \
       WCache* _cache = &(_zzcache);                                  \
@@ -130,8 +131,8 @@ typedef
 typedef
    struct {
       WordSetU* owner; /* for sanity checking */
-      Word*     words;
-      Int       size; /* Really this should be SizeT */
+      UWord*    words;
+      UWord     size; /* Really this should be SizeT */
    }
    WordVec;
 
@@ -140,12 +141,13 @@ typedef
    corresponding ix2vec entry number.  The two mappings are mutually
    redundant. */
 struct _WordSetU {
-      void*     (*alloc)(SizeT);
+      void*     (*alloc)(HChar*,SizeT);
+      HChar*    cc;
       void      (*dealloc)(void*);
       WordFM*   vec2ix; /* WordVec-to-WordSet mapping tree */
       WordVec** ix2vec; /* WordSet-to-WordVec mapping array */
-      UInt      ix2vec_size;
-      UInt      ix2vec_used;
+      UWord     ix2vec_size;
+      UWord     ix2vec_used;
       WordSet   empty; /* cached, for speed */
       /* Caches for some operations */
       WCache    cache_addTo;
@@ -172,16 +174,16 @@ struct _WordSetU {
 
 /* Create a new WordVec of the given size. */
 
-static WordVec* new_WV_of_size ( WordSetU* wsu, Int sz )
+static WordVec* new_WV_of_size ( WordSetU* wsu, UWord sz )
 {
    WordVec* wv;
    tl_assert(sz >= 0);
-   wv = wsu->alloc( sizeof(WordVec) );
+   wv = wsu->alloc( wsu->cc, sizeof(WordVec) );
    wv->owner = wsu;
    wv->words = NULL;
    wv->size = sz;
    if (sz > 0) {
-     wv->words = wsu->alloc( (SizeT)sz * sizeof(Word) );
+     wv->words = wsu->alloc( wsu->cc, (SizeT)sz * sizeof(UWord) );
    }
    return wv;
 }
@@ -194,16 +196,16 @@ static void delete_WV ( WordVec* wv )
    }
    dealloc(wv);
 }
-static void delete_WV_for_FM ( Word wv ) {
+static void delete_WV_for_FM ( UWord wv ) {
    delete_WV( (WordVec*)wv );
 }
 
-static Word cmp_WordVecs_for_FM ( Word wv1W, Word wv2W )
+static Word cmp_WordVecs_for_FM ( UWord wv1W, UWord wv2W )
 {
-   Int      i;
+   UWord    i;
    WordVec* wv1    = (WordVec*)wv1W;
    WordVec* wv2    = (WordVec*)wv2W;
-   Int      common = wv1->size < wv2->size ? wv1->size : wv2->size;
+   UWord    common = wv1->size < wv2->size ? wv1->size : wv2->size;
    for (i = 0; i < common; i++) {
       if (wv1->words[i] == wv2->words[i])
          continue;
@@ -238,7 +240,7 @@ static void ensure_ix2vec_space ( WordSetU* wsu )
       return;
    new_sz = 2 * wsu->ix2vec_size;
    if (new_sz == 0) new_sz = 2;
-   new_vec = wsu->alloc( new_sz * sizeof(WordVec*) );
+   new_vec = wsu->alloc( wsu->cc, new_sz * sizeof(WordVec*) );
    tl_assert(new_vec);
    for (i = 0; i < wsu->ix2vec_size; i++)
       new_vec[i] = wsu->ix2vec[i];
@@ -275,12 +277,12 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
 {
    Bool     have;
    WordVec* wv_old;
-   Word/*Set*/ ix_old = -1;
+   UWord/*Set*/ ix_old = -1;
    /* Really WordSet, but need something that can safely be casted to
       a Word* in the lookupFM.  Making it WordSet (which is 32 bits)
       causes failures on a 64-bit platform. */
    tl_assert(wv_new->owner == wsu);
-   have = HG_(lookupFM)( wsu->vec2ix, 
+   have = VG_(lookupFM)( wsu->vec2ix, 
                          (Word*)&wv_old, (Word*)&ix_old,
                          (Word)wv_new );
    if (have) {
@@ -296,7 +298,7 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
       tl_assert(wsu->ix2vec);
       tl_assert(wsu->ix2vec_used < wsu->ix2vec_size);
       wsu->ix2vec[wsu->ix2vec_used] = wv_new;
-      HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)wsu->ix2vec_used );
+      VG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)wsu->ix2vec_used );
       if (0) VG_(printf)("aodW %d\n", (Int)wsu->ix2vec_used );
       wsu->ix2vec_used++;
       tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
@@ -305,18 +307,21 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
 }
 
 
-WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
+WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( HChar*, SizeT ),
+                             HChar* cc,
                              void  (*dealloc)(void*),
                              Word  cacheSize )
 {
    WordSetU* wsu;
    WordVec*  empty;
 
-   wsu          = alloc_nofail( sizeof(WordSetU) );
+   wsu          = alloc_nofail( cc, sizeof(WordSetU) );
    VG_(memset)( wsu, 0, sizeof(WordSetU) );
    wsu->alloc   = alloc_nofail;
+   wsu->cc      = cc;
    wsu->dealloc = dealloc;
-   wsu->vec2ix  = HG_(newFM)( alloc_nofail, dealloc, cmp_WordVecs_for_FM );
+   wsu->vec2ix  = VG_(newFM)( alloc_nofail, cc,
+                              dealloc, cmp_WordVecs_for_FM );
    wsu->ix2vec_used = 0;
    wsu->ix2vec_size = 0;
    wsu->ix2vec      = NULL;
@@ -334,7 +339,7 @@ void HG_(deleteWordSetU) ( WordSetU* wsu )
 {
    void (*dealloc)(void*) = wsu->dealloc;
    tl_assert(wsu->vec2ix);
-   HG_(deleteFM)( wsu->vec2ix, delete_WV_for_FM, NULL/*val-finalizer*/ );
+   VG_(deleteFM)( wsu->vec2ix, delete_WV_for_FM, NULL/*val-finalizer*/ );
    if (wsu->ix2vec)
       dealloc(wsu->ix2vec);
    dealloc(wsu);
@@ -358,7 +363,7 @@ Bool HG_(isEmptyWS) ( WordSetU* wsu, WordSet ws )
    }
 }
 
-Bool HG_(isSingletonWS) ( WordSetU* wsu, WordSet ws, Word w )
+Bool HG_(isSingletonWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
    WordVec* wv;
    tl_assert(wsu);
@@ -367,7 +372,7 @@ Bool HG_(isSingletonWS) ( WordSetU* wsu, WordSet ws, Word w )
    return (Bool)(wv->size == 1 && wv->words[0] == w);
 }
 
-Int HG_(cardinalityWS) ( WordSetU* wsu, WordSet ws )
+UWord HG_(cardinalityWS) ( WordSetU* wsu, WordSet ws )
 {
    WordVec* wv;
    tl_assert(wsu);
@@ -376,7 +381,7 @@ Int HG_(cardinalityWS) ( WordSetU* wsu, WordSet ws )
    return wv->size;
 }
 
-Word HG_(anyElementOfWS) ( WordSetU* wsu, WordSet ws )
+UWord HG_(anyElementOfWS) ( WordSetU* wsu, WordSet ws )
 {
    WordVec* wv;
    tl_assert(wsu);
@@ -386,13 +391,13 @@ Word HG_(anyElementOfWS) ( WordSetU* wsu, WordSet ws )
    return wv->words[0];
 }
 
-Int HG_(cardinalityWSU) ( WordSetU* wsu )
+UWord HG_(cardinalityWSU) ( WordSetU* wsu )
 {
    tl_assert(wsu);
-   return (Int)wsu->ix2vec_used;
+   return wsu->ix2vec_used;
 }
 
-void HG_(getPayloadWS) ( /*OUT*/Word** words, /*OUT*/Word* nWords, 
+void HG_(getPayloadWS) ( /*OUT*/UWord** words, /*OUT*/UWord* nWords, 
                          WordSetU* wsu, WordSet ws )
 {
    WordVec* wv;
@@ -414,7 +419,7 @@ Bool HG_(plausibleWS) ( WordSetU* wsu, WordSet ws )
 Bool HG_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
 {
    WordVec* wv;
-   Int      i;
+   UWord    i;
    if (wsu == NULL) return False;
    if (ws < 0 || ws >= wsu->ix2vec_used)
       return False;
@@ -431,9 +436,9 @@ Bool HG_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
    return True;
 }
 
-Bool HG_(elemWS) ( WordSetU* wsu, WordSet ws, Word w )
+Bool HG_(elemWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
-   Int      i;
+   UWord    i;
    WordVec* wv = do_ix2vec( wsu, ws );
    wsu->n_elem++;
    for (i = 0; i < wv->size; i++) {
@@ -443,7 +448,7 @@ Bool HG_(elemWS) ( WordSetU* wsu, WordSet ws, Word w )
    return False;
 }
 
-WordSet HG_(doubletonWS) ( WordSetU* wsu, Word w1, Word w2 )
+WordSet HG_(doubletonWS) ( WordSetU* wsu, UWord w1, UWord w2 )
 {
    WordVec* wv;
    wsu->n_doubleton++;
@@ -465,7 +470,7 @@ WordSet HG_(doubletonWS) ( WordSetU* wsu, Word w1, Word w2 )
    return add_or_dealloc_WordVec( wsu, wv );
 }
 
-WordSet HG_(singletonWS) ( WordSetU* wsu, Word w )
+WordSet HG_(singletonWS) ( WordSetU* wsu, UWord w )
 {
    return HG_(doubletonWS)( wsu, w, w );
 }
@@ -478,7 +483,7 @@ WordSet HG_(isSubsetOf) ( WordSetU* wsu, WordSet small, WordSet big )
 
 void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
 {
-   Int      i;
+   UWord    i;
    WordVec* wv;
    tl_assert(wsu);
    wv = do_ix2vec( wsu, ws );
@@ -494,26 +499,27 @@ void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
 void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
 {
    VG_(printf)("   WordSet \"%s\":\n", name);
-   VG_(printf)("      addTo        %10u (%u uncached)\n",
+   VG_(printf)("      addTo        %10lu (%lu uncached)\n",
                wsu->n_add, wsu->n_add_uncached);
-   VG_(printf)("      delFrom      %10u (%u uncached)\n", 
+   VG_(printf)("      delFrom      %10lu (%lu uncached)\n", 
                wsu->n_del, wsu->n_del_uncached);
-   VG_(printf)("      union        %10u\n", wsu->n_union);
-   VG_(printf)("      intersect    %10u (%u uncached) [nb. incl isSubsetOf]\n", 
+   VG_(printf)("      union        %10lu\n", wsu->n_union);
+   VG_(printf)("      intersect    %10lu (%lu uncached) "
+               "[nb. incl isSubsetOf]\n", 
                wsu->n_intersect, wsu->n_intersect_uncached);
-   VG_(printf)("      minus        %10u (%u uncached)\n",
+   VG_(printf)("      minus        %10lu (%lu uncached)\n",
                wsu->n_minus, wsu->n_minus_uncached);
-   VG_(printf)("      elem         %10u\n",   wsu->n_elem);
-   VG_(printf)("      doubleton    %10u\n",   wsu->n_doubleton);
-   VG_(printf)("      isEmpty      %10u\n",   wsu->n_isEmpty);
-   VG_(printf)("      isSingleton  %10u\n",   wsu->n_isSingleton);
-   VG_(printf)("      anyElementOf %10u\n",   wsu->n_anyElementOf);
-   VG_(printf)("      isSubsetOf   %10u\n",   wsu->n_isSubsetOf);
+   VG_(printf)("      elem         %10lu\n",   wsu->n_elem);
+   VG_(printf)("      doubleton    %10lu\n",   wsu->n_doubleton);
+   VG_(printf)("      isEmpty      %10lu\n",   wsu->n_isEmpty);
+   VG_(printf)("      isSingleton  %10lu\n",   wsu->n_isSingleton);
+   VG_(printf)("      anyElementOf %10lu\n",   wsu->n_anyElementOf);
+   VG_(printf)("      isSubsetOf   %10lu\n",   wsu->n_isSubsetOf);
 }
 
-WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, Word w )
+WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
-   Int      k, j;
+   UWord    k, j;
    WordVec* wv_new;
    WordVec* wv;
    WordSet  result = (WordSet)(-1); /* bogus */
@@ -552,9 +558,9 @@ WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, Word w )
    return result;
 }
 
-WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, Word w )
+WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
-   Int      i, j, k;
+   UWord    i, j, k;
    WordVec* wv_new;
    WordSet  result = (WordSet)(-1); /* bogus */
    WordVec* wv = do_ix2vec( wsu, ws );
@@ -605,7 +611,7 @@ WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, Word w )
 
 WordSet HG_(unionWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 {
-   Int      i1, i2, k, sz;
+   UWord    i1, i2, k, sz;
    WordVec* wv_new;
    WordVec* wv1 = do_ix2vec( wsu, ws1 );
    WordVec* wv2 = do_ix2vec( wsu, ws2 );
@@ -675,7 +681,7 @@ WordSet HG_(unionWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 
 WordSet HG_(intersectWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 {
-   Int      i1, i2, k, sz;
+   UWord    i1, i2, k, sz;
    WordSet  ws_new = (WordSet)(-1); /* bogus */
    WordVec* wv_new;
    WordVec* wv1; 
@@ -756,7 +762,7 @@ WordSet HG_(intersectWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 
 WordSet HG_(minusWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 {
-   Int      i1, i2, k, sz;
+   UWord    i1, i2, k, sz;
    WordSet  ws_new = (WordSet)(-1); /* bogus */
    WordVec* wv_new;
    WordVec* wv1;
@@ -833,7 +839,7 @@ WordSet HG_(minusWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 static __attribute__((unused))
 void show_WS ( WordSetU* wsu, WordSet ws )
 {
-   Int i;
+   UWord i;
    WordVec* wv = do_ix2vec( wsu, ws );
    VG_(printf)("#%u{", ws);
    for (i = 0; i < wv->size; i++) {

@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -99,10 +99,10 @@ typedef
       /* Shrinkable? (SkResvn only) */
       ShrinkMode smode;
       /* Associated file (SkFile{C,V} only) */
-      UWord   dev;
-      UWord   ino;
+      ULong   dev;
+      ULong   ino;
+      Off64T  offset;
       UInt    mode;
-      ULong   offset;
       Int     fnIdx;    // file name table index, if name is known
       /* Permissions (SkAnon{C,V}, SkFile{C,V} only) */
       Bool    hasR;

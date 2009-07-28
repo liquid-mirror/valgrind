@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2007, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -64,13 +64,13 @@ Int CLG_(get_dump_counter)(void)
 
 Char* CLG_(get_out_file)()
 {
-    CLG_ASSERT(dumps_initialized);
+    CLG_(init_dumps)();
     return out_file;
 }
 
 Char* CLG_(get_out_directory)()
 {
-    CLG_ASSERT(dumps_initialized);
+    CLG_(init_dumps)();
     return out_directory;
 }
 
@@ -105,7 +105,8 @@ void init_dump_array(void)
       CLG_(stat).distinct_fns +
       CLG_(stat).context_counter;
     CLG_ASSERT(dump_array == 0);
-    dump_array = (Bool*) CLG_MALLOC(dump_array_size * sizeof(Bool));
+    dump_array = (Bool*) CLG_MALLOC("cl.dump.ida.1",
+                                    dump_array_size * sizeof(Bool));
     obj_dumped  = dump_array;
     file_dumped = obj_dumped + CLG_(stat).distinct_objs;
     fn_dumped   = file_dumped + CLG_(stat).distinct_files;
@@ -184,19 +185,19 @@ static void my_fwrite(Int fd, Char* buf, Int len)
 
 static void print_obj(Char* buf, obj_node* obj)
 {
-    int n;
+    //int n;
 
     if (CLG_(clo).compress_strings) {
 	CLG_ASSERT(obj_dumped != 0);
 	if (obj_dumped[obj->number])
-	    n = VG_(sprintf)(buf, "(%d)\n", obj->number);
+	    /*n =*/ VG_(sprintf)(buf, "(%d)\n", obj->number);
 	else {
-	    n = VG_(sprintf)(buf, "(%d) %s\n",
+	    /*n =*/ VG_(sprintf)(buf, "(%d) %s\n",
 			     obj->number, obj->name);
 	}
     }
     else
-	n = VG_(sprintf)(buf, "%s\n", obj->name);
+	/*n =*/ VG_(sprintf)(buf, "%s\n", obj->name);
 
 #if 0
     /* add mapping parameters the first time a object is dumped
@@ -477,7 +478,7 @@ Bool get_debug_pos(BBCC* bbcc, Addr addr, AddrPos* p)
     p->addr = addr - bbcc->bb->obj->offset;
     p->bb_addr = bbcc->bb->offset;
 
-    CLG_DEBUG(3, "  get_debug_pos(%p): BB %p, fn '%s', file '%s', line %u\n",
+    CLG_DEBUG(3, "  get_debug_pos(%#lx): BB %#lx, fn '%s', file '%s', line %u\n",
 	     addr, bb_addr(bbcc->bb), bbcc->cxt->fn[0]->name,
 	     p->file->name, p->line);
 
@@ -519,7 +520,7 @@ static void init_fcost(AddrCost* c, Addr addr, Addr bbaddr, file_node* file)
 static void fprint_apos(Int fd, AddrPos* curr, AddrPos* last, file_node* func_file)
 {
     CLG_ASSERT(curr->file != 0);
-    CLG_DEBUG(2, "    print_apos(file '%s', line %d, bb %p, addr %p) fnFile '%s'\n",
+    CLG_DEBUG(2, "    print_apos(file '%s', line %d, bb %#lx, addr %#lx) fnFile '%s'\n",
 	     curr->file->name, curr->line, curr->bb_addr, curr->addr,
 	     func_file->name);
 
@@ -569,7 +570,7 @@ void fprint_pos(Int fd, AddrPos* curr, AddrPos* last)
 		    p = VG_(sprintf)(outbuf, "%d ", diff);
 	    }
 	    else
-		p = VG_(sprintf)(outbuf, "%p ", curr->addr);
+		p = VG_(sprintf)(outbuf, "%#lx ", curr->addr);
 	}
 
 	if (CLG_(clo).dump_bb) {
@@ -584,7 +585,7 @@ void fprint_pos(Int fd, AddrPos* curr, AddrPos* last)
 		    p += VG_(sprintf)(outbuf+p, "%d ", diff);
 	    }
 	    else
-		p += VG_(sprintf)(outbuf+p, "%p ", curr->bb_addr);
+		p += VG_(sprintf)(outbuf+p, "%#lx ", curr->bb_addr);
 	}
 
 	if (CLG_(clo).dump_line) {
@@ -630,7 +631,7 @@ void fprint_cost(int fd, EventMapping* es, ULong* cost)
 static void fprint_fcost(Int fd, AddrCost* c, AddrPos* last)
 {
   CLG_DEBUGIF(3) {
-    CLG_DEBUG(2, "   print_fcost(file '%s', line %d, bb %p, addr %p):\n",
+    CLG_DEBUG(2, "   print_fcost(file '%s', line %d, bb %#lx, addr %#lx):\n",
 	     c->p.file->name, c->p.line, c->p.bb_addr, c->p.addr);
     CLG_(print_cost)(-5, CLG_(sets).full, c->cost);
   }
@@ -786,7 +787,7 @@ static Bool fprint_bbcc(Int fd, BBCC* bbcc, AddrPos* last)
   CLG_ASSERT(bbcc->cxt != 0);
   CLG_DEBUGIF(1) {
     VG_(printf)("+ fprint_bbcc (Instr %d): ", bb->instr_count);
-    CLG_(print_bbcc)(15, bbcc, False);
+    CLG_(print_bbcc)(15, bbcc);
   }
 
   CLG_ASSERT(currSum == 0 || currSum == 1);
@@ -1018,7 +1019,7 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 	int s, r;
 	BBCC* v;
 
-	CLG_DEBUG(8, "  qsort(%d,%d)\n", a-qsort_start, n);
+	CLG_DEBUG(8, "  qsort(%ld,%ld)\n", a-qsort_start + 0L, n + 0L);
 
 	if (n < 7) {	 /* Insertion sort on smallest arrays */
 		for (pm = a+1; pm < a+n; pm++)
@@ -1027,7 +1028,8 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 
 		CLG_DEBUGIF(8) {
 		    for (pm = a; pm < a+n; pm++) {
-			VG_(printf)("   %3d BB %p, ", pm - qsort_start,
+			VG_(printf)("   %3ld BB %#lx, ",
+                                    pm - qsort_start + 0L,
 				    bb_addr((*pm)->bb));      
 			CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 		    }
@@ -1081,25 +1083,30 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 	if ((s = a+n-1-pd)>0) { for(r=0;r<s;r++) swap(pc+r, a+n-s+r); }	    
 
 	CLG_DEBUGIF(8) {
-	  VG_(printf)("   PV BB %p, ", bb_addr((*pv)->bb));
+	  VG_(printf)("   PV BB %#lx, ", bb_addr((*pv)->bb));
 	    CLG_(print_cxt)(9, (*pv)->cxt, (*pv)->rec_index);
 
 	    s = pb-pa+1;
-	    VG_(printf)("    Lower %d - %d:\n", a-qsort_start, a+s-1-qsort_start);
+	    VG_(printf)("    Lower %ld - %ld:\n",
+                        a-qsort_start + 0L,
+                        a+s-1-qsort_start + 0L);
 	    for (r=0;r<s;r++) {
 		pm = a+r;
-		VG_(printf)("     %3d BB %p, ", 
-			    pm-qsort_start,bb_addr((*pm)->bb));
+		VG_(printf)("     %3ld BB %#lx, ",
+			    pm-qsort_start + 0L,
+                            bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 	    }
 
 	    s = pd-pc+1;
-	    VG_(printf)("    Upper %d - %d:\n", 
-			a+n-s-qsort_start, a+n-1-qsort_start);
+	    VG_(printf)("    Upper %ld - %ld:\n",
+			a+n-s-qsort_start + 0L,
+                        a+n-1-qsort_start + 0L);
 	    for (r=0;r<s;r++) {
 		pm = a+n-s+r;
-		VG_(printf)("     %3d BB %p, ", 
-			    pm-qsort_start,bb_addr((*pm)->bb));
+		VG_(printf)("     %3ld BB %#lx, ",
+			    pm-qsort_start + 0L,
+                            bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 	    }
 	}
@@ -1212,7 +1219,8 @@ BBCC** prepare_dump(void)
 
     /* allocate bbcc array, insert BBCCs and sort */
     prepare_ptr = array =
-      (BBCC**) CLG_MALLOC((prepare_count+1) * sizeof(BBCC*));    
+      (BBCC**) CLG_MALLOC("cl.dump.pd.1",
+                          (prepare_count+1) * sizeof(BBCC*));    
 
     CLG_(forall_bbccs)(hash_addPtr);
 
@@ -1257,7 +1265,7 @@ static
 void file_err(void)
 {
    VG_(message)(Vg_UserMsg,
-                "Error: can not open cache simulation output file `%s'",
+                "Error: can not open cache simulation output file `%s'\n",
                 filename );
    VG_(exit)(1);
 }
@@ -1288,27 +1296,27 @@ static int new_dumpfile(Char buf[BUF_LEN], int tid, Char* trigger)
 	    i += VG_(sprintf)(filename+i, ".%d", out_counter);
 
 	if (CLG_(clo).separate_threads)
-	    i += VG_(sprintf)(filename+i, "-%02d", tid);
+	    VG_(sprintf)(filename+i, "-%02d", tid);
 
 	res = VG_(open)(filename, VKI_O_WRONLY|VKI_O_TRUNC, 0);
     }
     else {
 	VG_(sprintf)(filename, "%s", out_file);
         res = VG_(open)(filename, VKI_O_WRONLY|VKI_O_APPEND, 0);
-	if (!res.isError && out_counter>1)
+	if (!sr_isError(res) && out_counter>1)
 	    appending = True;
     }
 
-    if (res.isError) {
+    if (sr_isError(res)) {
 	res = VG_(open)(filename, VKI_O_CREAT|VKI_O_WRONLY,
 			VKI_S_IRUSR|VKI_S_IWUSR);
-	if (res.isError) {
+	if (sr_isError(res)) {
 	    /* If the file can not be opened for whatever reason (conflict
 	       between multiple supervised processes?), give up now. */
 	    file_err();
 	}
     }
-    fd = (Int) res.res;
+    fd = (Int) sr_Res(res);
 
     CLG_DEBUG(2, "  new_dumpfile '%s'\n", filename);
 
@@ -1459,13 +1467,13 @@ static int new_dumpfile(Char buf[BUF_LEN], int tid, Char* trigger)
    my_fwrite(fd, "\n\n",2);
 
    if (VG_(clo_verbosity) > 1)
-       VG_(message)(Vg_DebugMsg, "Dump to %s", filename);
+       VG_(message)(Vg_DebugMsg, "Dump to %s\n", filename);
 
    return fd;
 }
 
 
-static void close_dumpfile(Char buf[BUF_LEN], int fd, int tid)
+static void close_dumpfile(int fd)
 {
     if (fd <0) return;
 
@@ -1481,7 +1489,7 @@ static void close_dumpfile(Char buf[BUF_LEN], int fd, int tid)
     if (filename[0] == '.') {
 	if (-1 == VG_(rename) (filename, filename+1)) {
 	    /* Can not rename to correct file name: give out warning */
-	    VG_(message)(Vg_DebugMsg, "Warning: Can not rename .%s to %s",
+	    VG_(message)(Vg_DebugMsg, "Warning: Can not rename .%s to %s\n",
 			 filename, filename);
        }
    }
@@ -1549,7 +1557,7 @@ static void print_bbccs_of_thread(thread_info* ti)
 	/* FIXME: Specify Object of BB if different to object of fn */
 	int i, pos = 0;
 	ULong ecounter = (*p)->ecounter_sum;
-	pos = VG_(sprintf)(print_buf, "bb=%p ", (*p)->bb->offset);
+	pos = VG_(sprintf)(print_buf, "bb=%#lx ", (*p)->bb->offset);
 	for(i = 0; i<(*p)->bb->cjmp_count;i++) {
 	    pos += VG_(sprintf)(print_buf+pos, "%d %llu ", 
 				(*p)->bb->jmp[i].instr,
@@ -1567,7 +1575,7 @@ static void print_bbccs_of_thread(thread_info* ti)
     p++;
   }
 
-  close_dumpfile(print_buf, print_fd, CLG_(current_tid));
+  close_dumpfile(print_fd);
   if (array) VG_(free)(array);
   
   /* set counters of last dump */
@@ -1608,8 +1616,10 @@ void CLG_(dump_profile)(Char* trigger, Bool only_current_thread)
    CLG_DEBUG(2, "+ dump_profile(Trigger '%s')\n",
 	    trigger ? trigger : (Char*)"Prg.Term.");
 
+   CLG_(init_dumps)();
+
    if (VG_(clo_verbosity) > 1)
-       VG_(message)(Vg_DebugMsg, "Start dumping at BB %llu (%s)...",
+       VG_(message)(Vg_DebugMsg, "Start dumping at BB %llu (%s)...\n",
 		    CLG_(stat).bb_executions,
 		    trigger ? trigger : (Char*)"Prg.Term.");
 
@@ -1620,7 +1630,7 @@ void CLG_(dump_profile)(Char* trigger, Bool only_current_thread)
    bbs_done = CLG_(stat).bb_executions++;
 
    if (VG_(clo_verbosity) > 1)
-     VG_(message)(Vg_DebugMsg, "Dumping done.");
+     VG_(message)(Vg_DebugMsg, "Dumping done.\n");
 }
 
 /* copy command to cmd buffer (could change) */
@@ -1630,7 +1640,6 @@ void init_cmdbuf(void)
   Int i,j,size = 0;
   HChar* argv;
 
-#if VG_CORE_INTERFACE_VERSION > 8
   if (VG_(args_the_exename))
       size = VG_(sprintf)(cmdbuf, " %s", VG_(args_the_exename));
 
@@ -1641,15 +1650,6 @@ void init_cmdbuf(void)
       for(j=0;argv[j]!=0;j++)
 	  if (size < BUF_LEN) cmdbuf[size++] = argv[j];
   }
-#else
-  for(i = 0; i < VG_(client_argc); i++) {
-    argv = VG_(client_argv)[i];
-    if (!argv) continue;
-    if ((size>0) && (size < BUF_LEN)) cmdbuf[size++] = ' ';
-    for(j=0;argv[j]!=0;j++)
-      if (size < BUF_LEN) cmdbuf[size++] = argv[j];
-  }
-#endif
 
   if (size == BUF_LEN) size--;
   cmdbuf[size] = 0;
@@ -1665,14 +1665,34 @@ void init_cmdbuf(void)
  * <out_file> always starts with a full absolute path.
  * If the output format string represents a relative path, the current
  * working directory at program start is used.
+ *
+ * This function has to be called every time a profile dump is generated
+ * to be able to react on PID changes.
  */
 void CLG_(init_dumps)()
 {
    Int lastSlash, i;
    SysRes res;
 
+   static int thisPID = 0;
+   int currentPID = VG_(getpid)();
+   if (currentPID == thisPID) {
+       /* already initialized, and no PID change */
+       CLG_ASSERT(out_file != 0);
+       return;
+   }
+   thisPID = currentPID;
+   
    if (!CLG_(clo).out_format)
      CLG_(clo).out_format = DEFAULT_OUTFORMAT;
+
+   /* If a file name was already set, clean up before */
+   if (out_file) {
+       VG_(free)(out_file);
+       VG_(free)(out_directory);
+       VG_(free)(filename);
+       out_counter = 0;
+   }
 
    // Setup output filename.
    out_file =
@@ -1687,12 +1707,13 @@ void CLG_(init_dumps)()
        i++;
    }
    i = lastSlash;
-   out_directory = (Char*) CLG_MALLOC(i+1);
+   out_directory = (Char*) CLG_MALLOC("cl.dump.init_dumps.1", i+1);
    VG_(strncpy)(out_directory, out_file, i);
    out_directory[i] = 0;
 
    /* allocate space big enough for final filenames */
-   filename = (Char*) CLG_MALLOC(VG_(strlen)(out_file)+32);
+   filename = (Char*) CLG_MALLOC("cl.dump.init_dumps.2",
+                                 VG_(strlen)(out_file)+32);
    CLG_ASSERT(filename != 0);
        
    /* Make sure the output base file can be written.
@@ -1703,16 +1724,17 @@ void CLG_(init_dumps)()
     */ 
     VG_(strcpy)(filename, out_file);
     res = VG_(open)(filename, VKI_O_WRONLY|VKI_O_TRUNC, 0);
-    if (res.isError) { 
+    if (sr_isError(res)) { 
 	res = VG_(open)(filename, VKI_O_CREAT|VKI_O_WRONLY,
 		       VKI_S_IRUSR|VKI_S_IWUSR);
-	if (res.isError) {
+	if (sr_isError(res)) {
 	    file_err(); 
 	}
     }
-    if (!res.isError) VG_(close)( (Int)res.res );
+    if (!sr_isError(res)) VG_(close)( (Int)sr_Res(res) );
 
-    init_cmdbuf();
+    if (!dumps_initialized)
+	init_cmdbuf();
 
     dumps_initialized = True;
 }

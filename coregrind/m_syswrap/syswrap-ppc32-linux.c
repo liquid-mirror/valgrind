@@ -7,8 +7,8 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2005-2007 Nicholas Nethercote <njn@valgrind.org>
-   Copyright (C) 2005-2007 Cerion Armour-Brown <cerion@open-works.co.uk>
+   Copyright (C) 2005-2009 Nicholas Nethercote <njn@valgrind.org>
+   Copyright (C) 2005-2009 Cerion Armour-Brown <cerion@open-works.co.uk>
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -28,6 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#if defined(VGP_ppc32_linux)
+
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
 #include "pub_core_vkiscnums.h"
@@ -46,6 +48,7 @@
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
 #include "pub_core_tooliface.h"
+#include "pub_core_stacks.h"        // VG_(register_stack)
 
 #include "priv_types_n_macros.h"
 #include "priv_syswrap-generic.h"   /* for decls of generic wrappers */
@@ -304,11 +307,14 @@ static SysRes do_clone ( ThreadId ptid,
       ctst->client_stack_highest_word = (Addr)VG_PGROUNDUP(sp);
       ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
+      VG_(register_stack)(seg->start, ctst->client_stack_highest_word);
+
       if (debug)
-	 VG_(printf)("\ntid %d: guessed client stack range %p-%p\n",
+	 VG_(printf)("\ntid %d: guessed client stack range %#lx-%#lx\n",
 		     ctid, seg->start, VG_PGROUNDUP(sp));
    } else {
-      VG_(message)(Vg_UserMsg, "!? New thread %d starts with R1(%p) unmapped\n",
+      VG_(message)(Vg_UserMsg,
+                   "!? New thread %d starts with R1(%#lx) unmapped\n",
 		   ctid, sp);
       ctst->client_stack_szB  = 0;
    }
@@ -321,7 +327,7 @@ static SysRes do_clone ( ThreadId ptid,
 
    if (flags & VKI_CLONE_SETTLS) {
       if (debug)
-         VG_(printf)("clone child has SETTLS: tls at %p\n", child_tls);
+         VG_(printf)("clone child has SETTLS: tls at %#lx\n", child_tls);
       ctst->arch.vex.guest_GPR2 = child_tls;
    }
 
@@ -346,7 +352,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
-   if (res.isError) {
+   if (sr_isError(res)) {
       /* clone failed */
       VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
@@ -372,7 +378,8 @@ void setup_child ( /*OUT*/ ThreadArchState *child,
 {
    /* We inherit our parent's guest state. */
    child->vex = parent->vex;
-   child->vex_shadow = parent->vex_shadow;
+   child->vex_shadow1 = parent->vex_shadow1;
+   child->vex_shadow2 = parent->vex_shadow2;
 }
 
 
@@ -402,6 +409,8 @@ DECL_TEMPLATE(ppc32_linux, sys_sigreturn);
 DECL_TEMPLATE(ppc32_linux, sys_rt_sigreturn);
 DECL_TEMPLATE(ppc32_linux, sys_sigaction);
 DECL_TEMPLATE(ppc32_linux, sys_sigsuspend);
+DECL_TEMPLATE(ppc32_linux, sys_spu_create);
+DECL_TEMPLATE(ppc32_linux, sys_spu_run);
 
 PRE(sys_socketcall)
 {
@@ -413,7 +422,7 @@ PRE(sys_socketcall)
 #  define ARG2_5  (((UWord*)ARG2)[5])
 
    *flags |= SfMayBlock;
-   PRINT("sys_socketcall ( %d, %p )",ARG1,ARG2);
+   PRINT("sys_socketcall ( %ld, %#lx )",ARG1,ARG2);
    PRE_REG_READ2(long, "socketcall", int, call, unsigned long *, args);
 
    switch (ARG1 /* request */) {
@@ -501,8 +510,8 @@ PRE(sys_socketcall)
      /* int getsockopt(int s, int level, int optname,
 	void *optval, socklen_t *optlen); */
      PRE_MEM_READ( "socketcall.getsockopt(args)", ARG2, 5*sizeof(Addr) );
-     ML_(generic_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2,
-				      ARG2_3, ARG2_4 );
+     ML_(linux_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2,
+				    ARG2_3, ARG2_4 );
      break;
 
    case VKI_SYS_GETSOCKNAME:
@@ -545,7 +554,7 @@ PRE(sys_socketcall)
    }
 
    default:
-     VG_(message)(Vg_DebugMsg,"Warning: unhandled socketcall 0x%x",ARG1);
+     VG_(message)(Vg_DebugMsg,"Warning: unhandled socketcall 0x%lx\n",ARG1);
      SET_STATUS_Failure( VKI_EINVAL );
      break;
    }
@@ -622,9 +631,9 @@ POST(sys_socketcall)
     break;
 
   case VKI_SYS_GETSOCKOPT:
-    ML_(generic_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
-				      ARG2_0, ARG2_1,
-				      ARG2_2, ARG2_3, ARG2_4 );
+    ML_(linux_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
+				    ARG2_0, ARG2_1,
+				    ARG2_2, ARG2_3, ARG2_4 );
     break;
 
   case VKI_SYS_GETSOCKNAME:
@@ -648,7 +657,7 @@ POST(sys_socketcall)
     break;
 
   default:
-    VG_(message)(Vg_DebugMsg,"FATAL: unhandled socketcall 0x%x",ARG1);
+    VG_(message)(Vg_DebugMsg,"FATAL: unhandled socketcall 0x%lx\n",ARG1);
     VG_(core_panic)("... bye!\n");
     break; /*NOTREACHED*/
   }
@@ -664,7 +673,7 @@ PRE(sys_mmap)
 {
    SysRes r;
 
-   PRINT("sys_mmap ( %p, %llu, %d, %d, %d, %d )",
+   PRINT("sys_mmap ( %#lx, %llu, %ld, %ld, %ld, %ld )",
          ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 );
    PRE_REG_READ6(long, "mmap",
                  unsigned long, start, unsigned long, length,
@@ -683,7 +692,7 @@ PRE(sys_mmap2)
    // Exactly like old_mmap() except:
    //  - the file offset is specified in 4K units rather than bytes,
    //    so that it can be used for files bigger than 2^32 bytes.
-   PRINT("sys_mmap2 ( %p, %llu, %d, %d, %d, %d )",
+   PRINT("sys_mmap2 ( %#lx, %llu, %ld, %ld, %ld, %ld )",
          ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 );
    PRE_REG_READ6(long, "mmap2",
                  unsigned long, start, unsigned long, length,
@@ -701,7 +710,7 @@ PRE(sys_mmap2)
 // things, eventually, I think.  --njn
 PRE(sys_stat64)
 {
-   PRINT("sys_stat64 ( %p, %p )",ARG1,ARG2);
+   PRINT("sys_stat64 ( %#lx, %#lx )",ARG1,ARG2);
    PRE_REG_READ2(long, "stat64", char *, file_name, struct stat64 *, buf);
    PRE_MEM_RASCIIZ( "stat64(file_name)", ARG1 );
    PRE_MEM_WRITE( "stat64(buf)", ARG2, sizeof(struct vki_stat64) );
@@ -714,7 +723,7 @@ POST(sys_stat64)
 
 PRE(sys_lstat64)
 {
-   PRINT("sys_lstat64 ( %p(%s), %p )",ARG1,ARG1,ARG2);
+   PRINT("sys_lstat64 ( %#lx(%s), %#lx )",ARG1,(char*)ARG1,ARG2);
    PRE_REG_READ2(long, "lstat64", char *, file_name, struct stat64 *, buf);
    PRE_MEM_RASCIIZ( "lstat64(file_name)", ARG1 );
    PRE_MEM_WRITE( "lstat64(buf)", ARG2, sizeof(struct vki_stat64) );
@@ -730,7 +739,7 @@ POST(sys_lstat64)
 
 PRE(sys_fstatat64)
 {
-   PRINT("sys_fstatat64 ( %d, %p(%s), %p )",ARG1,ARG2,ARG2,ARG3);
+  PRINT("sys_fstatat64 ( %ld, %#lx(%s), %#lx )",ARG1,ARG2,(char*)ARG2,ARG3);
    PRE_REG_READ3(long, "fstatat64",
                  int, dfd, char *, file_name, struct stat64 *, buf);
    PRE_MEM_RASCIIZ( "fstatat64(file_name)", ARG2 );
@@ -744,7 +753,7 @@ POST(sys_fstatat64)
 
 PRE(sys_fstat64)
 {
-  PRINT("sys_fstat64 ( %d, %p )",ARG1,ARG2);
+  PRINT("sys_fstat64 ( %ld, %#lx )",ARG1,ARG2);
   PRE_REG_READ2(long, "fstat64", unsigned long, fd, struct stat64 *, buf);
   PRE_MEM_WRITE( "fstat64(buf)", ARG2, sizeof(struct vki_stat64) );
 }
@@ -763,7 +772,7 @@ static Addr deref_Addr ( ThreadId tid, Addr a, Char* s )
 
 PRE(sys_ipc)
 {
-  PRINT("sys_ipc ( %d, %d, %d, %d, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+  PRINT("sys_ipc ( %ld, %ld, %ld, %ld, %#lx, %ld )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
   // XXX: this is simplistic -- some args are not used in all circumstances.
   PRE_REG_READ6(int, "ipc",
 		vki_uint, call, int, first, int, second, int, third,
@@ -835,7 +844,7 @@ PRE(sys_ipc)
       ML_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
       break;
     default:
-      VG_(message)(Vg_DebugMsg, "FATAL: unhandled syscall(ipc) %d", ARG1 );
+      VG_(message)(Vg_DebugMsg, "FATAL: unhandled syscall(ipc) %ld\n", ARG1 );
       VG_(core_panic)("... bye!\n");
       break; /*NOTREACHED*/
     }
@@ -887,9 +896,7 @@ POST(sys_ipc)
       POST_MEM_WRITE( ARG4, sizeof( Addr ) );
 
       addr = deref_Addr ( tid, ARG4, "shmat(addr)" );
-      if ( addr > 0 ) {
-	ML_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
-      }
+      ML_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
       break;
     }
   case VKI_SHMDT:
@@ -902,7 +909,7 @@ POST(sys_ipc)
     break;
   default:
     VG_(message)(Vg_DebugMsg,
-		 "FATAL: unhandled syscall(ipc) %d",
+		 "FATAL: unhandled syscall(ipc) %ld\n",
 		 ARG1 );
     VG_(core_panic)("... bye!\n");
     break; /*NOTREACHED*/
@@ -949,7 +956,7 @@ PRE(sys_clone)
 {
    UInt cloneflags;
 
-   PRINT("sys_clone ( %x, %p, %p, %p, %p )",ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_clone ( %lx, %#lx, %#lx, %#lx, %#lx )",ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(int, "clone",
                  unsigned long, flags,
                  void *,        child_stack,
@@ -1009,11 +1016,11 @@ PRE(sys_clone)
 
    default:
       /* should we just ENOSYS? */
-      VG_(message)(Vg_UserMsg, "Unsupported clone() flags: 0x%x", ARG1);
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "The only supported clone() uses are:");
-      VG_(message)(Vg_UserMsg, " - via a threads library (LinuxThreads or NPTL)");
-      VG_(message)(Vg_UserMsg, " - via the implementation of fork or vfork");
+      VG_(message)(Vg_UserMsg, "Unsupported clone() flags: 0x%lx\n", ARG1);
+      VG_(message)(Vg_UserMsg, "\n");
+      VG_(message)(Vg_UserMsg, "The only supported clone() uses are:\n");
+      VG_(message)(Vg_UserMsg, " - via a threads library (LinuxThreads or NPTL)\n");
+      VG_(message)(Vg_UserMsg, " - via the implementation of fork or vfork\n");
       VG_(unimplemented)
          ("Valgrind does not support general clone().");
    }
@@ -1375,10 +1382,10 @@ void convert_sigset_to_rt(const vki_old_sigset_t *oldset, vki_sigset_t *set)
 }
 PRE(sys_sigaction)
 {
-   struct vki_sigaction new, old;
-   struct vki_sigaction *newp, *oldp;
+   vki_sigaction_toK_t   new, *newp;
+   vki_sigaction_fromK_t old, *oldp;
 
-   PRINT("sys_sigaction ( %d, %p, %p )", ARG1,ARG2,ARG3);
+   PRINT("sys_sigaction ( %ld, %#lx, %#lx )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(int, "sigaction",
                  int, signum, const struct old_sigaction *, act,
                  struct old_sigaction *, oldact);
@@ -1443,10 +1450,31 @@ PRE(sys_sigsuspend)
       that takes a pointer to the signal mask so supports more signals.
     */
    *flags |= SfMayBlock;
-   PRINT("sys_sigsuspend ( %d )", ARG1 );
+   PRINT("sys_sigsuspend ( %ld )", ARG1 );
    PRE_REG_READ1(int, "sigsuspend", vki_old_sigset_t, mask);
 }
 
+PRE(sys_spu_create)
+{
+   PRE_MEM_RASCIIZ("stat64(filename)", ARG1);
+}
+POST(sys_spu_create)
+{
+   vg_assert(SUCCESS);
+}
+
+PRE(sys_spu_run)
+{
+   *flags |= SfMayBlock;
+   if (ARG2 != 0)
+      PRE_MEM_WRITE("npc", ARG2, sizeof(unsigned int));
+   PRE_MEM_READ("event", ARG3, sizeof(unsigned int));
+}
+POST(sys_spu_run)
+{
+   if (ARG2 != 0)
+      POST_MEM_WRITE(ARG2, sizeof(unsigned int));
+}
 
 #undef PRE
 #undef POST
@@ -1532,9 +1560,9 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //..    GENX_(__NR_acct,              sys_acct),              // 51
    LINX_(__NR_umount2,           sys_umount),            // 52
 //..    GENX_(__NR_lock,              sys_ni_syscall),        // 53
-   GENXY(__NR_ioctl,             sys_ioctl),             // 54
+   LINXY(__NR_ioctl,             sys_ioctl),             // 54
 //.. 
-   GENXY(__NR_fcntl,             sys_fcntl),             // 55
+   LINXY(__NR_fcntl,             sys_fcntl),             // 55
 //..    GENX_(__NR_mpx,               sys_ni_syscall),        // 56
    GENX_(__NR_setpgid,           sys_setpgid),           // 57
 //..    GENX_(__NR_ulimit,            sys_ni_syscall),        // 58
@@ -1620,10 +1648,9 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //.. 
    GENXY(__NR_mprotect,          sys_mprotect),          // 125
    LINXY(__NR_sigprocmask,       sys_sigprocmask),       // 126
-//..    // Nb: create_module() was removed 2.4-->2.6
-//..    GENX_(__NR_create_module,     sys_ni_syscall),        // 127
-//..    GENX_(__NR_init_module,       sys_init_module),       // 128
-//..    //   (__NR_delete_module,     sys_delete_module),     // 129 (*/Linux)?
+   GENX_(__NR_create_module,     sys_ni_syscall),        // 127
+   LINX_(__NR_init_module,       sys_init_module),       // 128
+   LINX_(__NR_delete_module,     sys_delete_module),     // 129
 //.. 
 //..    // Nb: get_kernel_syms() was removed 2.4-->2.6
 //..    GENX_(__NR_get_kernel_syms,   sys_ni_syscall),        // 130
@@ -1654,7 +1681,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_munlock,           sys_munlock),           // 151
    GENX_(__NR_mlockall,          sys_mlockall),          // 152
    LINX_(__NR_munlockall,        sys_munlockall),        // 153
-//..    LINXY(__NR_sched_setparam,    sys_sched_setparam),    // 154
+   LINXY(__NR_sched_setparam,    sys_sched_setparam),    // 154
 //.. 
    LINXY(__NR_sched_getparam,         sys_sched_getparam),        // 155
    LINX_(__NR_sched_setscheduler,     sys_sched_setscheduler),    // 156
@@ -1690,9 +1717,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_pwrite64,          sys_pwrite64),          // 180
    GENX_(__NR_chown,             sys_chown),             // 181
    GENXY(__NR_getcwd,            sys_getcwd),            // 182
-//..    LINXY(__NR_capget,            sys_capget),            // 183
-//.. 
-//..    LINX_(__NR_capset,            sys_capset),            // 184
+   LINXY(__NR_capget,            sys_capget),            // 183
+   LINX_(__NR_capset,            sys_capset),            // 184
    GENXY(__NR_sigaltstack,       sys_sigaltstack),       // 185
    LINXY(__NR_sendfile,          sys_sendfile),          // 186
 //..    GENXY(__NR_getpmsg,           sys_getpmsg),           // 187
@@ -1718,7 +1744,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    GENXY(__NR_getdents64,        sys_getdents64),        // 202
 //..    //   (__NR_pivot_root,        sys_pivot_root),        // 203 */Linux
-   GENXY(__NR_fcntl64,           sys_fcntl64),           // 204
+   LINXY(__NR_fcntl64,           sys_fcntl64),           // 204
    GENX_(__NR_madvise,           sys_madvise),           // 205
    GENXY(__NR_mincore,           sys_mincore),           // 206
    LINX_(__NR_gettid,            sys_gettid),            // 207
@@ -1800,12 +1826,14 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 /* Number 270 is reserved for sys_request_key */
 /* Number 271 is reserved for sys_keyctl */
 /* Number 272 is reserved for sys_waitid */
-/* Number 273 is reserved for sys_ioprio_set */
-/* Number 274 is reserved for sys_ioprio_get */
+   LINX_(__NR_ioprio_set,        sys_ioprio_set),         // 273
+   LINX_(__NR_ioprio_get,        sys_ioprio_get),         // 274
 
    LINX_(__NR_inotify_init,  sys_inotify_init),               // 275
    LINX_(__NR_inotify_add_watch,  sys_inotify_add_watch),     // 276
    LINX_(__NR_inotify_rm_watch,   sys_inotify_rm_watch),      // 277
+   PLAXY(__NR_spu_run,            sys_spu_run),               // 278
+   PLAX_(__NR_spu_create,         sys_spu_create),            // 279
 
    LINXY(__NR_openat,            sys_openat),            // 286
    LINX_(__NR_mkdirat,           sys_mkdirat),           // 287
@@ -1822,10 +1850,30 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINX_(__NR_faccessat,         sys_faccessat),         // 298
    LINX_(__NR_set_robust_list,   sys_set_robust_list),   // 299
    LINXY(__NR_get_robust_list,   sys_get_robust_list),   // 300
+//   LINX_(__NR_move_pages,        sys_ni_syscall),        // 301
+//   LINX_(__NR_getcpu,            sys_ni_syscall),        // 302
+   LINXY(__NR_epoll_pwait,       sys_epoll_pwait),       // 303
+   LINX_(__NR_utimensat,         sys_utimensat),         // 304
+   LINXY(__NR_signalfd,          sys_signalfd),          // 305
+   LINXY(__NR_timerfd_create,    sys_timerfd_create),    // 306
+   LINX_(__NR_eventfd,           sys_eventfd),           // 307
+//   LINX_(__NR_sync_file_range2,   sys_ni_syscall),       // 308
+//   LINX_(__NR_fallocate,         sys_fallocate),         // 309
+//   LINXY(__NR_subpage_prot,       sys_ni_syscall),       // 310
+   LINXY(__NR_timerfd_settime,   sys_timerfd_settime),  // 311
+   LINXY(__NR_timerfd_gettime,   sys_timerfd_gettime),  // 312
+   LINXY(__NR_signalfd4,         sys_signalfd4),        // 313
+   LINX_(__NR_eventfd2,          sys_eventfd2),         // 314
+   LINXY(__NR_epoll_create1,     sys_epoll_create1),    // 315
+   //   (__NR_dup3,              sys_ni_syscall)        // 316
+   LINXY(__NR_pipe2,             sys_pipe2)             // 317
+   //   (__NR_inotify_init1,     sys_ni_syscall)        // 318
 };
 
 const UInt ML_(syscall_table_size) = 
             sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
+
+#endif // defined(VGP_ppc32_linux)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

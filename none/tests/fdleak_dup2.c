@@ -1,23 +1,19 @@
 #include <unistd.h>
 #include <fcntl.h>
+#include "fdleak.h"
 
-int
-main (int argc, char **argv)
+int main (int argc, char **argv)
 {
    int s1;
    int s2;
 
-   /*
-    * Fedora Core 1's Perl opens /dev/pts/2 as fd 10.  Let's close it
-    * now to get consistent results across different releases.
-    */
+   CLOSE_INHERITED_FDS;
 
-   close(10);  close(4);
+   s1 = DO( open("/dev/null", O_RDONLY) );
+   s2 = DO( open("/dev/null", O_RDONLY) );
 
-   s1 = open("/dev/null", O_RDONLY);
-   s2 = open("/dev/null", O_RDONLY);
+   DO( dup2(s1, 20) );  // dup s1 as fd 20
+   DO( dup2(s1, s2) );  // dup s1 as fd s2, which closes existing s2 fd
 
-   dup2(s1, 20);
-   dup2(s1, s2);
    return 0;
 }

@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -27,6 +27,9 @@
 
    The GNU General Public License is contained in the file COPYING.
 */
+
+#if defined(VGO_linux) || defined(VGO_darwin)
+
 /*
    Stabs reader greatly improved by Nick Nethercote, Apr 02.
    This module was also extensively hacked on by Jeremy Fitzhardinge
@@ -38,13 +41,25 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_xarray.h"
+#include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
+#include "priv_tytypes.h"
+#include "priv_d3basics.h"
 #include "priv_storage.h"
 #include "priv_readstabs.h"        /* self */
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
-#include <a.out.h> /* stabs defns */
+#if defined(VGO_linux)
+#  include <a.out.h> /* stabs defns */
+#elif defined(VGO_darwin)
+#  include <mach-o/nlist.h>
+#  define n_other n_sect
+#  if VG_WORDSIZE == 8
+#     define nlist nlist_64
+#  endif
+#else
+#  error "Unknown OS"
+#endif
 /* --- !!! --- EXTERNAL HEADERS end --- !!! --- */
 
 /*------------------------------------------------------------*/
@@ -78,7 +93,7 @@ typedef enum { N_UNDEF = 0,	/* undefined symbol, new stringtab  */
 /* Read stabs-format debug info.  This is all rather horrible because
    stabs is a underspecified, kludgy hack.
 */
-void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
+void ML_(read_debuginfo_stabs) ( DebugInfo* di,
                                  UChar* stabC,   Int stab_sz, 
                                  UChar* stabstr, Int stabstr_sz )
 {
@@ -119,7 +134,7 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
       Finding the instruction address range covered by an N_SLINE is
       complicated;  see the N_SLINE case below.
    */
-   file.name     = ML_(addStr)(si,"???", -1);
+   file.name     = ML_(addStr)(di,"???", -1);
 
    n_stab_entries = stab_sz/(int)sizeof(struct nlist);
 
@@ -127,11 +142,12 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
       const struct nlist *st = &stab[i];
       Char *string;
 
-      if (debug && 1) {
-         VG_(printf) ( "%2d  type=%d   othr=%d   desc=%d   value=0x%x   strx=%d  %s\n", i,
+      if (di->trace_symtab) {
+         VG_(printf) ( "%2d  type=%d   othr=%d   desc=%d   "
+                       "value=0x%x   strx=%d  %s\n", i,
                        st->n_type, st->n_other, st->n_desc, 
-                       (int)st->n_value,
-                       (int)st->n_un.n_strx, 
+                       (Int)st->n_value,
+                       (Int)st->n_un.n_strx, 
                        stabstr + st->n_un.n_strx );
       }
 
@@ -176,11 +192,11 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
                   qbuflen = 16;
                while ((qidx + qlen) >= qbuflen)
                   qbuflen *= 2;
-               n = VG_(arena_malloc)(VG_AR_SYMTAB, qbuflen);
+               n = ML_(dinfo_zalloc)("di.readstabs.rds.1", qbuflen);
                VG_(memcpy)(n, qbuf, qidx);
                
                if (qbuf != NULL)
-                  VG_(arena_free)(VG_AR_SYMTAB, qbuf);
+                  ML_(dinfo_free)(qbuf);
                qbuf = n;
             }
 
@@ -206,8 +222,8 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
 
          if (qbuf != NULL) {
             i--;                        /* overstepped */
-            string = ML_(addStr)(si, qbuf, qidx);
-            VG_(arena_free)(VG_AR_SYMTAB, qbuf);
+            string = ML_(addStr)(di, qbuf, qidx);
+            ML_(dinfo_free)(qbuf);
             if (contdebug)
                VG_(printf)("made composite: \"%s\"\n", string);
          }
@@ -242,7 +258,7 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
                VG_(message)(Vg_UserMsg, 
                             "Warning: file %s is very big (> 65535 lines) "
                             "Line numbers and annotation for this file might "
-                            "be wrong.  Sorry",
+                            "be wrong.  Sorry.\n",
                             file.name);
             /* FALLTHROUGH */
 
@@ -253,7 +269,7 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
 
             if (line.addr != 0) {
                /* finish off previous line */
-               ML_(addLineInfo)(si, file.name, NULL, line.addr,
+               ML_(addLineInfo)(di, file.name, NULL, line.addr,
                                 addr, line.no + line.ovf * LINENO_OVERFLOW, i);
             }
 
@@ -264,11 +280,11 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
             line.no = 0;
 
             if (len > 0 && nm[len-1] != '/') {
-               file.name = ML_(addStr)(si, nm, -1);
+               file.name = ML_(addStr)(di, nm, -1);
                if (debug)
                   VG_(printf)("new source: %s\n", file.name);
             } else if (len == 0)
-               file.name = ML_(addStr)(si, "?1\0", -1);
+               file.name = ML_(addStr)(di, "?1\0", -1);
 
             break;
          }
@@ -278,7 +294,7 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
 
             if (line.addr != 0) {
                /* there was a previous */
-               ML_(addLineInfo)(si, file.name, NULL, line.addr,
+               ML_(addLineInfo)(di, file.name, NULL, line.addr,
                                 addr, line.no + line.ovf * LINENO_OVERFLOW, i);
             }
 
@@ -288,7 +304,7 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
 
             if (line.prev > line.no + OVERFLOW_DIFFERENCE && file.same) {
                VG_(message)(Vg_DebugMsg, 
-                  "Line number overflow detected (%d --> %d) in %s", 
+                  "Line number overflow detected (%d --> %d) in %s\n", 
                   line.prev, line.no, file.name);
                line.ovf++;
             }
@@ -334,13 +350,13 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
                line.first = True;
 
                /* line ends at start of next function */
-               addr = debug_offset + st->n_value;
+               addr = di->text_debug_bias + st->n_value;
 
                func.start = addr;
             }
 
             if (line.addr) {
-               ML_(addLineInfo)(si, file.name, NULL, line.addr,
+               ML_(addLineInfo)(di, file.name, NULL, line.addr,
                                 addr, line.no + line.ovf * LINENO_OVERFLOW, i);
                line.addr = 0;
             }
@@ -372,6 +388,8 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
       }
    }
 }
+
+#endif // defined(VGO_linux) || defined(VGO_darwin)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

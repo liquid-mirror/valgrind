@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2007, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -48,7 +48,8 @@ void CLG_(init_bbcc_hash)(bbcc_hash* bbccs)
 
    bbccs->size    = N_BBCC_INITIAL_ENTRIES;
    bbccs->entries = 0;
-   bbccs->table = (BBCC**) CLG_MALLOC(bbccs->size * sizeof(BBCC*));
+   bbccs->table = (BBCC**) CLG_MALLOC("cl.bbcc.ibh.1",
+                                      bbccs->size * sizeof(BBCC*));
 
    for (i = 0; i < bbccs->size; i++) bbccs->table[i] = NULL;
 }
@@ -85,7 +86,7 @@ void CLG_(zero_bbcc)(BBCC* bbcc)
   jCC* jcc;
 
   CLG_ASSERT(bbcc->cxt != 0);
-  CLG_DEBUG(1, "  zero_bbcc: BB %p, Cxt %d "
+  CLG_DEBUG(1, "  zero_bbcc: BB %#lx, Cxt %d "
 	   "(fn '%s', rec %d)\n", 
 	   bb_addr(bbcc->bb),
 	   bbcc->cxt->base_number + bbcc->rec_index,
@@ -177,12 +178,12 @@ BBCC* lookup_bbcc(BB* bb, Context* cxt)
        bbcc = bbcc->next;
    }
    
-   CLG_DEBUG(2,"  lookup_bbcc(BB %p, Cxt %d, fn '%s'): %p (tid %d)\n",
+   CLG_DEBUG(2,"  lookup_bbcc(BB %#lx, Cxt %d, fn '%s'): %p (tid %d)\n",
 	    bb_addr(bb), cxt->base_number, cxt->fn[0]->name, 
 	    bbcc, bbcc ? bbcc->tid : 0);
 
    CLG_DEBUGIF(2)
-     if (bbcc) CLG_(print_bbcc)(-2,bbcc,False);
+     if (bbcc) CLG_(print_bbcc)(-2,bbcc);
 
    return bbcc;
 }
@@ -197,7 +198,8 @@ static void resize_bbcc_hash(void)
     BBCC *curr_BBCC, *next_BBCC;
 
     new_size = 2*current_bbccs.size+3;
-    new_table = (BBCC**) CLG_MALLOC(new_size * sizeof(BBCC*));
+    new_table = (BBCC**) CLG_MALLOC("cl.bbcc.rbh.1",
+                                    new_size * sizeof(BBCC*));
  
     if (!new_table) return;
  
@@ -245,13 +247,13 @@ BBCC** new_recursion(int size)
 {
     BBCC** bbccs;
     int i;
-    
-    bbccs = (BBCC**) CLG_MALLOC(sizeof(BBCC*) * size);
+
+    bbccs = (BBCC**) CLG_MALLOC("cl.bbcc.nr.1", sizeof(BBCC*) * size);
     for(i=0;i<size;i++)
 	bbccs[i] = 0;
 
     CLG_DEBUG(3,"  new_recursion(size %d): %p\n", size, bbccs);
-    
+
     return bbccs;
 }
   
@@ -265,39 +267,40 @@ BBCC** new_recursion(int size)
 static __inline__ 
 BBCC* new_bbcc(BB* bb)
 {
-   BBCC* new;
+   BBCC* bbcc;
    Int i;
 
    /* We need cjmp_count+1 JmpData structs:
     * the last is for the unconditional jump/call/ret at end of BB
     */
-   new = (BBCC*)CLG_MALLOC(sizeof(BBCC) +
-			   (bb->cjmp_count+1) * sizeof(JmpData));
-   new->bb  = bb;
-   new->tid = CLG_(current_tid);
+   bbcc = (BBCC*)CLG_MALLOC("cl.bbcc.nb.1",
+			    sizeof(BBCC) +
+			    (bb->cjmp_count+1) * sizeof(JmpData));
+   bbcc->bb  = bb;
+   bbcc->tid = CLG_(current_tid);
 
-   new->ret_counter = 0;
-   new->skipped = 0;
-   new->cost = CLG_(get_costarray)(bb->cost_count);
+   bbcc->ret_counter = 0;
+   bbcc->skipped = 0;
+   bbcc->cost = CLG_(get_costarray)(bb->cost_count);
    for(i=0;i<bb->cost_count;i++)
-     new->cost[i] = 0;
+     bbcc->cost[i] = 0;
    for(i=0; i<=bb->cjmp_count; i++) {
-       new->jmp[i].ecounter = 0;
-       new->jmp[i].jcc_list = 0;
+       bbcc->jmp[i].ecounter = 0;
+       bbcc->jmp[i].jcc_list = 0;
    }
-   new->ecounter_sum = 0;
+   bbcc->ecounter_sum = 0;
 
    /* Init pointer caches (LRU) */
-   new->lru_next_bbcc = 0;
-   new->lru_from_jcc  = 0;
-   new->lru_to_jcc  = 0;
+   bbcc->lru_next_bbcc = 0;
+   bbcc->lru_from_jcc  = 0;
+   bbcc->lru_to_jcc  = 0;
    
    CLG_(stat).distinct_bbccs++;
 
-   CLG_DEBUG(3, "  new_bbcc(BB %p): %p (now %d)\n", 
-	    bb_addr(bb), new, CLG_(stat).distinct_bbccs);
+   CLG_DEBUG(3, "  new_bbcc(BB %#lx): %p (now %d)\n",
+	    bb_addr(bb), bbcc, CLG_(stat).distinct_bbccs);
 
-   return new;
+   return bbcc;
 }
 
 
@@ -319,7 +322,7 @@ void insert_bbcc_into_hash(BBCC* bbcc)
     
     CLG_ASSERT(bbcc->cxt != 0);
 
-    CLG_DEBUG(3,"+ insert_bbcc_into_hash(BB %p, fn '%s')\n",
+    CLG_DEBUG(3,"+ insert_bbcc_into_hash(BB %#lx, fn '%s')\n",
 	     bb_addr(bbcc->bb), bbcc->cxt->fn[0]->name);
 
     /* check fill degree of hash and resize if needed (>90%) */
@@ -366,12 +369,12 @@ static Char* mangled_cxt(Context* cxt, int rec_index)
  */
 static BBCC* clone_bbcc(BBCC* orig, Context* cxt, Int rec_index)
 {
-    BBCC*      new;
+    BBCC* bbcc;
 
-    CLG_DEBUG(3,"+ clone_bbcc(BB %p, rec %d, fn %s)\n",
+    CLG_DEBUG(3,"+ clone_bbcc(BB %#lx, rec %d, fn %s)\n",
 	     bb_addr(orig->bb), rec_index, cxt->fn[0]->name);
 
-    new  = new_bbcc(orig->bb);
+    bbcc = new_bbcc(orig->bb);
 
     if (rec_index == 0) {
 
@@ -379,12 +382,12 @@ static BBCC* clone_bbcc(BBCC* orig, Context* cxt, Int rec_index)
       CLG_ASSERT((orig->tid != CLG_(current_tid)) ||
 		(orig->cxt != cxt));
 
-      new->rec_index = 0;
-      new->cxt = cxt;
-      new->rec_array = new_recursion(cxt->fn[0]->separate_recursions);
-      new->rec_array[0] = new;
+      bbcc->rec_index = 0;
+      bbcc->cxt = cxt;
+      bbcc->rec_array = new_recursion(cxt->fn[0]->separate_recursions);
+      bbcc->rec_array[0] = bbcc;
 
-      insert_bbcc_into_hash(new);
+      insert_bbcc_into_hash(bbcc);
     }
     else {
       if (CLG_(clo).separate_threads)
@@ -396,30 +399,30 @@ static BBCC* clone_bbcc(BBCC* orig, Context* cxt, Int rec_index)
       CLG_ASSERT(orig->rec_array[rec_index] ==0);
 
       /* new BBCC will only have differing recursion level */
-      new->rec_index = rec_index;
-      new->cxt = cxt;
-      new->rec_array = orig->rec_array;
-      new->rec_array[rec_index] = new;
+      bbcc->rec_index = rec_index;
+      bbcc->cxt = cxt;
+      bbcc->rec_array = orig->rec_array;
+      bbcc->rec_array[rec_index] = bbcc;
     }
 
     /* update list of BBCCs for same BB */
-    new->next_bbcc = orig->bb->bbcc_list;
-    orig->bb->bbcc_list = new;
+    bbcc->next_bbcc = orig->bb->bbcc_list;
+    orig->bb->bbcc_list = bbcc;
 
 
     CLG_DEBUGIF(3)
-      CLG_(print_bbcc)(-2, new, False);
+      CLG_(print_bbcc)(-2, bbcc);
 
-    CLG_DEBUG(2,"- clone_BBCC(%p, %d) for BB %p\n"
+    CLG_DEBUG(2,"- clone_BBCC(%p, %d) for BB %#lx\n"
 		"   orig %s\n"
 		"   new  %s\n",
 	     orig, rec_index, bb_addr(orig->bb),
 	     mangled_cxt(orig->cxt, orig->rec_index),
-	     mangled_cxt(new->cxt, new->rec_index));
+	     mangled_cxt(bbcc->cxt, bbcc->rec_index));
 
     CLG_(stat).bbcc_clones++;
  
-    return new;
+    return bbcc;
 };
 
 
@@ -433,7 +436,7 @@ BBCC* CLG_(get_bbcc)(BB* bb)
 {
    BBCC* bbcc;
 
-   CLG_DEBUG(3, "+ get_bbcc(BB %p)\n", bb_addr(bb));
+   CLG_DEBUG(3, "+ get_bbcc(BB %#lx)\n", bb_addr(bb));
 
    bbcc = bb->bbcc_list;
 
@@ -450,10 +453,10 @@ BBCC* CLG_(get_bbcc)(BB* bb)
      bb->last_bbcc = bbcc;
 
      CLG_DEBUGIF(3)
-       CLG_(print_bbcc)(-2, bbcc, False);
+       CLG_(print_bbcc)(-2, bbcc);
    }
 
-   CLG_DEBUG(3, "- get_bbcc(BB %p): BBCC %p\n",
+   CLG_DEBUG(3, "- get_bbcc(BB %#lx): BBCC %p\n",
 		bb_addr(bb), bbcc);
 
    return bbcc;
@@ -477,7 +480,6 @@ static void handleUnderflow(BB* bb)
   /* RET at top of call stack */
   BBCC* source_bbcc;
   BB* source_bb;
-  jCC* jcc;
   Bool seen_before;
   fn_node* caller;
   int fn_number, *pactive;
@@ -530,7 +532,6 @@ static void handleUnderflow(BB* bb)
 		       (Addr)-1, False);
   call_entry_up = 
     &(CLG_(current_call_stack).entry[CLG_(current_call_stack).sp -1]);
-  jcc = call_entry_up->jcc;
   /* assume this call is lasting since last dump or
    * for a signal handler since it's call */
   if (CLG_(current_state).sig == 0)
@@ -558,7 +559,7 @@ void CLG_(setup_bbcc)(BB* bb)
   Bool ret_without_call = False;
   Int popcount_on_return = 1;
 
-  CLG_DEBUG(3,"+ setup_bbcc(BB %p)\n", bb_addr(bb));
+  CLG_DEBUG(3,"+ setup_bbcc(BB %#lx)\n", bb_addr(bb));
 
   /* This is needed because thread switches can not reliable be tracked
    * with callback CLG_(run_thread) only: we have otherwise no way to get
@@ -600,7 +601,7 @@ void CLG_(setup_bbcc)(BB* bb)
 	  if (!CLG_(clo).simulate_cache) {
 	      /* update Ir cost */
 	      int instr_count = last_bb->jmp[passed].instr+1;
-	      CLG_(current_state).cost[CLG_(sets).off_sim_Ir] += instr_count;
+	      CLG_(current_state).cost[CLG_(sets).off_full_Ir] += instr_count;
 	  }
       }
 
@@ -714,7 +715,7 @@ void CLG_(setup_bbcc)(BB* bb)
       else
 	  ppIRJumpKind( jmpkind );
 
-      VG_(printf)(" %08lx -> %08x, SP %08x\n",
+      VG_(printf)(" %08lx -> %08lx, SP %08lx\n",
 		  last_bb ? bb_jmpaddr(last_bb) : 0,
 		  bb_addr(bb), sp);
   }
@@ -870,7 +871,7 @@ void CLG_(setup_bbcc)(BB* bb)
     VG_(printf)("\n");
   }
   
-  CLG_DEBUG(3,"- setup_bbcc (BB %p): Cost %p (Len %d), Instrs %d (Len %d)\n",
+  CLG_DEBUG(3,"- setup_bbcc (BB %#lx): Cost %p (Len %d), Instrs %d (Len %d)\n",
 	   bb_addr(bb), bbcc->cost, bb->cost_count, 
 	   bb->instr_count, bb->instr_len);
   CLG_DEBUGIF(3)

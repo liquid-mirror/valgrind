@@ -8,7 +8,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2006-2007 OpenWorks LLP
+   Copyright (C) 2006-2009 OpenWorks LLP
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -33,6 +33,8 @@
    used to endorse or promote products derived from this software
    without prior written permission.
 */
+
+#if defined(VGO_aix5)
 
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
@@ -71,8 +73,8 @@ IIFinaliseImageInfo VG_(ii_create_image)( IICreateImageInfo iicii )
 {
    /* Set up an AIX5PreloadPage structure with the names of
 
-         $VALGRIND_LIB/PLATFORM/vgpreload_core.so
-         $VALGRIND_LIB/PLATFORM/vgpreload_TOOL.so, if it exists
+         $VALGRIND_LIB/vgpreload_core_PLATFORM.so
+         $VALGRIND_LIB/vgpreload_TOOL_PLATFORM.so, if it exists
          xxx in "LD_PRELOAD=xxx", if it exists
 
       The client is started by running (on the simulator, of course)
@@ -83,9 +85,9 @@ IIFinaliseImageInfo VG_(ii_create_image)( IICreateImageInfo iicii )
       stored in the AIX5PreloadPage.  Finally, we jump to the client's
       entry point address. 
    */
-   const HChar* _so               = ".so";
-   const HChar* vgpreload_        = "vgpreload_";
-   const HChar* vgpreload_core_so = "vgpreload_core.so";
+   const HChar* _so        = ".so";
+   const HChar* vgpreload_ = "vgpreload_";
+   const HChar* core       = "core";
    const HChar* errmsg_str 
                    = "valgrind: FATAL: core/tool/LD_PRELOAD= "
                      "preload failed.\n";
@@ -108,39 +110,43 @@ IIFinaliseImageInfo VG_(ii_create_image)( IICreateImageInfo iicii )
    vg_assert( iicii.toolname );
    pltool_len = VG_(strlen)( VG_(libdir) ) 
                 + 1 /*slash*/
-                + VG_(strlen)(VG_PLATFORM)
-                + 1 /*slash*/
                 + VG_(strlen)( vgpreload_ )
                 + VG_(strlen)( iicii.toolname )
+                + 1 /*dash*/
+                + VG_(strlen)(VG_PLATFORM)
                 + VG_(strlen)( _so )
                 + 1 /*NUL*/;
    vg_assert(pltool_len > 0);
-   pltool_str = VG_(malloc)( pltool_len );
+   pltool_str = VG_(malloc)( "initimg-aix5.ici.1", pltool_len );
    pltool_str[0] = 0;
    VG_(strcat)( pltool_str, VG_(libdir) );
    VG_(strcat)( pltool_str, "/" );
-   VG_(strcat)( pltool_str, VG_PLATFORM );
-   VG_(strcat)( pltool_str, "/" );
    VG_(strcat)( pltool_str, vgpreload_ );
    VG_(strcat)( pltool_str, iicii.toolname );
+   VG_(strcat)( pltool_str, "-" );
+   VG_(strcat)( pltool_str, VG_PLATFORM );
    VG_(strcat)( pltool_str, _so );
    vg_assert( pltool_str[pltool_len-1] == 0);
    vg_assert( VG_(strlen)(pltool_str) == pltool_len-1 );
 
    plcore_len = VG_(strlen)( VG_(libdir) ) 
                 + 1 /*slash*/
+                + VG_(strlen)( vgpreload_ )
+                + VG_(strlen)( core )
+                + 1 /*dash*/
                 + VG_(strlen)(VG_PLATFORM)
-                + 1 /*slash*/
-                + VG_(strlen)( vgpreload_core_so )
+                + VG_(strlen)(_so)
                 + 1 /*NUL*/;
    vg_assert(plcore_len > 0);
-   plcore_str = VG_(malloc)( plcore_len );
+   plcore_str = VG_(malloc)( "initimg-aix5.ici.2", plcore_len );
    plcore_str[0] = 0;
    VG_(strcat)( plcore_str, VG_(libdir) );
    VG_(strcat)( plcore_str, "/" );
+   VG_(strcat)( plcore_str, vgpreload_ );
+   VG_(strcat)( plcore_str, core );
+   VG_(strcat)( plcore_str, "-" );
    VG_(strcat)( plcore_str, VG_PLATFORM );
-   VG_(strcat)( plcore_str, "/" );
-   VG_(strcat)( plcore_str, vgpreload_core_so );
+   VG_(strcat)( plcore_str, _so );
    vg_assert( plcore_str[plcore_len-1] == 0 );
    vg_assert( VG_(strlen)(plcore_str) == plcore_len-1 );
 
@@ -151,7 +157,7 @@ IIFinaliseImageInfo VG_(ii_create_image)( IICreateImageInfo iicii )
    if (ld_pre_str && VG_(strlen)(ld_pre_str) > 0) {
       have_ld_pre = True;
       ld_pre_len  = VG_(strlen)(ld_pre_str) + 1/*NUL*/;
-      ld_pre_str = VG_(malloc)( ld_pre_len );
+      ld_pre_str = VG_(malloc)( "initimg-aix5.ici.3", ld_pre_len );
       ld_pre_str[0] = 0;
       VG_(strcat)( ld_pre_str, VG_(getenv)("LD_PRELOAD") );
       vg_assert( ld_pre_str[ld_pre_len-1] == 0);
@@ -168,7 +174,7 @@ IIFinaliseImageInfo VG_(ii_create_image)( IICreateImageInfo iicii )
 
    if (0 != VG_(access)(plcore_str, True,False,True))
       VG_(err_config_error)("Can't find core preload "
-                            "(vgpreload_core.so)");
+                            "(vgpreload_core-<platform>.so)");
 
    have_tool_so = 0 == VG_(access)(pltool_str, True,False,True);
 
@@ -292,25 +298,27 @@ void VG_(ii_finalise_image)( IIFinaliseImageInfo iifii )
 
 #  if defined(VGP_ppc32_aix5)
 
-   vg_assert(0 == sizeof(VexGuestPPC32State) % 8);
+   vg_assert(0 == sizeof(VexGuestPPC32State) % 16);
 
    /* Zero out the initial state, and set up the simulated FPU in a
       sane way. */
    LibVEX_GuestPPC32_initialise(&arch->vex);
 
-   /* Zero out the shadow area. */
-   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestPPC32State));
+   /* Zero out the shadow areas. */
+   VG_(memset)(&arch->vex_shadow1, 0, sizeof(VexGuestPPC32State));
+   VG_(memset)(&arch->vex_shadow2, 0, sizeof(VexGuestPPC32State));
 
 #  else /* defined(VGP_ppc64_aix5) */
 
-   vg_assert(0 == sizeof(VexGuestPPC64State) % 8);
+   vg_assert(0 == sizeof(VexGuestPPC64State) % 16);
 
    /* Zero out the initial state, and set up the simulated FPU in a
       sane way. */
    LibVEX_GuestPPC64_initialise(&arch->vex);
 
-   /* Zero out the shadow area. */
-   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestPPC64State));
+   /* Zero out the shadow areas. */
+   VG_(memset)(&arch->vex_shadow1, 0, sizeof(VexGuestPPC64State));
+   VG_(memset)(&arch->vex_shadow2, 0, sizeof(VexGuestPPC64State));
 
 #  endif
 
@@ -518,22 +526,24 @@ static void diagnose_load_failure ( void )
 /* Take the strings that this prints out and feed them
    to /usr/sbin/execerror.  For example, it might print
 
-     (ld 3 1 __libc_freeres /foo/bar/ppc32-aix5/vgpreload_core.so
+     (ld 3 1 __libc_freeres /foo/bar/vgpreload_core-ppc32-aix5.so
 
    in which case 
 
      $ execerror xyzzy \
-          "(ld 3 1 __libc_freeres /foo/bar/ppc32-aix5/vgpreload_core.so"
+          "(ld 3 1 __libc_freeres /foo/bar/vgpreload_core-ppc32-aix5.so"
 
    gets you
 
      Could not load program xyzzy:
      rtld: 0712-001 Symbol __libc_freeres was referenced
-     from module /foo/bar/ppc32-aix5/vgpreload_core.so(), 
+     from module /foo/bar/vgpreload_core-ppc32-aix5.so(), 
         but a runtime definition
             of the symbol was not found.
 */
 
+#endif // defined(VGO_aix5)
+
 /*--------------------------------------------------------------------*/
-/*---                                               initimg-aix5.c ---*/
+/*---                                                              ---*/
 /*--------------------------------------------------------------------*/

@@ -1,14 +1,14 @@
 
 /*--------------------------------------------------------------------*/
-/*--- VCov: a testing coverage tool.                     vc_main.c ---*/
+/*--- VCov: a test coverage tool.                        vc_main.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of VCov, a Valgrind tool for measuring execution
+   This file is part of VCov, a Valgrind tool for measuring test 
    coverage.
 
-   Copyright (C) 2002-2008 Nicholas Nethercote
-      njn25@cam.ac.uk
+   Copyright (C) 2002-2009 Nicholas Nethercote
+      njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -38,7 +38,7 @@
 // version number.  Eg. "vcov 1"
 
 // Overview:
-// - VCov is a coverage testing tool.  It has similarities and differences
+// - VCov is a test coverage tool.  It has similarities and differences
 //   to gcov.
 //
 // - VCov counts the number of instructions executed for each source line.
@@ -90,6 +90,7 @@
 // - The hash table is separately chained.
 // - Lookups are done by instruction address.
 // - Traversed for dumping stats at end in a per-file, then per-line order.
+// - XXX: should use OSet
 
 #define N_FILE_ENTRIES        4999     // Must be prime.    XXX: too big?
 
@@ -189,7 +190,7 @@ static __inline__
 FileCC* new_FileCC(Addr instrAddr, Char* dirname, Char* filename, FileCC* next)
 {
    FileCC* cc;
-   const SegInfo* seg;
+   const DebugInfo* di;
    UInt  n_matches;
    Int   i;
    UInt  tmp_line;
@@ -198,13 +199,13 @@ FileCC* new_FileCC(Addr instrAddr, Char* dirname, Char* filename, FileCC* next)
 
    // Print the filename, if asked-for.
    if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_DebugMsg, "vcov: first occurrence of '%s'", filename);
+      VG_(dmsg)("vcov: first occurrence of '%s'\n", filename);
    }
       
    // Create the FileCC.
-   cc = VG_(malloc)(sizeof(FileCC));
-   cc->dirname  = VG_(strdup)(dirname);
-   cc->filename = VG_(strdup)(filename);
+   cc = VG_(malloc)("vcov.nFCC.1", sizeof(FileCC));
+   cc->dirname  = VG_(strdup)("vcov.nFCC.2", dirname);
+   cc->filename = VG_(strdup)("vcov.nFCC.3", filename);
    cc->next = next;
 
    // XXX: better: malloc space according to the number of locns.  Then copy
@@ -212,14 +213,14 @@ FileCC* new_FileCC(Addr instrAddr, Char* dirname, Char* filename, FileCC* next)
    // ones into a new, right-sized array.
 
    // Now create the LineCCs.
-   // Count how many locs in this SegInfo match 'filename' in order to
+   // Count how many locs in this DebugInfo match 'filename' in order to
    // allocate the right-sized buffer.
-   seg = VG_(find_seginfo)(instrAddr);
-   tl_assert(seg);
+   di = VG_(find_seginfo)(instrAddr);
+   tl_assert(di);
    n_matches = 0;
-   for (i = 0; i < VG_(seginfo_num_locs)(seg); i++) {
-      tl_assert( VG_(seginfo_locN_dirname) (seg, i, &tmp_dirname) );
-      tl_assert( VG_(seginfo_locN_filename)(seg, i, &tmp_filename) );
+   for (i = 0; i < VG_(seginfo_num_locs)(di); i++) {
+      tl_assert( VG_(seginfo_locN_dirname) (di, i, &tmp_dirname) );
+      tl_assert( VG_(seginfo_locN_filename)(di, i, &tmp_filename) );
 //    VG_(printf)("dirnames:  %s %s\n",  dirname,  tmp_dirname);
 //    VG_(printf)("filenames: %s %s\n", filename, tmp_filename);
       if (VG_STREQ(dirname, tmp_dirname) && VG_STREQ(filename, tmp_filename))
@@ -230,14 +231,14 @@ FileCC* new_FileCC(Addr instrAddr, Char* dirname, Char* filename, FileCC* next)
 
    // Allocate the lineCCs array.
    cc->n_lineCCs = n_matches;
-   cc->lineCCs   = VG_(malloc)(n_matches * sizeof(LineCC));
+   cc->lineCCs   = VG_(malloc)("vcov.nFCC.4", n_matches * sizeof(LineCC));
 
    // Go through locs again, this time initialising the array.
    n_matches = 0;
-   for (i = 0; i < VG_(seginfo_num_locs)(seg); i++) {
-      tl_assert( VG_(seginfo_locN_dirname) (seg, i, &tmp_dirname) );
-      tl_assert( VG_(seginfo_locN_filename)(seg, i, &tmp_filename) );
-      tl_assert( VG_(seginfo_locN_line)    (seg, i, &tmp_line) );
+   for (i = 0; i < VG_(seginfo_num_locs)(di); i++) {
+      tl_assert( VG_(seginfo_locN_dirname) (di, i, &tmp_dirname) );
+      tl_assert( VG_(seginfo_locN_filename)(di, i, &tmp_filename) );
+      tl_assert( VG_(seginfo_locN_line)    (di, i, &tmp_line) );
       if (VG_STREQ(dirname, tmp_dirname) && VG_STREQ(filename, tmp_filename)) {
          cc->lineCCs[n_matches].line_num = tmp_line;
          cc->lineCCs[n_matches].n_execs  = 0;
@@ -257,16 +258,12 @@ FileCC* new_FileCC(Addr instrAddr, Char* dirname, Char* filename, FileCC* next)
    sort_and_remove_dups_from_FileCC(cc);
 
    if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_DebugMsg, "vcov: %d debuginfo lines, %d matches, "
-                                "%d unique matches:",
-         VG_(seginfo_num_locs)(seg), n_matches, cc->n_lineCCs);
-      // Here we fake up a VG_(message)-style line annotation;  we have to
-      // use VG_(printf)() because we want to print multiple things on one
-      // line.
-      VG_(printf)("--%d-- vcov:   ", VG_(getpid)());
+      VG_(dmsg)("vcov: %d debuginfo lines, %d matches, %d unique matches:\n",
+         VG_(seginfo_num_locs)(di), n_matches, cc->n_lineCCs);
+      VG_(dmsg)("vcov:   ");
       for (i = 0; i < cc->n_lineCCs; i++)
-         VG_(printf)("%d ", cc->lineCCs[i].line_num);
-      VG_(printf)("\n");
+         VG_(dmsg)("%d ", cc->lineCCs[i].line_num);
+      VG_(dmsg)("\n");
    }
 
    return cc;
@@ -311,8 +308,9 @@ static Bool clo_fresh = False;
 
 static Bool vc_process_cmd_line_option(Char* arg)
 {
-   VG_BOOL_CLO(arg, "--fresh", clo_fresh)
-   else return False;
+   if VG_BOOL_CLO(arg, "--fresh", clo_fresh)  {}
+   else
+      return False;
 
    return True;
 }
@@ -450,7 +448,7 @@ IRSB* vc_instrument ( VgCallbackClosure* closure,
 // Simple, huh?  We move through lines in the file and lines in
 // fileCC->lineCCs[] in tandem.
 //
-static Bool parse_buffer(Char* outfile, struct vki_stat* outfile_statbuf, 
+static Bool parse_buffer(Char* outfile, struct vg_stat* outfile_statbuf, 
                          Char* buf)
 {
    Int   buf_i = 0, line_i = 0, curr_line = 1;
@@ -488,19 +486,15 @@ static Bool parse_buffer(Char* outfile, struct vki_stat* outfile_statbuf,
    // Warn if srcfile is present and newer than the existing outfile.
    // XXX: should I warn if the srcfile isn't present?
    {
-      struct vki_stat srcfile_statbuf;
+      struct vg_stat srcfile_statbuf;
       Char* srcfile = &buf[fl_start_i];
-      if ( ! (VG_(stat)(srcfile, &srcfile_statbuf)).isError ) {
-         if (srcfile_statbuf.st_mtime > outfile_statbuf->st_mtime) {
-            VG_(message)(Vg_UserMsg,
-               "Warning: Source file '%s' is more recent than ", srcfile);
-            VG_(message)(Vg_UserMsg, 
-               "         old data file '%s'.", outfile);
-            VG_(message)(Vg_UserMsg,
-               "         Coverage information may be incorrect.",
-               srcfile);
-            VG_(message)(Vg_UserMsg,
-               "         Rerun with --fresh to purge old data and start again");
+      SysRes sres = VG_(stat)(srcfile, &srcfile_statbuf);
+      if (!sr_isError(sres)) {
+         if (srcfile_statbuf.mtime > outfile_statbuf->mtime) {
+VG_(umsg)("Warning: Source file '%s' is more recent than\n", srcfile);
+VG_(umsg)("         old data file '%s'.\n", outfile);
+VG_(umsg)("         Coverage information may be incorrect.\n");
+VG_(umsg)("         Rerun with --fresh=yes to purge old data and start again.\n");
          }
       }
    }
@@ -537,7 +531,7 @@ static Bool parse_buffer(Char* outfile, struct vki_stat* outfile_statbuf,
          Long line_num, n_execs;
 
          // Line number.
-         line_num = VG_(atoll)(buf+buf_i);
+         line_num = VG_(strtoll10)(buf+buf_i, NULL);
          while (VG_(isdigit)(buf[buf_i])) { buf_i++; }
 
          // Space.
@@ -546,8 +540,7 @@ static Bool parse_buffer(Char* outfile, struct vki_stat* outfile_statbuf,
          // n_execs number.
          if (!VG_(isdigit)(buf[buf_i]))
             BOO("parse error: expected exec count");
-         // XXX: use strtol instead?  better checking...
-         n_execs = VG_(atoll)(buf+buf_i);
+         n_execs = VG_(strtoll10)(buf+buf_i, NULL);
          while (VG_(isdigit)(buf[buf_i])) { buf_i++; }
 
          // Newline.
@@ -579,9 +572,9 @@ static Bool parse_buffer(Char* outfile, struct vki_stat* outfile_statbuf,
   parse_end:
    
    if (error_msg) {
-      VG_(message)(Vg_UserMsg, "%s:%d: %s;\n", outfile, curr_line, error_msg);
-      VG_(message)(Vg_UserMsg, "    coverage data not written to file;\n");
-      VG_(message)(Vg_UserMsg, "    rerun VCov with --fresh to purge old data and start again");
+      VG_(umsg)("%s:%d: %s;\n", outfile, curr_line, error_msg);
+      VG_(umsg)("    coverage data not written to file;\n");
+      VG_(umsg)("    rerun VCov with --fresh to purge old data and start again.\n");
    }
 
    return (NULL == error_msg);
@@ -595,38 +588,37 @@ static Bool maybe_read_existing_outfile(Char* outfile)
    Int   fd;
    Char* buf;
    OffT  size;
-   struct vki_stat outfile_statbuf;
-   SysRes res;
+   struct vg_stat outfile_statbuf;
+   SysRes sres;
    Bool   ok;
    
    // If no old file exists, or we are overwriting it, our work here is done.
-   if ( clo_fresh || (VG_(stat)(outfile, &outfile_statbuf)).isError ) {
+   if ( clo_fresh || sr_isError(VG_(stat)(outfile, &outfile_statbuf)) ) {
       if (VG_(clo_verbosity) > 1)
-         VG_(message)(Vg_DebugMsg, "vcov: create new outfile:  '%s'", outfile);
+         VG_(dmsg)("vcov: create new outfile:  '%s'\n", outfile);
       return True;
    }
 
    // Right, we have to augment the old file.
    if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_DebugMsg, "vcov: augment old outfile: '%s'", outfile);
+      VG_(dmsg)("vcov: augment old outfile: '%s'\n", outfile);
 
    // Open existing data file.
-   res = VG_(open)(outfile, VKI_O_RDONLY, 0);
-   if (res.isError) {
-      VG_(message)(Vg_UserMsg, "warning: could not open existing '%s'",
-                   outfile);
+   sres = VG_(open)(outfile, VKI_O_RDONLY, 0);
+   if (sr_isError(sres)) {
+      VG_(umsg)("warning: could not open existing '%s'\n", outfile);
       return False;
    }
-   fd = (Int)res.res;
+   fd = (Int)sr_Res(sres);
 
    // Allocate a buffer big enough to hold the entire file.  Files should be
    // compact enough that even huge ones are only a few megabytes...
-   size = outfile_statbuf.st_size;
-   buf  = VG_(malloc)(size+1); 
+   size = outfile_statbuf.size;
+   buf  = VG_(malloc)("vcov.mreo.1", size+1); 
 
    // Read entire file into buffer.  
    if (VG_(read)(fd, buf, size) != size) {
-      VG_(message)(Vg_UserMsg, "error: could not read '%s'\n", outfile);
+      VG_(umsg)("error: could not read '%s'\n", outfile);
       VG_(free)(buf);
       VG_(close)(fd);
       return False;
@@ -648,12 +640,12 @@ static void write_outfile(Char* outfile)
 {
    Char   buf[VKI_PATH_MAX+1];
    Int    i, j, fd;
-   SysRes res;
+   SysRes sres;
 
-   res = VG_(open)(outfile, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_RDWR,
-                            VKI_S_IRUSR|VKI_S_IWUSR);
-   if (!res.isError) {
-      fd = (Int)res.res;
+   sres = VG_(open)(outfile, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_RDWR,
+                             VKI_S_IRUSR|VKI_S_IWUSR);
+   if (!sr_isError(sres)) {
+      fd = (Int)sr_Res(sres);
 
       // For each FileCC, output the new/updated counts.
       for (i = 0; i < N_FILE_ENTRIES; i++) {
@@ -683,8 +675,7 @@ static void write_outfile(Char* outfile)
 
    } else {
       // If the file can't be opened for whatever reason, just skip.
-      VG_(message)(Vg_UserMsg,
-         "error: cannot open output file `%s'", outfile );
+      VG_(umsg)("error: cannot open output file `%s'\n", outfile);
    }
 }
 
@@ -710,14 +701,13 @@ static void vc_fini(Int exitcode)
        tl_assert(0 != n_tot_debugs);
        if (0 == n_lineCC_slots_total) n_lineCC_slots_total = 1;
 
-       VG_(message)(Vg_DebugMsg, "vcov: number of source files: %d",
-                                 n_src_files);
-       VG_(message)(Vg_DebugMsg, "vcov: lines with debug info: %d%% (%d/%d)", 
-                    n_yes_debugs * 100 / n_tot_debugs,
-                    n_yes_debugs, n_tot_debugs);
-       VG_(message)(Vg_DebugMsg, "vcov: lineCC slot usage: %d%% (%d/%d)", 
-                    n_lineCC_slots_used * 100 / n_lineCC_slots_total,
-                    n_lineCC_slots_used, n_lineCC_slots_total);
+       VG_(dmsg)("vcov: number of source files: %d\n", n_src_files);
+       VG_(dmsg)("vcov: lines with debug info: %d%% (%d/%d)\n", 
+                 n_yes_debugs * 100 / n_tot_debugs,
+                 n_yes_debugs, n_tot_debugs);
+       VG_(dmsg)("vcov: lineCC slot usage: %d%% (%d/%d)\n", 
+                 n_lineCC_slots_used * 100 / n_lineCC_slots_total,
+                 n_lineCC_slots_used, n_lineCC_slots_total);
    }
 }
 
@@ -731,9 +721,9 @@ static void vc_post_clo_init(void)
 
 static void vc_pre_clo_init(void)
 {
-   VG_(details_name)            ("VCov");
+   VG_(details_name)            ("exp-VCov");
    VG_(details_version)         (NULL);
-   VG_(details_description)     ("a coverage testing tool");
+   VG_(details_description)     ("a test coverage tool");
    VG_(details_copyright_author)(
       "Copyright (C) 2002-2008, and GNU GPL'd, by Nicholas Nethercote.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);

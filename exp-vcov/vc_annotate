@@ -1,4 +1,4 @@
-#! /lusr/bin/perl -w
+#! /usr/bin/perl
 
 ##--------------------------------------------------------------------##
 ##--- VCov: annotating source files                 vc_annotate.in ---##
@@ -28,16 +28,17 @@
 #  The GNU General Public License is contained in the file COPYING.
 
 use strict;
+use warnings;
 
 # XXX: this needs to be converted from 'vc_annotate' to 'vc_annotate.in'
 # before being distributed.
 
 # Version number
-my $version = "3.4.0.SVN";
+my $version = "3.4.0.SVN"; # XXX: "@VERSION@";
 
 # Usage message.
 my $usage = <<END
-usage: vc_annotate [options] source-files
+usage: vc_annotate [options] output-file [source-files]
 
   options for the user, with defaults in [ ], are:
     -h --help             show this message
@@ -62,6 +63,7 @@ my @include_dirs = ("");
 # Files chosen for annotation on the command line.  
 # key = basename (trimmed of any directory), value = full filename
 # XXX: needed?  see @srcfiles above
+# XXX: not using it;  should be more like cg_annotate
 my %user_ann_files;
 
 # CCs, organised by filename and line_num for easy annotation.
@@ -170,7 +172,9 @@ sub print_per_file_output()
     foreach my $src_file (keys %all_CCs) {
         # If $src_file more recent than $infile, issue a warning.  (Field #9
         # is the time of the last modification.)
-        if ((stat $src_file)[9] > (stat $input_file)[9]) {
+        my @src_stat   = stat $src_file;
+        my @input_stat = stat $input_file;
+        if (scalar @src_stat > 0 && $src_stat[9] > $input_stat[9]) {
             warn("warning: Source file '$src_file'\n");
             warn("         is more recent than data file '$input_file'.\n");
             warn("         Its annotations may be incorrect.\n");

@@ -2,8 +2,11 @@
 
 dir=`dirname $0`
 
-$dir/../../tests/filter_stderr_basic                |
+$dir/../../tests/filter_stderr_basic |
 
 # Remove "VCov, ..." line and the following copyright line.
-sed "/^VCov, a coverage testing tool./ , /./ d"
+sed \
+-e "/^exp-VCov, a test coverage tool\.$/d" \
+-e "/^NOTE: This is an Experimental-Class Valgrind Tool.$/d"  \
+-e "/^Copyright (C) 2002-20.., and GNU GPL'd, by Nicholas Nethercote.$/d"
 

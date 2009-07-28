@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -40,7 +40,7 @@
 #include "pub_tool_options.h"
 
 /* The max number of suppression files. */
-#define VG_CLO_MAX_SFILES 10
+#define VG_CLO_MAX_SFILES 100
 
 /* Should we stop collecting errors if too many appear?  default: YES */
 extern Bool  VG_(clo_error_limit);
@@ -65,30 +65,14 @@ extern Bool  VG_(clo_trace_children);
    intermingled with the parent's output.  This is especially
    problematic when VG_(clo_xml) is True.  Setting
    VG_(clo_child_silent_after_fork) causes children to fall silent
-   after fork() calls. */
+   after fork() calls.  Although note they become un-silent again
+   after the subsequent exec(). */
 extern Bool  VG_(clo_child_silent_after_fork);
 
-/* Where logging output is to be sent to.
-
-   With --log-fd (and by default), clo_log_fd holds the file id, and is
-   taken from the command line.  (fd 2, stderr, is the default.)
-   clo_log_name is irrelevant.
-
-   With --log-file, clo_log_name holds the log-file name, and is taken from
-   the command line (and possibly has process ID/env var contents in it, if
-   the %p or %q format specifiers are used).  clo_log_fd is then made to
-   hold the relevant file id, by opening clo_log_name (concatenated with the
-   process ID) for writing.
-
-   With --log-socket, clo_log_name holds the hostname:portnumber pair,
-   and is taken from the command line.  clo_log_fd is then made to hold
-   the relevant file handle, by opening a connection to that
-   hostname:portnumber pair. 
-
-   Global default is to set log_to == VgLogTo_Fd and log_fd == 2
-   (stderr). */
-extern Int   VG_(clo_log_fd);
-extern Char* VG_(clo_log_name);
+/* If the user specified --log-file=STR and/or --xml-file=STR, these
+   hold STR after expansion of the %p and %q templates. */
+extern Char* VG_(clo_log_fname_expanded);
+extern Char* VG_(clo_xml_fname_expanded);
 
 /* Add timestamps to log messages?  default: NO */
 extern Bool  VG_(clo_time_stamp);
@@ -126,15 +110,17 @@ extern Bool  VG_(clo_debug_dump_frames);
 extern Bool  VG_(clo_trace_redir);
 /* DEBUG: print thread scheduling events?  default: NO */
 extern Bool  VG_(clo_trace_sched);
-/* DEBUG: print pthreads calls?  default: NO */
-extern Bool  VG_(clo_trace_pthreads);
-/* Display gory details for the k'th most popular error.  default:
-   Infinity. */
+/* DEBUG: do heap profiling?  default: NO */
+extern Bool  VG_(clo_profile_heap);
+/* DEBUG: display gory details for the k'th most popular error.
+   default: Infinity. */
 extern Int   VG_(clo_dump_error);
 /* Engage miscellaneous weird hacks needed for some progs. */
 extern Char* VG_(clo_sim_hints);
 /* Show symbols in the form 'name+offset' ?  Default: NO */
 extern Bool VG_(clo_sym_offsets);
+/* Read DWARF3 variable info even if tool doesn't ask for it? */
+extern Bool VG_(clo_read_var_info);
 
 /* Track open file descriptors? */
 extern Bool  VG_(clo_track_fds);
@@ -145,8 +131,6 @@ extern Bool  VG_(clo_track_fds);
    is ignored.  Ie if a tool says no, I don't want this to run, that
    cannot be overridden from the command line. */
 extern Bool  VG_(clo_run_libc_freeres);
-/* Continue stack traces below main()?  Default: NO */
-extern Bool VG_(clo_show_below_main);
 
 /* Should we show VEX emulation warnings?  Default: NO */
 extern Bool VG_(clo_show_emwarns);
@@ -181,6 +165,10 @@ extern VgSmc VG_(clo_smc_check);
 /* String containing comma-separated names of minor kernel variants,
    so they can be properly handled by m_syswrap. */
 extern HChar* VG_(clo_kernel_variant);
+
+/* Darwin-specific: automatically run /usr/bin/dsymutil to update
+   .dSYM directories as necessary? */
+extern Bool VG_(clo_auto_run_dsymutil);
 
 /* --------- Functions --------- */
 

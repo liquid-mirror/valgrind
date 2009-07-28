@@ -11,7 +11,7 @@
    Copyright (C) 2003-2005, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This tool is derived from and contains code from Cachegrind
-   Copyright (C) 2002-2007 Nicholas Nethercote (njn@valgrind.org)
+   Copyright (C) 2002-2009 Nicholas Nethercote (njn@valgrind.org)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -74,7 +74,6 @@ typedef struct {
    Bool         sectored;  /* prefetch nearside cacheline on read */
    int          sets;
    int          sets_min_1;
-   int          assoc_bits;
    int          line_size_bits;
    int          tag_shift;
    UWord        tag_mask;
@@ -114,22 +113,21 @@ static Bool clo_collect_cacheuse = False;
  * - BBCC*  nonskipped  (only != 0 when in a function not skipped)
  */
 
-/* Offset to events in event set, used in log_* functions */
-static Int off_D0_Ir;
-static Int off_D1r_Ir;
-static Int off_D1r_Dr;
-static Int off_D1w_Ir;
-static Int off_D1w_Dw;
-static Int off_D2_Ir;
-static Int off_D2_Dr;
-static Int off_D2_Dw;
+/* Offset to events in event set, used in log_* functions
+ * <off_EventSet_BasicEventSet>: offset where basic set is found
+ */
+static Int off_UIr_Ir;
+static Int off_UIrDr_Ir,   off_UIrDr_Dr;
+static Int off_UIrDrDw_Ir, off_UIrDrDw_Dr, off_UIrDrDw_Dw;
+static Int off_UIrDw_Ir,   off_UIrDw_Dw;
+static Int off_UIrDwDr_Ir, off_UIrDwDr_Dr, off_UIrDwDr_Dw;
 
 static Addr   bb_base;
 static ULong* cost_base;
 static InstrInfo* current_ii;
 
 /* Cache use offsets */
-/* FIXME: The offsets are only correct because all eventsets get
+/* The offsets are only correct because all per-instruction event sets get
  * the "Use" set added first !
  */
 static Int off_I1_AcCost  = 0;
@@ -195,7 +193,6 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
 
    c->sets           = (c->size / c->line_size) / c->assoc;
    c->sets_min_1     = c->sets - 1;
-   c->assoc_bits     = VG_(log2)(c->assoc);
    c->line_size_bits = VG_(log2)(c->line_size);
    c->tag_shift      = c->line_size_bits + VG_(log2)(c->sets);
    c->tag_mask       = ~((1<<c->tag_shift)-1);
@@ -214,7 +211,8 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
 		   c->sectored ? ", sectored":"");
    }
 
-   c->tags = (UWord*) CLG_MALLOC(sizeof(UWord) * c->sets * c->assoc);
+   c->tags = (UWord*) CLG_MALLOC("cl.sim.cs_ic.1",
+                                 sizeof(UWord) * c->sets * c->assoc);
    if (clo_collect_cacheuse)
        cacheuse_initcache(c);
    else
@@ -258,8 +256,7 @@ CacheResult cachesim_setref(cache_t2* c, UInt set_no, UWord tag)
     int i, j;
     UWord *set;
 
-    /* Shifting is a bit faster than multiplying */
-    set = &(c->tags[set_no << c->assoc_bits]);
+    set = &(c->tags[set_no * c->assoc]);
 
     /* This loop is unrolled for just the first case, which is the most */
     /* common.  We can't unroll any further because it would screw up   */
@@ -358,8 +355,7 @@ CacheResult cachesim_setref_wb(cache_t2* c, RefType ref, UInt set_no, UWord tag)
     int i, j;
     UWord *set, tmp_tag;
 
-    /* Shifting is a bit faster than multiplying */
-    set = &(c->tags[set_no << c->assoc_bits]);
+    set = &(c->tags[set_no * c->assoc]);
 
     /* This loop is unrolled for just the first case, which is the most */
     /* common.  We can't unroll any further because it would screw up   */
@@ -406,7 +402,7 @@ CacheResult cachesim_ref_wb(cache_t2* c, RefType ref, Addr a, UChar size)
     /* Access straddles two lines. */
     /* Nb: this is a fast way of doing ((set1+1) % c->sets) */
     else if (((set1 + 1) & (c->sets-1)) == set2) {
-	UWord tag2  = (a+size-1) >> c->tag_shift;
+	UWord tag2  = (a+size-1) & c->tag_mask;
 
 	/* the call updates cache structures as side effect */
 	CacheResult res1 =  cachesim_setref_wb(c, ref, set1, tag);
@@ -494,7 +490,7 @@ void prefetch_clear(void)
  * One stream can be detected per 4k page.
  */
 static __inline__
-void prefetch_L2_doref(Addr a, UChar size)
+void prefetch_L2_doref(Addr a)
 {
   UInt stream = (a >> PF_PAGEBITS) % PF_STREAMS;
   UInt block = ( a >> L2.line_size_bits);
@@ -534,7 +530,7 @@ static
 CacheModelResult prefetch_I1_ref(Addr a, UChar size)
 {
     if ( cachesim_ref( &I1, a, size) == Hit ) return L1_Hit;
-    prefetch_L2_doref(a,size);
+    prefetch_L2_doref(a);
     if ( cachesim_ref( &L2, a, size) == Hit ) return L2_Hit;
     return MemAccess;
 }
@@ -543,7 +539,7 @@ static
 CacheModelResult prefetch_D1_ref(Addr a, UChar size)
 {
     if ( cachesim_ref( &D1, a, size) == Hit ) return L1_Hit;
-    prefetch_L2_doref(a,size);
+    prefetch_L2_doref(a);
     if ( cachesim_ref( &L2, a, size) == Hit ) return L2_Hit;
     return MemAccess;
 }
@@ -555,7 +551,7 @@ static
 CacheModelResult prefetch_I1_Read(Addr a, UChar size)
 {
     if ( cachesim_ref( &I1, a, size) == Hit ) return L1_Hit;
-    prefetch_L2_doref(a,size);
+    prefetch_L2_doref(a);
     switch( cachesim_ref_wb( &L2, Read, a, size) ) {
 	case Hit: return L2_Hit;
 	case Miss: return MemAccess;
@@ -568,7 +564,7 @@ static
 CacheModelResult prefetch_D1_Read(Addr a, UChar size)
 {
     if ( cachesim_ref( &D1, a, size) == Hit ) return L1_Hit;
-    prefetch_L2_doref(a,size);
+    prefetch_L2_doref(a);
     switch( cachesim_ref_wb( &L2, Read, a, size) ) {
 	case Hit: return L2_Hit;
 	case Miss: return MemAccess;
@@ -580,7 +576,7 @@ CacheModelResult prefetch_D1_Read(Addr a, UChar size)
 static
 CacheModelResult prefetch_D1_Write(Addr a, UChar size)
 {
-    prefetch_L2_doref(a,size);
+    prefetch_L2_doref(a);
     if ( cachesim_ref( &D1, a, size) == Hit ) {
 	/* Even for a L1 hit, the write-trough L1 passes
 	 * the write to the L2 to make the L2 line dirty.
@@ -611,12 +607,15 @@ void cacheuse_initcache(cache_t2* c)
     unsigned int start_mask, start_val;
     unsigned int end_mask, end_val;
 
-    c->use    = CLG_MALLOC(sizeof(line_use) * c->sets * c->assoc);
-    c->loaded = CLG_MALLOC(sizeof(line_loaded) * c->sets * c->assoc);
-    c->line_start_mask = CLG_MALLOC(sizeof(int) * c->line_size);
-    c->line_end_mask = CLG_MALLOC(sizeof(int) * c->line_size);
+    c->use    = CLG_MALLOC("cl.sim.cu_ic.1",
+                           sizeof(line_use) * c->sets * c->assoc);
+    c->loaded = CLG_MALLOC("cl.sim.cu_ic.2",
+                           sizeof(line_loaded) * c->sets * c->assoc);
+    c->line_start_mask = CLG_MALLOC("cl.sim.cu_ic.3",
+                                    sizeof(int) * c->line_size);
+    c->line_end_mask = CLG_MALLOC("cl.sim.cu_ic.4",
+                                  sizeof(int) * c->line_size);
     
-
     c->line_size_mask = c->line_size-1;
 
     /* Meaning of line_start_mask/line_end_mask
@@ -672,110 +671,14 @@ void cacheuse_initcache(cache_t2* c)
     /* We use lower tag bits as offset pointers to cache use info.
      * I.e. some cache parameters don't work.
      */
-    if (c->tag_shift < c->assoc_bits) {
+    if ( (1<<c->tag_shift) < c->assoc) {
 	VG_(message)(Vg_DebugMsg,
-		     "error: Use associativity < %d for cache use statistics!",
+		     "error: Use associativity < %d for cache use statistics!\n",
 		     (1<<c->tag_shift) );
 	VG_(tool_panic)("Unsupported cache configuration");
     }
 }
     
-/* FIXME: A little tricky */
-#if 0
-
-static __inline__
-void cacheuse_update_hit(cache_t2* c, UInt high_idx, UInt low_idx, UInt use_mask)
-{
-    int idx = (high_idx << c->assoc_bits) | low_idx;
-
-    c->use[idx].count ++;
-    c->use[idx].mask |= use_mask;
-
-    CLG_DEBUG(6," Hit [idx %d] (line %p from %p): %x => %08x, count %d\n",
-	      idx, c->loaded[idx].memline,  c->loaded[idx].iaddr,
-	      use_mask, c->use[idx].mask, c->use[idx].count);
-}
-
-/* only used for I1, D1 */
-
-static __inline__
-CacheResult cacheuse_setref(cache_t2* c, UInt set_no, UWord tag)
-{
-    int i, j, idx;
-    UWord *set, tmp_tag;
-    UInt use_mask;
-
-    /* Shifting is a bit faster than multiplying */
-    set = &(c->tags[set_no << c->assoc_bits]);
-    use_mask =
-	c->line_start_mask[a & c->line_size_mask] &
-	c->line_end_mask[(a+size-1) & c->line_size_mask];
-
-    /* This loop is unrolled for just the first case, which is the most */
-    /* common.  We can't unroll any further because it would screw up   */
-    /* if we have a direct-mapped (1-way) cache.                        */
-    if (tag == (set[0] & c->tag_mask)) {
-	cacheuse_update(c, set_no, set[0] & ~c->tag_mask, use_mask);
-	return L1_Hit;
-    }
-
-    /* If the tag is one other than the MRU, move it into the MRU spot  */
-    /* and shuffle the rest down.                                       */
-    for (i = 1; i < c->assoc; i++) {
-	if (tag == (set[i] & c->tag_mask)) {
-  	    tmp_tag = set[i];
-            for (j = i; j > 0; j--) {
-                set[j] = set[j - 1];
-            }
-            set[0] = tmp_tag;
-
-	    cacheuse_update(c, set_no, tmp_tag & ~c->tag_mask, use_mask);
-            return L1_Hit;
-        }
-    }
-
-    /* A miss;  install this tag as MRU, shuffle rest down. */
-    tmp_tag = set[L.assoc - 1] & ~c->tag_mask;
-    for (j = c->assoc - 1; j > 0; j--) {
-        set[j] = set[j - 1];
-    }
-    set[0] = tag | tmp_tag;
-
-    cacheuse_L2_miss(c, (set_no << c->assoc_bits) | tmp_tag,
-		     use_mask, a & ~c->line_size_mask);
-
-    return Miss;
-}
-
-
-static CacheResult cacheuse_ref(cache_t2* c, Addr a, UChar size)
-{
-    UInt  set1 = ( a         >> c->line_size_bits) & (c->sets_min_1);
-    UInt  set2 = ((a+size-1) >> c->line_size_bits) & (c->sets_min_1);
-    UWord tag  = a >> c->tag_shift;
-
-    /* Access entirely within line. */
-    if (set1 == set2) 
-	return cacheuse_setref(c, set1, tag);
-
-    /* Access straddles two lines. */
-    /* Nb: this is a fast way of doing ((set1+1) % c->sets) */
-    else if (((set1 + 1) & (c->sets-1)) == set2) {
-	UWord tag2  = a >> c->tag_shift;
-
-	/* the call updates cache structures as side effect */
-	CacheResult res1 =  cacheuse_isMiss(c, set1, tag);
-	CacheResult res2 =  cacheuse_isMiss(c, set2, tag2);
-	return ((res1 == Miss) || (res2 == Miss)) ? Miss : Hit;
-
-   } else {
-       VG_(printf)("addr: %x  size: %u  sets: %d %d", a, size, set1, set2);
-       VG_(tool_panic)("item straddles more than two cache sets");
-   }
-   return Hit;
-}
-#endif
-
 
 /* for I1/D1 caches */
 #define CACHEUSE(L)                                                         \
@@ -790,14 +693,13 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
    UWord *set, tmp_tag; 						    \
    UInt use_mask;							    \
                                                                             \
-   CLG_DEBUG(6,"%s.Acc(Addr %p, size %d): Sets [%d/%d]\n",                  \
+   CLG_DEBUG(6,"%s.Acc(Addr %#lx, size %d): Sets [%d/%d]\n",                  \
 	    L.name, a, size, set1, set2);				    \
                                                                             \
    /* First case: word entirely within line. */                             \
    if (set1 == set2) {                                                      \
                                                                             \
-      /* Shifting is a bit faster than multiplying */                       \
-      set = &(L.tags[set1 << L.assoc_bits]);                                \
+      set = &(L.tags[set1 * L.assoc]);                                      \
       use_mask = L.line_start_mask[a & L.line_size_mask] &                  \
 	         L.line_end_mask[(a+size-1) & L.line_size_mask];	    \
                                                                             \
@@ -805,10 +707,10 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
       /* common.  We can't unroll any further because it would screw up   */\
       /* if we have a direct-mapped (1-way) cache.                        */\
       if (tag == (set[0] & L.tag_mask)) {                                   \
-        idx = (set1 << L.assoc_bits) | (set[0] & ~L.tag_mask);              \
+        idx = (set1 * L.assoc) + (set[0] & ~L.tag_mask);                    \
         L.use[idx].count ++;                                                \
         L.use[idx].mask |= use_mask;                                        \
-	CLG_DEBUG(6," Hit0 [idx %d] (line %p from %p): %x => %08x, count %d\n",\
+	CLG_DEBUG(6," Hit0 [idx %d] (line %#lx from %#lx): %x => %08x, count %d\n",\
 		 idx, L.loaded[idx].memline,  L.loaded[idx].iaddr,          \
 		 use_mask, L.use[idx].mask, L.use[idx].count);              \
 	return L1_Hit;							    \
@@ -822,10 +724,10 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
                set[j] = set[j - 1];                                         \
             }                                                               \
             set[0] = tmp_tag;			                            \
-            idx = (set1 << L.assoc_bits) | (tmp_tag & ~L.tag_mask);         \
+            idx = (set1 * L.assoc) + (tmp_tag & ~L.tag_mask);               \
             L.use[idx].count ++;                                            \
             L.use[idx].mask |= use_mask;                                    \
-	CLG_DEBUG(6," Hit%d [idx %d] (line %p from %p): %x => %08x, count %d\n",\
+	CLG_DEBUG(6," Hit%d [idx %d] (line %#lx from %#lx): %x => %08x, count %d\n",\
 		 i, idx, L.loaded[idx].memline,  L.loaded[idx].iaddr,       \
 		 use_mask, L.use[idx].mask, L.use[idx].count);              \
             return L1_Hit;                                                  \
@@ -838,7 +740,7 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
          set[j] = set[j - 1];                                               \
       }                                                                     \
       set[0] = tag | tmp_tag;                                               \
-      idx = (set1 << L.assoc_bits) | tmp_tag;                               \
+      idx = (set1 * L.assoc) + tmp_tag;                                     \
       return update_##L##_use(&L, idx,         			            \
 		       use_mask, a &~ L.line_size_mask);		    \
                                                                             \
@@ -846,13 +748,13 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
    /* Nb: this is a fast way of doing ((set1+1) % L.sets) */                \
    } else if (((set1 + 1) & (L.sets-1)) == set2) {                          \
       Int miss1=0, miss2=0; /* 0: L1 hit, 1:L1 miss, 2:L2 miss */           \
-      set = &(L.tags[set1 << L.assoc_bits]);                                \
+      set = &(L.tags[set1 * L.assoc]);                                      \
       use_mask = L.line_start_mask[a & L.line_size_mask];		    \
       if (tag == (set[0] & L.tag_mask)) {                                   \
-         idx = (set1 << L.assoc_bits) | (set[0] & ~L.tag_mask);             \
+         idx = (set1 * L.assoc) + (set[0] & ~L.tag_mask);                   \
          L.use[idx].count ++;                                               \
          L.use[idx].mask |= use_mask;                                       \
-	CLG_DEBUG(6," Hit0 [idx %d] (line %p from %p): %x => %08x, count %d\n",\
+	CLG_DEBUG(6," Hit0 [idx %d] (line %#lx from %#lx): %x => %08x, count %d\n",\
 		 idx, L.loaded[idx].memline,  L.loaded[idx].iaddr,          \
 		 use_mask, L.use[idx].mask, L.use[idx].count);              \
          goto block2;                                                       \
@@ -864,10 +766,10 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
                set[j] = set[j - 1];                                         \
             }                                                               \
             set[0] = tmp_tag;                                               \
-            idx = (set1 << L.assoc_bits) | (tmp_tag & ~L.tag_mask);         \
+            idx = (set1 * L.assoc) + (tmp_tag & ~L.tag_mask);               \
             L.use[idx].count ++;                                            \
             L.use[idx].mask |= use_mask;                                    \
-	CLG_DEBUG(6," Hit%d [idx %d] (line %p from %p): %x => %08x, count %d\n",\
+	CLG_DEBUG(6," Hit%d [idx %d] (line %#lx from %#lx): %x => %08x, count %d\n",\
 		 i, idx, L.loaded[idx].memline,  L.loaded[idx].iaddr,       \
 		 use_mask, L.use[idx].mask, L.use[idx].count);              \
             goto block2;                                                    \
@@ -878,18 +780,18 @@ static CacheModelResult cacheuse##_##L##_doRead(Addr a, UChar size)         \
          set[j] = set[j - 1];                                               \
       }                                                                     \
       set[0] = tag | tmp_tag;                                               \
-      idx = (set1 << L.assoc_bits) | tmp_tag;                               \
+      idx = (set1 * L.assoc) + tmp_tag;                                     \
       miss1 = update_##L##_use(&L, idx,        			            \
 		       use_mask, a &~ L.line_size_mask);		    \
 block2:                                                                     \
-      set = &(L.tags[set2 << L.assoc_bits]);                                \
+      set = &(L.tags[set2 * L.assoc]);                                      \
       use_mask = L.line_end_mask[(a+size-1) & L.line_size_mask];  	    \
       tag2  = (a+size-1) & L.tag_mask;                                      \
       if (tag2 == (set[0] & L.tag_mask)) {                                  \
-         idx = (set2 << L.assoc_bits) | (set[0] & ~L.tag_mask);             \
+         idx = (set2 * L.assoc) + (set[0] & ~L.tag_mask);                   \
          L.use[idx].count ++;                                               \
          L.use[idx].mask |= use_mask;                                       \
-	CLG_DEBUG(6," Hit0 [idx %d] (line %p from %p): %x => %08x, count %d\n",\
+	CLG_DEBUG(6," Hit0 [idx %d] (line %#lx from %#lx): %x => %08x, count %d\n",\
 		 idx, L.loaded[idx].memline,  L.loaded[idx].iaddr,          \
 		 use_mask, L.use[idx].mask, L.use[idx].count);              \
          return miss1;                                                      \
@@ -901,10 +803,10 @@ block2:                                                                     \
                set[j] = set[j - 1];                                         \
             }                                                               \
             set[0] = tmp_tag;                                               \
-            idx = (set2 << L.assoc_bits) | (tmp_tag & ~L.tag_mask);         \
+            idx = (set2 * L.assoc) + (tmp_tag & ~L.tag_mask);               \
             L.use[idx].count ++;                                            \
             L.use[idx].mask |= use_mask;                                    \
-	CLG_DEBUG(6," Hit%d [idx %d] (line %p from %p): %x => %08x, count %d\n",\
+	CLG_DEBUG(6," Hit%d [idx %d] (line %#lx from %#lx): %x => %08x, count %d\n",\
 		 i, idx, L.loaded[idx].memline,  L.loaded[idx].iaddr,       \
 		 use_mask, L.use[idx].mask, L.use[idx].count);              \
             return miss1;                                                   \
@@ -915,13 +817,13 @@ block2:                                                                     \
          set[j] = set[j - 1];                                               \
       }                                                                     \
       set[0] = tag2 | tmp_tag;                                              \
-      idx = (set2 << L.assoc_bits) | tmp_tag;                               \
+      idx = (set2 * L.assoc) + tmp_tag;                                     \
       miss2 = update_##L##_use(&L, idx,			                    \
 		       use_mask, (a+size-1) &~ L.line_size_mask);	    \
       return (miss1==MemAccess || miss2==MemAccess) ? MemAccess:L2_Hit;     \
                                                                             \
    } else {                                                                 \
-       VG_(printf)("addr: %p  size: %u  sets: %d %d", a, size, set1, set2); \
+       VG_(printf)("addr: %#lx  size: %u  sets: %d %d", a, size, set1, set2); \
        VG_(tool_panic)("item straddles more than two cache sets");          \
    }                                                                        \
    return 0;                                                                \
@@ -952,10 +854,10 @@ static void update_L2_use(int idx, Addr memline)
   line_use* use = &(L2.use[idx]);
   int i = ((32 - countBits(use->mask)) * L2.line_size)>>5;
   
-  CLG_DEBUG(2, " L2.miss [%d]: at %p accessing memline %p\n",
+  CLG_DEBUG(2, " L2.miss [%d]: at %#lx accessing memline %#lx\n",
 	   idx, bb_base + current_ii->instr_offset, memline);
   if (use->count>0) {
-    CLG_DEBUG(2, "   old: used %d, loss bits %d (%08x) [line %p from %p]\n",
+    CLG_DEBUG(2, "   old: used %d, loss bits %d (%08x) [line %#lx from %#lx]\n",
 	     use->count, i, use->mask, loaded->memline, loaded->iaddr);
     CLG_DEBUG(2, "   collect: %d, use_base %p\n",
 	     CLG_(current_state).collect, loaded->use_base);
@@ -980,19 +882,19 @@ static
 CacheModelResult cacheuse_L2_access(Addr memline, line_loaded* l1_loaded)
 {
    UInt setNo = (memline >> L2.line_size_bits) & (L2.sets_min_1);
-   UWord* set = &(L2.tags[setNo << L2.assoc_bits]);
+   UWord* set = &(L2.tags[setNo * L2.assoc]);
    UWord tag  = memline & L2.tag_mask;
 
    int i, j, idx;
    UWord tmp_tag;
    
-   CLG_DEBUG(6,"L2.Acc(Memline %p): Set %d\n", memline, setNo);
+   CLG_DEBUG(6,"L2.Acc(Memline %#lx): Set %d\n", memline, setNo);
 
    if (tag == (set[0] & L2.tag_mask)) {
-     idx = (setNo << L2.assoc_bits) | (set[0] & ~L2.tag_mask);
+     idx = (setNo * L2.assoc) + (set[0] & ~L2.tag_mask);
      l1_loaded->dep_use = &(L2.use[idx]);
 
-     CLG_DEBUG(6," Hit0 [idx %d] (line %p from %p): => %08x, count %d\n",
+     CLG_DEBUG(6," Hit0 [idx %d] (line %#lx from %#lx): => %08x, count %d\n",
 		 idx, L2.loaded[idx].memline,  L2.loaded[idx].iaddr,
 		 L2.use[idx].mask, L2.use[idx].count);
      return L2_Hit;
@@ -1004,10 +906,10 @@ CacheModelResult cacheuse_L2_access(Addr memline, line_loaded* l1_loaded)
 	 set[j] = set[j - 1];
        }
        set[0] = tmp_tag;
-       idx = (setNo << L2.assoc_bits) | (tmp_tag & ~L2.tag_mask);
+       idx = (setNo * L2.assoc) + (tmp_tag & ~L2.tag_mask);
        l1_loaded->dep_use = &(L2.use[idx]);
 
-	CLG_DEBUG(6," Hit%d [idx %d] (line %p from %p): => %08x, count %d\n",
+	CLG_DEBUG(6," Hit%d [idx %d] (line %#lx from %#lx): => %08x, count %d\n",
 		 i, idx, L2.loaded[idx].memline,  L2.loaded[idx].iaddr,
 		 L2.use[idx].mask, L2.use[idx].count);
 	return L2_Hit;
@@ -1020,7 +922,7 @@ CacheModelResult cacheuse_L2_access(Addr memline, line_loaded* l1_loaded)
      set[j] = set[j - 1];
    }
    set[0] = tag | tmp_tag;
-   idx = (setNo << L2.assoc_bits) | tmp_tag;
+   idx = (setNo * L2.assoc) + tmp_tag;
    l1_loaded->dep_use = &(L2.use[idx]);
 
    update_L2_use(idx, memline);
@@ -1040,10 +942,10 @@ static CacheModelResult update##_##L##_use(cache_t2* cache, int idx, \
   line_use* use = &(cache->use[idx]);				     \
   int c = ((32 - countBits(use->mask)) * cache->line_size)>>5;       \
                                                                      \
-  CLG_DEBUG(2, " %s.miss [%d]: at %p accessing memline %p (mask %08x)\n", \
+  CLG_DEBUG(2, " %s.miss [%d]: at %#lx accessing memline %#lx (mask %08x)\n", \
 	   cache->name, idx, bb_base + current_ii->instr_offset, memline, mask); \
   if (use->count>0) {                                                \
-    CLG_DEBUG(2, "   old: used %d, loss bits %d (%08x) [line %p from %p]\n",\
+    CLG_DEBUG(2, "   old: used %d, loss bits %d (%08x) [line %#lx from %#lx]\n",\
 	     use->count, c, use->mask, loaded->memline, loaded->iaddr);	\
     CLG_DEBUG(2, "   collect: %d, use_base %p\n", \
 	     CLG_(current_state).collect, loaded->use_base);	     \
@@ -1081,13 +983,13 @@ static
 void cacheuse_finish(void)
 {
   int i;
-  InstrInfo ii = { 0,0,0,0,0 };
+  InstrInfo ii = { 0,0,0,0 };
 
   if (!CLG_(current_state).collect) return;
 
   bb_base = 0;
   current_ii = &ii;
-  cost_base = 0;  
+  cost_base = 0;
 
   /* update usage counters */
   if (I1.use)
@@ -1140,6 +1042,19 @@ void inc_costs(CacheModelResult r, ULong* c1, ULong* c2)
     }
 }
 
+static
+Char* cacheRes(CacheModelResult r)
+{
+    switch(r) {
+    case L1_Hit:    return "L1 Hit ";
+    case L2_Hit:    return "L2 Hit ";
+    case MemAccess: return "L2 Miss";
+    case WriteBackMemAccess: return "L2 Miss (dirty)";
+    default:
+	tl_assert(0);
+    }
+    return "??";
+}
 
 VG_REGPARM(1)
 static void log_1I0D(InstrInfo* ii)
@@ -1149,37 +1064,101 @@ static void log_1I0D(InstrInfo* ii)
     current_ii = ii;
     IrRes = (*simulator.I1_Read)(bb_base + ii->instr_offset, ii->instr_size);
 
-    CLG_DEBUG(6, "log_1I0D:  Ir=%p/%u => Ir %d\n",
-	      bb_base + ii->instr_offset, ii->instr_size, IrRes);
+    CLG_DEBUG(6, "log_1I0D:  Ir  %#lx/%u => %s\n",
+	      bb_base + ii->instr_offset, ii->instr_size, cacheRes(IrRes));
 
     if (CLG_(current_state).collect) {
 	ULong* cost_Ir;
-	
+
 	if (CLG_(current_state).nonskipped)
 	    cost_Ir = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_full_Ir;
 	else
-	    cost_Ir = cost_base + ii->cost_offset + off_D0_Ir;
+	    cost_Ir = cost_base + ii->cost_offset + off_UIr_Ir;
 
 	inc_costs(IrRes, cost_Ir, 
 		  CLG_(current_state).cost + CLG_(sets).off_full_Ir );
     }
 }
 
+VG_REGPARM(2)
+static void log_2I0D(InstrInfo* ii1, InstrInfo* ii2)
+{
+    CacheModelResult Ir1Res, Ir2Res;
+    ULong *global_cost_Ir;
+
+    current_ii = ii1;
+    Ir1Res = (*simulator.I1_Read)(bb_base + ii1->instr_offset, ii1->instr_size);
+    current_ii = ii2;
+    Ir2Res = (*simulator.I1_Read)(bb_base + ii2->instr_offset, ii2->instr_size);
+
+    CLG_DEBUG(6, "log_2I0D:  Ir1 %#lx/%u => %s, Ir2 %#lx/%u => %s\n",
+	      bb_base + ii1->instr_offset, ii1->instr_size, cacheRes(Ir1Res),
+	      bb_base + ii2->instr_offset, ii2->instr_size, cacheRes(Ir2Res) );
+
+    if (!CLG_(current_state).collect) return;
+
+    global_cost_Ir = CLG_(current_state).cost + CLG_(sets).off_full_Ir;
+    if (CLG_(current_state).nonskipped) {
+	ULong* skipped_cost_Ir = CLG_(current_state).nonskipped->skipped +
+				 CLG_(sets).off_full_Ir;
+	inc_costs(Ir1Res, global_cost_Ir, skipped_cost_Ir);
+	inc_costs(Ir2Res, global_cost_Ir, skipped_cost_Ir);
+	return;
+    }
+
+    inc_costs(Ir1Res, global_cost_Ir, cost_base + ii1->cost_offset + off_UIr_Ir);
+    inc_costs(Ir2Res, global_cost_Ir, cost_base + ii2->cost_offset + off_UIr_Ir);
+}
+
+VG_REGPARM(3)
+static void log_3I0D(InstrInfo* ii1, InstrInfo* ii2, InstrInfo* ii3)
+{
+    CacheModelResult Ir1Res, Ir2Res, Ir3Res;
+    ULong *global_cost_Ir;
+
+    current_ii = ii1;
+    Ir1Res = (*simulator.I1_Read)(bb_base + ii1->instr_offset, ii1->instr_size);
+    current_ii = ii2;
+    Ir2Res = (*simulator.I1_Read)(bb_base + ii2->instr_offset, ii2->instr_size);
+    current_ii = ii3;
+    Ir3Res = (*simulator.I1_Read)(bb_base + ii3->instr_offset, ii3->instr_size);
+
+    CLG_DEBUG(6, "log_3I0D:  Ir1 %#lx/%u => %s, Ir2 %#lx/%u => %s, Ir3 %#lx/%u => %s\n",
+	      bb_base + ii1->instr_offset, ii1->instr_size, cacheRes(Ir1Res),
+	      bb_base + ii2->instr_offset, ii2->instr_size, cacheRes(Ir2Res),
+	      bb_base + ii3->instr_offset, ii3->instr_size, cacheRes(Ir3Res) );
+
+    if (!CLG_(current_state).collect) return;
+
+    global_cost_Ir = CLG_(current_state).cost + CLG_(sets).off_full_Ir;
+    if (CLG_(current_state).nonskipped) {
+	ULong* skipped_cost_Ir = CLG_(current_state).nonskipped->skipped +
+				 CLG_(sets).off_full_Ir;
+	inc_costs(Ir1Res, global_cost_Ir, skipped_cost_Ir);
+	inc_costs(Ir2Res, global_cost_Ir, skipped_cost_Ir);
+	inc_costs(Ir3Res, global_cost_Ir, skipped_cost_Ir);
+	return;
+    }
+
+    inc_costs(Ir1Res, global_cost_Ir, cost_base + ii1->cost_offset + off_UIr_Ir);
+    inc_costs(Ir2Res, global_cost_Ir, cost_base + ii2->cost_offset + off_UIr_Ir);
+    inc_costs(Ir3Res, global_cost_Ir, cost_base + ii3->cost_offset + off_UIr_Ir);
+}
 
 /* Instruction doing a read access */
 
-VG_REGPARM(2)
-static void log_1I1Dr(InstrInfo* ii, Addr data)
+VG_REGPARM(3)
+static void log_1I1Dr(InstrInfo* ii, Addr data_addr, Word data_size)
 {
     CacheModelResult IrRes, DrRes;
 
     current_ii = ii;
     IrRes = (*simulator.I1_Read)(bb_base + ii->instr_offset, ii->instr_size);
-    DrRes = (*simulator.D1_Read)(data, ii->data_size);
+    DrRes = (*simulator.D1_Read)(data_addr, data_size);
 
-    CLG_DEBUG(6, "log_1I1Dr: Ir=%p/%u, Dr=%p/%u => Ir %d, Dr %d\n",
-	      bb_base + ii->instr_offset, ii->instr_size,
-	      data, ii->data_size, IrRes, DrRes);
+    CLG_DEBUG(6, "log_1I1Dr: Ir  %#lx/%u => %s, Dr  %#lx/%lu => %s\n",
+	      bb_base + ii->instr_offset, ii->instr_size, cacheRes(IrRes),
+	      data_addr, data_size, cacheRes(DrRes));
 
     if (CLG_(current_state).collect) {
 	ULong *cost_Ir, *cost_Dr;
@@ -1189,8 +1168,11 @@ static void log_1I1Dr(InstrInfo* ii, Addr data)
 	    cost_Dr = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_full_Dr;
 	}
 	else {
-	    cost_Ir = cost_base + ii->cost_offset + off_D1r_Ir;
-	    cost_Dr = cost_base + ii->cost_offset + off_D1r_Dr;
+	    // event set must be UIrDr or extension
+	    CLG_ASSERT((ii->eventset == CLG_(sets).UIrDr) ||
+		       (ii->eventset == CLG_(sets).UIrDrDw));
+	    cost_Ir = cost_base + ii->cost_offset + off_UIrDr_Ir;
+	    cost_Dr = cost_base + ii->cost_offset + off_UIrDr_Dr;
 	}
        
 	inc_costs(IrRes, cost_Ir, 
@@ -1201,16 +1183,16 @@ static void log_1I1Dr(InstrInfo* ii, Addr data)
 }
 
 
-VG_REGPARM(2)
-static void log_0I1Dr(InstrInfo* ii, Addr data)
+VG_REGPARM(3)
+static void log_0I1Dr(InstrInfo* ii, Addr data_addr, Word data_size)
 {
     CacheModelResult DrRes;
 
     current_ii = ii;
-    DrRes = (*simulator.D1_Read)(data, ii->data_size);
+    DrRes = (*simulator.D1_Read)(data_addr, data_size);
 
-    CLG_DEBUG(6, "log_0I1Dr: Dr=%p/%u => Dr %d\n",
-	      data, ii->data_size, DrRes);
+    CLG_DEBUG(6, "log_0I1Dr: Dr  %#lx/%lu => %s\n",
+	      data_addr, data_size, cacheRes(DrRes));
 
     if (CLG_(current_state).collect) {
 	ULong *cost_Dr;
@@ -1219,9 +1201,15 @@ static void log_0I1Dr(InstrInfo* ii, Addr data)
 	    cost_Dr = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_full_Dr;
 	}
 	else {
-	    cost_Dr = cost_base + ii->cost_offset + off_D1r_Dr;
+	    Int off_Dr;
+	    if      (ii->eventset == CLG_(sets).UIrDr)   off_Dr = off_UIrDr_Dr;
+	    else if (ii->eventset == CLG_(sets).UIrDrDw) off_Dr = off_UIrDrDw_Dr;
+	    else if (ii->eventset == CLG_(sets).UIrDwDr) off_Dr = off_UIrDwDr_Dr;
+	    else CLG_ASSERT(0);
+
+	    cost_Dr = cost_base + ii->cost_offset + off_Dr;
 	}
-       
+
 	inc_costs(DrRes, cost_Dr,
 		  CLG_(current_state).cost + CLG_(sets).off_full_Dr );
     }
@@ -1230,29 +1218,33 @@ static void log_0I1Dr(InstrInfo* ii, Addr data)
 
 /* Instruction doing a write access */
 
-VG_REGPARM(2)
-static void log_1I1Dw(InstrInfo* ii, Addr data)
+VG_REGPARM(3)
+static void log_1I1Dw(InstrInfo* ii, Addr data_addr, Word data_size)
 {
     CacheModelResult IrRes, DwRes;
 
     current_ii = ii;
     IrRes = (*simulator.I1_Read)(bb_base + ii->instr_offset, ii->instr_size);
-    DwRes = (*simulator.D1_Write)(data, ii->data_size);
+    DwRes = (*simulator.D1_Write)(data_addr, data_size);
 
-    CLG_DEBUG(6, "log_1I1Dw: Ir=%p/%u, Dw=%p/%u => Ir %d, Dw %d\n",
-	      bb_base + ii->instr_offset, ii->instr_size,
-	      data, ii->data_size, IrRes, DwRes);
+    CLG_DEBUG(6, "log_1I1Dw: Ir  %#lx/%u => %s, Dw  %#lx/%lu => %s\n",
+	      bb_base + ii->instr_offset, ii->instr_size, cacheRes(IrRes),
+	      data_addr, data_size, cacheRes(DwRes));
 
     if (CLG_(current_state).collect) {
 	ULong *cost_Ir, *cost_Dw;
 	
 	if (CLG_(current_state).nonskipped) {
-	    cost_Ir = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_sim_Ir;
-	    cost_Dw = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_sim_Dw;
+	    cost_Ir = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_full_Ir;
+	    cost_Dw = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_full_Dw;
 	}
 	else {
-	    cost_Ir = cost_base + ii->cost_offset + off_D1w_Ir;
-	    cost_Dw = cost_base + ii->cost_offset + off_D1w_Dw;
+	    // This helper is called when a Dr event follows Ir;
+	    // Event set must be UIrDw or extension
+	    CLG_ASSERT((ii->eventset == CLG_(sets).UIrDw) ||
+		       (ii->eventset == CLG_(sets).UIrDwDr));
+	    cost_Ir = cost_base + ii->cost_offset + off_UIrDw_Ir;
+	    cost_Dw = cost_base + ii->cost_offset + off_UIrDw_Dw;
 	}
        
 	inc_costs(IrRes, cost_Ir,
@@ -1262,16 +1254,16 @@ static void log_1I1Dw(InstrInfo* ii, Addr data)
     }
 }
 
-VG_REGPARM(2)
-static void log_0I1Dw(InstrInfo* ii, Addr data)
+VG_REGPARM(3)
+static void log_0I1Dw(InstrInfo* ii, Addr data_addr, Word data_size)
 {
     CacheModelResult DwRes;
 
     current_ii = ii;
-    DwRes = (*simulator.D1_Write)(data, ii->data_size);
+    DwRes = (*simulator.D1_Write)(data_addr, data_size);
 
-    CLG_DEBUG(6, "log_0I1Dw: Dw=%p/%u => Dw %d\n",
-	      data, ii->data_size, DwRes);
+    CLG_DEBUG(6, "log_0I1Dw: Dw  %#lx/%lu => %s\n",
+	      data_addr, data_size, cacheRes(DwRes));
 
     if (CLG_(current_state).collect) {
 	ULong *cost_Dw;
@@ -1280,7 +1272,13 @@ static void log_0I1Dw(InstrInfo* ii, Addr data)
 	    cost_Dw = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_full_Dw;
 	}
 	else {
-	    cost_Dw = cost_base + ii->cost_offset + off_D1w_Dw;
+	    Int off_Dw;
+	    if      (ii->eventset == CLG_(sets).UIrDw)   off_Dw = off_UIrDw_Dw;
+	    else if (ii->eventset == CLG_(sets).UIrDwDr) off_Dw = off_UIrDwDr_Dw;
+	    else if (ii->eventset == CLG_(sets).UIrDrDw) off_Dw = off_UIrDrDw_Dw;
+	    else CLG_ASSERT(0);
+
+	    cost_Dw = cost_base + ii->cost_offset + off_Dw;
 	}
        
 	inc_costs(DwRes, cost_Dw,
@@ -1288,77 +1286,6 @@ static void log_0I1Dw(InstrInfo* ii, Addr data)
     }
 }
 
-/* Instruction doing a read and a write access */
-
-VG_REGPARM(3)
-static void log_1I2D(InstrInfo* ii, Addr data1, Addr data2)
-{
-    CacheModelResult IrRes, DrRes, DwRes;
-
-    current_ii = ii;
-    IrRes = (*simulator.I1_Read)(bb_base + ii->instr_offset, ii->instr_size);
-    DrRes = (*simulator.D1_Read)(data1, ii->data_size);
-    DwRes = (*simulator.D1_Write)(data2, ii->data_size);
-
-    CLG_DEBUG(6,
-	      "log_1I2D: Ir=%p/%u, Dr=%p/%u, Dw=%p/%u => Ir %d, Dr %d, Dw %d\n",
-	      bb_base + ii->instr_offset, ii->instr_size,
-	      data1, ii->data_size, data2, ii->data_size, IrRes, DrRes, DwRes);
-
-    if (CLG_(current_state).collect) {
-	ULong *cost_Ir, *cost_Dr, *cost_Dw;
-
-	if (CLG_(current_state).nonskipped) {
-	    cost_Ir = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_sim_Ir;
-	    cost_Dr = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_sim_Dr;
-	    cost_Dw = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_sim_Dw;
-	}
-	else {
-	    cost_Ir = cost_base + ii->cost_offset + off_D2_Ir;
-	    cost_Dr = cost_base + ii->cost_offset + off_D2_Dr;
-	    cost_Dw = cost_base + ii->cost_offset + off_D2_Dw;
-	}
-	
-	inc_costs(IrRes, cost_Ir, 
-		  CLG_(current_state).cost + CLG_(sets).off_full_Ir );
-	inc_costs(DrRes, cost_Dr, 
-		  CLG_(current_state).cost + CLG_(sets).off_full_Dr );
-	inc_costs(DwRes, cost_Dw, 
-		  CLG_(current_state).cost + CLG_(sets).off_full_Dw );
-    }
-}
-
-VG_REGPARM(3)
-static void log_0I2D(InstrInfo* ii, Addr data1, Addr data2)
-{
-    CacheModelResult DrRes, DwRes;
-
-    current_ii = ii;
-    DrRes = (*simulator.D1_Read)(data1, ii->data_size);
-    DwRes = (*simulator.D1_Write)(data2, ii->data_size);
-
-    CLG_DEBUG(6,
-	      "log_0D2D: Dr=%p/%u, Dw=%p/%u => Dr %d, Dw %d\n",
-	      data1, ii->data_size, data2, ii->data_size, DrRes, DwRes);
-
-    if (CLG_(current_state).collect) {
-	ULong *cost_Dr, *cost_Dw;
-
-	if (CLG_(current_state).nonskipped) {
-	    cost_Dr = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_sim_Dr;
-	    cost_Dw = CLG_(current_state).nonskipped->skipped + CLG_(sets).off_sim_Dw;
-	}
-	else {
-	    cost_Dr = cost_base + ii->cost_offset + off_D2_Dr;
-	    cost_Dw = cost_base + ii->cost_offset + off_D2_Dw;
-	}
-	
-	inc_costs(DrRes, cost_Dr, 
-		  CLG_(current_state).cost + CLG_(sets).off_full_Dr );
-	inc_costs(DwRes, cost_Dw, 
-		  CLG_(current_state).cost + CLG_(sets).off_full_Dw );
-    }
-}
 
 
 /*------------------------------------------------------------*/
@@ -1376,24 +1303,17 @@ static cache_t clo_L2_cache = UNDEFINED_CACHE;
 static
 void check_cache(cache_t* cache, Char *name)
 {
-   /* First check they're all powers of two */
-   if (-1 == VG_(log2)(cache->size)) {
+   /* Simulator requires line size and set count to be powers of two */
+   if (( cache->size % (cache->line_size * cache->assoc) != 0) ||
+       (-1 == VG_(log2)(cache->size/cache->line_size/cache->assoc))) {
       VG_(message)(Vg_UserMsg,
-         "error: %s size of %dB not a power of two; aborting.",
-         name, cache->size);
-      VG_(exit)(1);
+         "error: %s set count not a power of two; aborting.\n",
+         name);
    }
 
-   if (-1 == VG_(log2)(cache->assoc)) {
+   if (-1 == VG_(log2)(cache->line_size)) {
       VG_(message)(Vg_UserMsg,
-         "error: %s associativity of %d not a power of two; aborting.",
-         name, cache->assoc);
-      VG_(exit)(1);
-   }
-
-  if (-1 == VG_(log2)(cache->line_size)) {
-      VG_(message)(Vg_UserMsg,
-         "error: %s line size of %dB not a power of two; aborting.",
+         "error: %s line size of %dB not a power of two; aborting.\n",
          name, cache->line_size);
       VG_(exit)(1);
    }
@@ -1403,7 +1323,7 @@ void check_cache(cache_t* cache, Char *name)
    // stupid anyway.
    if (cache->line_size < MIN_LINE_SIZE) {
       VG_(message)(Vg_UserMsg,
-         "error: %s line size of %dB too small; aborting.",
+         "error: %s line size of %dB too small; aborting.\n",
          name, cache->line_size);
       VG_(exit)(1);
    }
@@ -1411,7 +1331,7 @@ void check_cache(cache_t* cache, Char *name)
    /* Then check cache size > line size (causes seg faults if not). */
    if (cache->size <= cache->line_size) {
       VG_(message)(Vg_UserMsg,
-         "error: %s cache size of %dB <= line size of %dB; aborting.",
+         "error: %s cache size of %dB <= line size of %dB; aborting.\n",
          name, cache->size, cache->line_size);
       VG_(exit)(1);
    }
@@ -1419,7 +1339,7 @@ void check_cache(cache_t* cache, Char *name)
    /* Then check assoc <= (size / line size) (seg faults otherwise). */
    if (cache->assoc > (cache->size / cache->line_size)) {
       VG_(message)(Vg_UserMsg,
-         "warning: %s associativity > (size / line size); aborting.", name);
+         "warning: %s associativity > (size / line size); aborting.\n", name);
       VG_(exit)(1);
    }
 }
@@ -1451,12 +1371,12 @@ void configure_caches(cache_t* I1c, cache_t* D1c, cache_t* L2c)
    check_cache(L2c, "L2");
 
    if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_UserMsg, "Cache configuration used:");
-      VG_(message)(Vg_UserMsg, "  I1: %dB, %d-way, %dB lines",
+      VG_(message)(Vg_UserMsg, "Cache configuration used:\n");
+      VG_(message)(Vg_UserMsg, "  I1: %dB, %d-way, %dB lines\n",
                                I1c->size, I1c->assoc, I1c->line_size);
-      VG_(message)(Vg_UserMsg, "  D1: %dB, %d-way, %dB lines",
+      VG_(message)(Vg_UserMsg, "  D1: %dB, %d-way, %dB lines\n",
                                D1c->size, D1c->assoc, D1c->line_size);
-      VG_(message)(Vg_UserMsg, "  L2: %dB, %d-way, %dB lines",
+      VG_(message)(Vg_UserMsg, "  L2: %dB, %d-way, %dB lines\n",
                                L2c->size, L2c->assoc, L2c->line_size);
    }
 #undef CMD_LINE_DEFINED
@@ -1473,20 +1393,20 @@ static void cachesim_post_clo_init(void)
   if (!CLG_(clo).simulate_cache) {
     CLG_(cachesim).log_1I0D  = 0;
     CLG_(cachesim).log_1I0D_name = "(no function)";
+    CLG_(cachesim).log_2I0D  = 0;
+    CLG_(cachesim).log_2I0D_name = "(no function)";
+    CLG_(cachesim).log_3I0D  = 0;
+    CLG_(cachesim).log_3I0D_name = "(no function)";
 
     CLG_(cachesim).log_1I1Dr = 0;
-    CLG_(cachesim).log_1I1Dw = 0;
-    CLG_(cachesim).log_1I2D  = 0;
     CLG_(cachesim).log_1I1Dr_name = "(no function)";
+    CLG_(cachesim).log_1I1Dw = 0;
     CLG_(cachesim).log_1I1Dw_name = "(no function)";
-    CLG_(cachesim).log_1I2D_name = "(no function)";
 
     CLG_(cachesim).log_0I1Dr = 0;
-    CLG_(cachesim).log_0I1Dw = 0;
-    CLG_(cachesim).log_0I2D  = 0;
     CLG_(cachesim).log_0I1Dr_name = "(no function)";
+    CLG_(cachesim).log_0I1Dw = 0;
     CLG_(cachesim).log_0I1Dw_name = "(no function)";
-    CLG_(cachesim).log_0I2D_name = "(no function)";
     return;
   }
 
@@ -1506,33 +1426,35 @@ static void cachesim_post_clo_init(void)
 
   CLG_(cachesim).log_1I0D  = log_1I0D;
   CLG_(cachesim).log_1I0D_name  = "log_1I0D";
+  CLG_(cachesim).log_2I0D  = log_2I0D;
+  CLG_(cachesim).log_2I0D_name  = "log_2I0D";
+  CLG_(cachesim).log_3I0D  = log_3I0D;
+  CLG_(cachesim).log_3I0D_name  = "log_3I0D";
 
   CLG_(cachesim).log_1I1Dr = log_1I1Dr;
   CLG_(cachesim).log_1I1Dw = log_1I1Dw;
-  CLG_(cachesim).log_1I2D  = log_1I2D;
   CLG_(cachesim).log_1I1Dr_name = "log_1I1Dr";
   CLG_(cachesim).log_1I1Dw_name = "log_1I1Dw";
-  CLG_(cachesim).log_1I2D_name  = "log_1I2D";
 
   CLG_(cachesim).log_0I1Dr = log_0I1Dr;
   CLG_(cachesim).log_0I1Dw = log_0I1Dw;
-  CLG_(cachesim).log_0I2D  = log_0I2D;
   CLG_(cachesim).log_0I1Dr_name = "log_0I1Dr";
   CLG_(cachesim).log_0I1Dw_name = "log_0I1Dw";
-  CLG_(cachesim).log_0I2D_name  = "log_0I2D";
 
   if (clo_collect_cacheuse) {
 
       /* Output warning for not supported option combinations */
       if (clo_simulate_hwpref) {
 	  VG_(message)(Vg_DebugMsg,
-		       "warning: prefetch simulation can not be used with cache usage");
+		       "warning: prefetch simulation can not be "
+                       "used with cache usage\n");
 	  clo_simulate_hwpref = False;
       }
 
       if (clo_simulate_writeback) {
 	  VG_(message)(Vg_DebugMsg,
-		       "warning: write-back simulation can not be used with cache usage");
+		       "warning: write-back simulation can not be "
+                       "used with cache usage\n");
 	  clo_simulate_writeback = False;
       }
 
@@ -1610,40 +1532,33 @@ void cachesim_print_opts(void)
 	      );
 }
 
-static void parse_opt ( cache_t* cache, char* orig_opt, int opt_len )
+static void parse_opt ( cache_t* cache, char* opt )
 {
-   int   i1, i2, i3;
-   int   i;
-   char *opt = VG_(strdup)(orig_opt);
+   Long i1, i2, i3;
+   Char* endptr;
 
-   i = i1 = opt_len;
+   // Option argument looks like "65536,2,64".  Extract them.
+   i1 = VG_(strtoll10)(opt,      &endptr); if (*endptr != ',')  goto bad;
+   i2 = VG_(strtoll10)(endptr+1, &endptr); if (*endptr != ',')  goto bad;
+   i3 = VG_(strtoll10)(endptr+1, &endptr); if (*endptr != '\0') goto bad;
 
-   /* Option looks like "--I1=65536,2,64".
-    * Find commas, replace with NULs to make three independent 
-    * strings, then extract numbers.  Yuck. */
-   while (VG_(isdigit)(opt[i])) i++;
-   if (',' == opt[i]) {
-      opt[i++] = '\0';
-      i2 = i;
-   } else goto bad;
-   while (VG_(isdigit)(opt[i])) i++;
-   if (',' == opt[i]) {
-      opt[i++] = '\0';
-      i3 = i;
-   } else goto bad;
-   while (VG_(isdigit)(opt[i])) i++;
-   if ('\0' != opt[i]) goto bad;
-
-   cache->size      = (Int)VG_(atoll)(opt + i1);
-   cache->assoc     = (Int)VG_(atoll)(opt + i2);
-   cache->line_size = (Int)VG_(atoll)(opt + i3);
-
-   VG_(free)(opt);
+   // Check for overflow.
+   cache->size      = (Int)i1;
+   cache->assoc     = (Int)i2;
+   cache->line_size = (Int)i3;
+   if (cache->size      != i1) goto overflow;
+   if (cache->assoc     != i2) goto overflow;
+   if (cache->line_size != i3) goto overflow;
 
    return;
 
+  overflow:
+   VG_(message)(Vg_UserMsg,
+                "one of the cache parameters was too large and overflowed\n");
   bad:
-   VG_(err_bad_option)(orig_opt);
+   // XXX: this omits the "--I1/D1/L2=" part from the message, but that's
+   // not a big deal.
+   VG_(err_bad_option)(opt);
 }
 
 /* Check for command line option for cache configuration.
@@ -1653,36 +1568,25 @@ static void parse_opt ( cache_t* cache, char* orig_opt, int opt_len )
  */
 static Bool cachesim_parse_opt(Char* arg)
 {
-  if (0 == VG_(strcmp)(arg, "--simulate-wb=yes"))
-    clo_simulate_writeback = True;
-  else if (0 == VG_(strcmp)(arg, "--simulate-wb=no"))
-    clo_simulate_writeback = False;
+   Char* tmp_str;
 
-  else if (0 == VG_(strcmp)(arg, "--simulate-hwpref=yes"))
-    clo_simulate_hwpref = True;
-  else if (0 == VG_(strcmp)(arg, "--simulate-hwpref=no"))
-    clo_simulate_hwpref = False;
+   if      VG_BOOL_CLO(arg, "--simulate-wb",      clo_simulate_writeback) {}
+   else if VG_BOOL_CLO(arg, "--simulate-hwpref",  clo_simulate_hwpref)    {}
+   else if VG_BOOL_CLO(arg, "--simulate-sectors", clo_simulate_sectors)   {}
 
-  else if (0 == VG_(strcmp)(arg, "--simulate-sectors=yes"))
-    clo_simulate_sectors = True;
-  else if (0 == VG_(strcmp)(arg, "--simulate-sectors=no"))
-    clo_simulate_sectors = False;
+   else if VG_BOOL_CLO(arg, "--cacheuse", clo_collect_cacheuse) {
+      if (clo_collect_cacheuse) {
+         /* Use counters only make sense with fine dumping */
+         CLG_(clo).dump_instr = True;
+      }
+   }
 
-  else if (0 == VG_(strcmp)(arg, "--cacheuse=yes")) {
-    clo_collect_cacheuse = True;
-    /* Use counters only make sense with fine dumping */
-    CLG_(clo).dump_instr = True;
-  }
-  else if (0 == VG_(strcmp)(arg, "--cacheuse=no"))
-    clo_collect_cacheuse = False;
-
-  /* 5 is length of "--I1=" */
-  else if (0 == VG_(strncmp)(arg, "--I1=", 5))
-    parse_opt(&clo_I1_cache, arg,   5);
-  else if (0 == VG_(strncmp)(arg, "--D1=", 5))
-    parse_opt(&clo_D1_cache, arg,   5);
-  else if (0 == VG_(strncmp)(arg, "--L2=", 5))
-    parse_opt(&clo_L2_cache, arg,   5);
+   else if VG_STR_CLO(arg, "--I1", tmp_str)
+      parse_opt(&clo_I1_cache, tmp_str);
+   else if VG_STR_CLO(arg, "--D1", tmp_str)
+      parse_opt(&clo_D1_cache, tmp_str);
+   else if VG_STR_CLO(arg, "--L2", tmp_str)
+      parse_opt(&clo_L2_cache, tmp_str);
   else
     return False;
 
@@ -1750,25 +1654,25 @@ void cachesim_printstat(void)
   Int p;
 
   if ((VG_(clo_verbosity) >1) && clo_simulate_hwpref) {
-    VG_(message)(Vg_DebugMsg, "Prefetch Up:       %llu", 
+    VG_(message)(Vg_DebugMsg, "Prefetch Up:       %llu\n", 
 		 prefetch_up);
-    VG_(message)(Vg_DebugMsg, "Prefetch Down:     %llu", 
+    VG_(message)(Vg_DebugMsg, "Prefetch Down:     %llu\n", 
 		 prefetch_down);
-    VG_(message)(Vg_DebugMsg, "");
+    VG_(message)(Vg_DebugMsg, "\n");
   }
 
   /* I cache results.  Use the I_refs value to determine the first column
    * width. */
   l1 = commify(total[CLG_(sets).off_full_Ir], 0, buf1);
-  VG_(message)(Vg_UserMsg, "I   refs:      %s", buf1);
+  VG_(message)(Vg_UserMsg, "I   refs:      %s\n", buf1);
 
   if (!CLG_(clo).simulate_cache) return;
 
   commify(total[CLG_(sets).off_full_Ir +1], l1, buf1);
-  VG_(message)(Vg_UserMsg, "I1  misses:    %s", buf1);
+  VG_(message)(Vg_UserMsg, "I1  misses:    %s\n", buf1);
 
   commify(total[CLG_(sets).off_full_Ir +2], l1, buf1);
-  VG_(message)(Vg_UserMsg, "L2i misses:    %s", buf1);
+  VG_(message)(Vg_UserMsg, "L2i misses:    %s\n", buf1);
 
   p = 100;
 
@@ -1777,12 +1681,12 @@ void cachesim_printstat(void)
 
   percentify(total[CLG_(sets).off_full_Ir+1] * 100 * p /
 	     total[CLG_(sets).off_full_Ir], p, l1+1, buf1);
-  VG_(message)(Vg_UserMsg, "I1  miss rate: %s", buf1);
+  VG_(message)(Vg_UserMsg, "I1  miss rate: %s\n", buf1);
        
   percentify(total[CLG_(sets).off_full_Ir+2] * 100 * p /
 	     total[CLG_(sets).off_full_Ir], p, l1+1, buf1);
-  VG_(message)(Vg_UserMsg, "L2i miss rate: %s", buf1);
-  VG_(message)(Vg_UserMsg, "");
+  VG_(message)(Vg_UserMsg, "L2i miss rate: %s\n", buf1);
+  VG_(message)(Vg_UserMsg, "\n");
    
   /* D cache results.
      Use the D_refs.rd and D_refs.wr values to determine the
@@ -1796,19 +1700,19 @@ void cachesim_printstat(void)
   commify( D_total[0], l1, buf1);
   l2 = commify(total[CLG_(sets).off_full_Dr], 0,  buf2);
   l3 = commify(total[CLG_(sets).off_full_Dw], 0,  buf3);
-  VG_(message)(Vg_UserMsg, "D   refs:      %s  (%s rd + %s wr)",
+  VG_(message)(Vg_UserMsg, "D   refs:      %s  (%s rd + %s wr)\n",
 	       buf1,  buf2,  buf3);
 
   commify( D_total[1], l1, buf1);
   commify(total[CLG_(sets).off_full_Dr+1], l2, buf2);
   commify(total[CLG_(sets).off_full_Dw+1], l3, buf3);
-  VG_(message)(Vg_UserMsg, "D1  misses:    %s  (%s rd + %s wr)",
+  VG_(message)(Vg_UserMsg, "D1  misses:    %s  (%s rd + %s wr)\n",
 	       buf1, buf2, buf3);
 
   commify( D_total[2], l1, buf1);
   commify(total[CLG_(sets).off_full_Dr+2], l2, buf2);
   commify(total[CLG_(sets).off_full_Dw+2], l3, buf3);
-  VG_(message)(Vg_UserMsg, "L2d misses:    %s  (%s rd + %s wr)",
+  VG_(message)(Vg_UserMsg, "L2d misses:    %s  (%s rd + %s wr)\n",
 	       buf1, buf2, buf3);
 
   p = 10;
@@ -1822,15 +1726,17 @@ void cachesim_printstat(void)
 	     total[CLG_(sets).off_full_Dr], p, l2+1, buf2);
   percentify(total[CLG_(sets).off_full_Dw+1] * 100 * p /
 	     total[CLG_(sets).off_full_Dw], p, l3+1, buf3);
-  VG_(message)(Vg_UserMsg, "D1  miss rate: %s (%s   + %s  )", buf1, buf2,buf3);
+  VG_(message)(Vg_UserMsg, "D1  miss rate: %s (%s   + %s  )\n", 
+               buf1, buf2,buf3);
   
   percentify( D_total[2] * 100 * p / D_total[0],  p, l1+1, buf1);
   percentify(total[CLG_(sets).off_full_Dr+2] * 100 * p /
 	     total[CLG_(sets).off_full_Dr], p, l2+1, buf2);
   percentify(total[CLG_(sets).off_full_Dw+2] * 100 * p /
 	     total[CLG_(sets).off_full_Dw], p, l3+1, buf3);
-  VG_(message)(Vg_UserMsg, "L2d miss rate: %s (%s   + %s  )", buf1, buf2,buf3);
-  VG_(message)(Vg_UserMsg, "");
+  VG_(message)(Vg_UserMsg, "L2d miss rate: %s (%s   + %s  )\n", 
+               buf1, buf2,buf3);
+  VG_(message)(Vg_UserMsg, "\n");
 
 
   
@@ -1847,7 +1753,7 @@ void cachesim_printstat(void)
   commify(L2_total,   l1, buf1);
   commify(L2_total_r, l2, buf2);
   commify(L2_total_w, l3, buf3);
-  VG_(message)(Vg_UserMsg, "L2 refs:       %s  (%s rd + %s wr)",
+  VG_(message)(Vg_UserMsg, "L2 refs:       %s  (%s rd + %s wr)\n",
 	       buf1, buf2, buf3);
   
   L2_total_m  =
@@ -1861,7 +1767,7 @@ void cachesim_printstat(void)
   commify(L2_total_m,  l1, buf1);
   commify(L2_total_mr, l2, buf2);
   commify(L2_total_mw, l3, buf3);
-  VG_(message)(Vg_UserMsg, "L2 misses:     %s  (%s rd + %s wr)",
+  VG_(message)(Vg_UserMsg, "L2 misses:     %s  (%s rd + %s wr)\n",
 	       buf1, buf2, buf3);
   
   percentify(L2_total_m  * 100 * p /
@@ -1871,7 +1777,7 @@ void cachesim_printstat(void)
 	     p, l2+1, buf2);
   percentify(L2_total_mw * 100 * p /
 	     total[CLG_(sets).off_full_Dw], p, l3+1, buf3);
-  VG_(message)(Vg_UserMsg, "L2 miss rate:  %s (%s   + %s  )",
+  VG_(message)(Vg_UserMsg, "L2 miss rate:  %s (%s   + %s  )\n",
 	       buf1, buf2,buf3);
 }
 
@@ -1885,26 +1791,29 @@ struct event_sets CLG_(sets);
 void CLG_(init_eventsets)(Int max_user)
 {
   EventType * e1, *e2, *e3, *e4;
-  EventSet *Ir, *Dr, *Dw;
-  EventSet *D0, *D1r, *D1w, *D2;
-  EventSet *sim, *full;
-  EventSet *use;
+  // Basic event sets from which others are composed
+  EventSet *Use, *Ir, *Dr, *Dw;
+  // Compositions of basic sets used for per-instruction counters
+  EventSet *UIr, *UIrDr, *UIrDrDw, *UIrDw, *UIrDwDr;
+  // Composition used for global counters and aggregation
+  EventSet *full;
   int sizeOfUseIr;
 
-  use = CLG_(get_eventset)("Use", 4);
+  // the "Use" events types only are used with "cacheuse" simulation
+  Use = CLG_(get_eventset)("Use", 4);
   if (clo_collect_cacheuse) {
     /* if TUse is 0, there was never a load, and no loss, too */
     e1 = CLG_(register_eventtype)("AcCost1");
-    CLG_(add_eventtype)(use, e1);
+    CLG_(add_eventtype)(Use, e1);
     e1 = CLG_(register_eventtype)("SpLoss1");
-    CLG_(add_eventtype)(use, e1);
+    CLG_(add_eventtype)(Use, e1);
     e1 = CLG_(register_eventtype)("AcCost2");
-    CLG_(add_eventtype)(use, e1);
+    CLG_(add_eventtype)(Use, e1);
     e1 = CLG_(register_eventtype)("SpLoss2");
-    CLG_(add_eventtype)(use, e1);
+    CLG_(add_eventtype)(Use, e1);
   }
 
-  Ir = CLG_(get_eventset)("Ir", 4);    
+  Ir = CLG_(get_eventset)("Ir", 4);
   Dr = CLG_(get_eventset)("Dr", 4);
   Dw = CLG_(get_eventset)("Dw", 4);
   if (CLG_(clo).simulate_cache) {
@@ -1944,74 +1853,76 @@ void CLG_(init_eventsets)(Int max_user)
     CLG_(add_eventtype)(Ir, e1);
   }
 
-  sizeOfUseIr =  use->size + Ir->size;
-  D0 = CLG_(get_eventset)("D0", sizeOfUseIr);
-  CLG_(add_eventset)(D0, use);
-  off_D0_Ir  = CLG_(add_eventset)(D0, Ir);
+  // Self cost event sets per guest instruction (U used only for cacheUse).
+  // Each basic event set only appears once, as eg. multiple different Dr's
+  // in one guest instruction are counted in the same counter.
 
-  D1r = CLG_(get_eventset)("D1r", sizeOfUseIr + Dr->size);
-  CLG_(add_eventset)(D1r, use);
-  off_D1r_Ir = CLG_(add_eventset)(D1r, Ir);
-  off_D1r_Dr = CLG_(add_eventset)(D1r, Dr);
+  sizeOfUseIr =  Use->size + Ir->size;
+  UIr = CLG_(get_eventset)("UIr", sizeOfUseIr);
+  CLG_(add_eventset)(UIr, Use);
+  off_UIr_Ir  = CLG_(add_eventset)(UIr, Ir);
 
-  D1w = CLG_(get_eventset)("D1w", sizeOfUseIr + Dw->size);
-  CLG_(add_eventset)(D1w, use);
-  off_D1w_Ir   = CLG_(add_eventset)(D1w, Ir);
-  off_D1w_Dw   = CLG_(add_eventset)(D1w, Dw);
+  UIrDr = CLG_(get_eventset)("UIrDr", sizeOfUseIr + Dr->size);
+  CLG_(add_eventset)(UIrDr, Use);
+  off_UIrDr_Ir = CLG_(add_eventset)(UIrDr, Ir);
+  off_UIrDr_Dr = CLG_(add_eventset)(UIrDr, Dr);
 
-  D2  = CLG_(get_eventset)("D2", sizeOfUseIr + Dr->size + Dw->size);
-  CLG_(add_eventset)(D2, use);
-  off_D2_Ir    = CLG_(add_eventset)(D2, Ir);
-  off_D2_Dr    = CLG_(add_eventset)(D2, Dr);
-  off_D2_Dw    = CLG_(add_eventset)(D2, Dw);
+  UIrDrDw  = CLG_(get_eventset)("IrDrDw", sizeOfUseIr + Dr->size + Dw->size);
+  CLG_(add_eventset)(UIrDrDw, Use);
+  off_UIrDrDw_Ir    = CLG_(add_eventset)(UIrDrDw, Ir);
+  off_UIrDrDw_Dr    = CLG_(add_eventset)(UIrDrDw, Dr);
+  off_UIrDrDw_Dw    = CLG_(add_eventset)(UIrDrDw, Dw);
 
-  sim = CLG_(get_eventset)("sim", sizeOfUseIr + Dr->size + Dw->size);
-  CLG_(add_eventset)(sim, use);
-  CLG_(sets).off_sim_Ir   = CLG_(add_eventset)(sim, Ir);
-  CLG_(sets).off_sim_Dr   = CLG_(add_eventset)(sim, Dr);
-  CLG_(sets).off_sim_Dw   = CLG_(add_eventset)(sim, Dw);
+  UIrDw = CLG_(get_eventset)("UIrDw", sizeOfUseIr + Dw->size);
+  CLG_(add_eventset)(UIrDw, Use);
+  off_UIrDw_Ir   = CLG_(add_eventset)(UIrDw, Ir);
+  off_UIrDw_Dw   = CLG_(add_eventset)(UIrDw, Dw);
 
+  UIrDwDr  = CLG_(get_eventset)("IrDwDr", sizeOfUseIr + Dw->size + Dr->size);
+  CLG_(add_eventset)(UIrDwDr, Use);
+  off_UIrDwDr_Ir    = CLG_(add_eventset)(UIrDrDw, Ir);
+  off_UIrDwDr_Dw    = CLG_(add_eventset)(UIrDrDw, Dw);
+  off_UIrDwDr_Dr    = CLG_(add_eventset)(UIrDrDw, Dr);
+
+
+  // the "full" event set is used as global counter and for aggregation
   if (CLG_(clo).collect_alloc)   max_user += 2;
   if (CLG_(clo).collect_systime) max_user += 2;
+  full = CLG_(get_eventset)("full",
+			    sizeOfUseIr + Dr->size + Dw->size + max_user);
+  CLG_(add_eventset)(full, Use);
+  CLG_(sets).off_full_Ir   = CLG_(add_eventset)(full, Ir);
+  CLG_(sets).off_full_Dr   = CLG_(add_eventset)(full, Dr);
+  CLG_(sets).off_full_Dw   = CLG_(add_eventset)(full, Dw);
+  if (CLG_(clo).collect_alloc) {
+      e1 = CLG_(register_eventtype)("allocCount");
+      e2 = CLG_(register_eventtype)("allocSize");
+      CLG_(sets).off_full_alloc =  CLG_(add_dep_event2)(full, e1,e2);
+  }
+  if (CLG_(clo).collect_systime) {
+      e1 = CLG_(register_eventtype)("sysCount");
+      e2 = CLG_(register_eventtype)("sysTime");
+      CLG_(sets).off_full_systime =  CLG_(add_dep_event2)(full, e1,e2);
+  }
 
-  full = CLG_(get_eventset)("full", sim->size + max_user);
-  CLG_(add_eventset)(full, sim);
-  CLG_(sets).off_full_Ir   = CLG_(sets).off_sim_Ir;
-  CLG_(sets).off_full_Dr   = CLG_(sets).off_sim_Dr;
-  CLG_(sets).off_full_Dw   = CLG_(sets).off_sim_Dw;
-
-  CLG_(sets).use = use;
+  CLG_(sets).Use = Use;
   CLG_(sets).Ir  = Ir;
   CLG_(sets).Dr  = Dr;
   CLG_(sets).Dw  = Dw;
-
-  CLG_(sets).D0  = D0;
-  CLG_(sets).D1r = D1r;
-  CLG_(sets).D1w = D1w;
-  CLG_(sets).D2  = D2;
-
-  CLG_(sets).sim  = sim;
+  CLG_(sets).UIr  = UIr;
+  CLG_(sets).UIrDr = UIrDr;
+  CLG_(sets).UIrDrDw  = UIrDrDw;
+  CLG_(sets).UIrDw = UIrDw;
+  CLG_(sets).UIrDwDr  = UIrDwDr;
   CLG_(sets).full = full;
 
-  if (CLG_(clo).collect_alloc) {
-    e1 = CLG_(register_eventtype)("allocCount");
-    e2 = CLG_(register_eventtype)("allocSize");
-    CLG_(sets).off_full_user =  CLG_(add_dep_event2)(full, e1,e2);
-  }
-
-  if (CLG_(clo).collect_systime) {
-    e1 = CLG_(register_eventtype)("sysCount");
-    e2 = CLG_(register_eventtype)("sysTime");
-    CLG_(sets).off_full_systime =  CLG_(add_dep_event2)(full, e1,e2);
-  }
 
   CLG_DEBUGIF(1) {
     CLG_DEBUG(1, "EventSets:\n");
-    CLG_(print_eventset)(-2, use);
+    CLG_(print_eventset)(-2, Use);
     CLG_(print_eventset)(-2, Ir);
     CLG_(print_eventset)(-2, Dr);
     CLG_(print_eventset)(-2, Dw);
-    CLG_(print_eventset)(-2, sim);
     CLG_(print_eventset)(-2, full);
   }
 
@@ -2046,34 +1957,41 @@ static
 void add_and_zero_Dx(EventSet* es, SimCost dst, ULong* cost)
 {
   /* if eventset use is defined, it is always first (hardcoded!) */
-  CLG_(add_and_zero_cost)( CLG_(sets).use, dst, cost);  
+  CLG_(add_and_zero_cost)( CLG_(sets).Use, dst, cost);
 
-  /* FIXME: This is hardcoded... */
-  if (es == CLG_(sets).D0) {
-    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_sim_Ir,
-			    cost + off_D0_Ir);
+  if (es == CLG_(sets).UIr) {
+    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_full_Ir,
+			    cost + off_UIr_Ir);
   }
-  else if (es == CLG_(sets).D1r) {
-    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_sim_Ir,
-			    cost + off_D1r_Ir);
-    CLG_(add_and_zero_cost)( CLG_(sets).Dr, dst + CLG_(sets).off_sim_Dr,
-			    cost + off_D1r_Dr);
+  else if (es == CLG_(sets).UIrDr) {
+    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_full_Ir,
+			    cost + off_UIrDr_Ir);
+    CLG_(add_and_zero_cost)( CLG_(sets).Dr, dst + CLG_(sets).off_full_Dr,
+			    cost + off_UIrDr_Dr);
   }
-  else if (es == CLG_(sets).D1w) {
-    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_sim_Ir,
-			    cost + off_D1w_Ir);
-    CLG_(add_and_zero_cost)( CLG_(sets).Dw, dst + CLG_(sets).off_sim_Dw,
-			    cost + off_D1w_Dw);
+  else if (es == CLG_(sets).UIrDrDw) {
+    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_full_Ir,
+			    cost + off_UIrDrDw_Ir);
+    CLG_(add_and_zero_cost)( CLG_(sets).Dr, dst + CLG_(sets).off_full_Dr,
+			    cost + off_UIrDrDw_Dr);
+    CLG_(add_and_zero_cost)( CLG_(sets).Dw, dst + CLG_(sets).off_full_Dw,
+			    cost + off_UIrDrDw_Dw);
   }
-  else {
-    CLG_ASSERT(es == CLG_(sets).D2);
-    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_sim_Ir,
-			    cost + off_D2_Ir);
-    CLG_(add_and_zero_cost)( CLG_(sets).Dr, dst + CLG_(sets).off_sim_Dr,
-			    cost + off_D2_Dr);
-    CLG_(add_and_zero_cost)( CLG_(sets).Dw, dst + CLG_(sets).off_sim_Dw,
-			    cost + off_D2_Dw);
+  else if (es == CLG_(sets).UIrDw) {
+      CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_full_Ir,
+			       cost + off_UIrDw_Ir);
+      CLG_(add_and_zero_cost)( CLG_(sets).Dw, dst + CLG_(sets).off_full_Dw,
+			       cost + off_UIrDw_Dw);
   }
+  else if (es == CLG_(sets).UIrDwDr) {
+    CLG_(add_and_zero_cost)( CLG_(sets).Ir, dst + CLG_(sets).off_full_Ir,
+			    cost + off_UIrDwDr_Ir);
+    CLG_(add_and_zero_cost)( CLG_(sets).Dw, dst + CLG_(sets).off_full_Dw,
+			    cost + off_UIrDwDr_Dw);
+    CLG_(add_and_zero_cost)( CLG_(sets).Dr, dst + CLG_(sets).off_full_Dr,
+			     cost + off_UIrDwDr_Dr);
+  }
+  else CLG_ASSERT(0);
 }
 
 /* this is called at dump time for every instruction executed */
@@ -2081,7 +1999,7 @@ static void cachesim_add_icost(SimCost cost, BBCC* bbcc,
 			       InstrInfo* ii, ULong exe_count)
 {
   if (!CLG_(clo).simulate_cache)
-      cost[CLG_(sets).off_sim_Ir] += exe_count;
+      cost[CLG_(sets).off_full_Ir] += exe_count;
   else {
 
 #if 0
@@ -2141,24 +2059,24 @@ struct cachesim_if CLG_(cachesim) = {
 
   /* these will be set by cachesim_post_clo_init */
   .log_1I0D        = 0,
+  .log_2I0D        = 0,
+  .log_3I0D        = 0,
 
   .log_1I1Dr       = 0,
   .log_1I1Dw       = 0,
-  .log_1I2D        = 0,
 
   .log_0I1Dr       = 0,
   .log_0I1Dw       = 0,
-  .log_0I2D        = 0,
 
   .log_1I0D_name = "(no function)",
+  .log_2I0D_name = "(no function)",
+  .log_3I0D_name = "(no function)",
 
   .log_1I1Dr_name = "(no function)",
   .log_1I1Dw_name = "(no function)",
-  .log_1I2D_name = "(no function)",
 
   .log_0I1Dr_name = "(no function)",
   .log_0I1Dw_name = "(no function)",
-  .log_0I2D_name = "(no function)"
 };
 
 

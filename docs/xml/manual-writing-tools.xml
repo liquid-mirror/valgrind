@@ -123,8 +123,8 @@ top-level directory <computeroutput>valgrind/</computeroutput>.</para>
   <listitem>
    <para>Edit <filename>Makefile.am</filename>, adding the new directory
    <filename>foobar</filename> to the
-   <computeroutput>TOOLS</computeroutput> and
-   <computeroutput>SUBDIRS</computeroutput>variables.</para>
+   <computeroutput>TOOLS</computeroutput> or
+   <computeroutput>EXP_TOOLS</computeroutput>variables.</para>
   </listitem>
 
   <listitem>
@@ -140,6 +140,7 @@ top-level directory <computeroutput>valgrind/</computeroutput>.</para>
 <programlisting><![CDATA[
   autogen.sh
   ./configure --prefix=`pwd`/inst
+  make
   make install]]></programlisting>
 
    <para>It should automake, configure and compile without errors,

@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -74,9 +74,49 @@ extern Bool VG_(get_filename_linenum)
    entry points within it. */
 extern Bool VG_(get_fnname_if_entry) ( Addr a, Char* fnname, Int n_fnname );
 
+typedef
+   enum {
+      Vg_FnNameNormal,        // A normal function.
+      Vg_FnNameMain,          // "main"
+      Vg_FnNameBelowMain      // Something below "main", eg. __libc_start_main.
+   } Vg_FnNameKind;           //   Such names are often filtered.
+
+/* Indicates what kind of fnname it is. */
+extern Vg_FnNameKind VG_(get_fnname_kind) ( Char* name );
+
+/* Like VG_(get_fnname_kind), but takes a code address. */
+extern Vg_FnNameKind VG_(get_fnname_kind_from_IP) ( Addr ip );
+
+/* Looks up data_addr in the collection of data symbols, and if found
+   puts its name (or as much as will fit) into dname[0 .. n_dname-1],
+   which is guaranteed to be zero terminated.  Also data_addr's offset
+   from the symbol start is put into *offset. */
+extern Bool VG_(get_datasym_and_offset)( Addr data_addr,
+                                         /*OUT*/Char* dname, Int n_dname,
+                                         /*OUT*/PtrdiffT* offset );
+
+/* Try to form some description of DATA_ADDR by looking at the DWARF3
+   debug info we have.  This considers all global variables, and all
+   frames in the stacks of all threads.  Result is written at the ends
+   of DNAME{1,2}V, which are XArray*s of HChar, that have been
+   initialised by the caller, and True is returned.  If no description
+   is created, False is returned.  Regardless of the return value,
+   DNAME{1,2}V are guaranteed to be zero terminated after the call.
+
+   Note that after the call, DNAME{1,2} may have more than one
+   trailing zero, so callers should establish the useful text length
+   using VG_(strlen) on the contents, rather than VG_(sizeXA) on the
+   XArray itself.
+*/
+Bool VG_(get_data_description)( 
+        /*MOD*/ void* /* really, XArray* of HChar */ dname1v,
+        /*MOD*/ void* /* really, XArray* of HChar */ dname2v,
+        Addr data_addr
+     );
+
 /* Succeeds if the address is within a shared object or the main executable.
    It doesn't matter if debug info is present or not. */
-extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname  );
+extern Bool VG_(get_objname)  ( Addr a, Char* objname, Int n_objname );
 
 /* Puts into 'buf' info about the code address %eip:  the address, function
    name (if known) and filename/line number (if known), like this:
@@ -88,52 +128,100 @@ extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname  );
 extern Char* VG_(describe_IP)(Addr eip, Char* buf, Int n_buf);
 
 
+/* Get an XArray of StackBlock which describe the stack (auto) blocks
+   for this ip.  The caller is expected to free the XArray at some
+   point.  If 'arrays_only' is True, only array-typed blocks are
+   returned; otherwise blocks of all types are returned. */
+
+typedef
+   struct {
+      PtrdiffT base;       /* offset from sp or fp */
+      SizeT    szB;        /* size in bytes */
+      Bool     spRel;      /* True => sp-rel, False => fp-rel */
+      Bool     isVec;      /* does block have an array type, or not? */
+      HChar    name[16];   /* first 15 chars of name (asciiz) */
+   }
+   StackBlock;
+
+extern void* /* really, XArray* of StackBlock */
+             VG_(di_get_stack_blocks_at_ip)( Addr ip, Bool arrays_only );
+
+
+/* Get an array of GlobalBlock which describe the global blocks owned
+   by the shared object characterised by the given di_handle.  Asserts
+   if the handle is invalid.  The caller is responsible for freeing
+   the array at some point.  If 'arrays_only' is True, only
+   array-typed blocks are returned; otherwise blocks of all types are
+   returned. */
+
+typedef
+   struct {
+      Addr  addr;
+      SizeT szB;
+      Bool  isVec;      /* does block have an array type, or not? */
+      HChar name[16];   /* first 15 chars of name (asciiz) */
+      HChar soname[16]; /* first 15 chars of name (asciiz) */
+   }
+   GlobalBlock;
+
+extern void* /* really, XArray* of GlobalBlock */
+VG_(di_get_global_blocks_from_dihandle) ( ULong di_handle,
+                                          Bool  arrays_only );
+
+
 /*====================================================================*/
 /*=== Obtaining segment information                                ===*/
 /*====================================================================*/
 
 /* A way to get information about what segments are mapped */
-typedef struct _SegInfo SegInfo;
+typedef struct _DebugInfo DebugInfo;
 
-/* Returns NULL if the SegInfo isn't found.  It doesn't matter if debug info
-   is present or not. */
-extern       SegInfo* VG_(find_seginfo)      ( Addr a );
+/* Returns NULL if the DebugInfo isn't found.  It doesn't matter if
+   debug info is present or not. */
+extern       DebugInfo* VG_(find_seginfo)      ( Addr a );
 
-/* Fish bits out of SegInfos. */
-extern       Addr     VG_(seginfo_start)     ( const SegInfo *si );
-extern       SizeT    VG_(seginfo_size)      ( const SegInfo *si );
-extern const UChar*   VG_(seginfo_soname)    ( const SegInfo *si );
-extern const UChar*   VG_(seginfo_filename)  ( const SegInfo *si );
-extern       ULong    VG_(seginfo_sym_offset)( const SegInfo *si );
+/* Fish bits out of DebugInfos. */
+extern       Addr     VG_(seginfo_get_text_avma)( const DebugInfo *di );
+extern       SizeT    VG_(seginfo_get_text_size)( const DebugInfo *di );
+extern       Addr     VG_(seginfo_get_plt_avma) ( const DebugInfo *di );
+extern       SizeT    VG_(seginfo_get_plt_size) ( const DebugInfo *di );
+extern       Addr     VG_(seginfo_get_gotplt_avma)( const DebugInfo *di );
+extern       SizeT    VG_(seginfo_get_gotplt_size)( const DebugInfo *di );
+extern const UChar*   VG_(seginfo_soname)       ( const DebugInfo *di );
+extern const UChar*   VG_(seginfo_filename)     ( const DebugInfo *di );
+extern       PtrdiffT VG_(seginfo_get_text_bias)( const DebugInfo *di );
 
 /* Function for traversing the seginfo list.  When called with NULL it
    returns the first element; otherwise it returns the given element's
    successor. */
-extern const SegInfo* VG_(next_seginfo)      ( const SegInfo *si );
+extern const DebugInfo* VG_(next_seginfo)    ( const DebugInfo *di );
 
-/* Functions for traversing all the symbols in a SegInfo.  _howmany
+/* Functions for traversing all the symbols in a DebugInfo.  _howmany
    tells how many there are.  _getidx retrieves the n'th, for n in 0
    .. _howmany-1.  You may not modify the function name thereby
    acquired; if you want to do so, first strdup it. */
-extern Int  VG_(seginfo_syms_howmany) ( const SegInfo *si );
-extern void VG_(seginfo_syms_getidx)  ( const SegInfo *si, 
+extern Int  VG_(seginfo_syms_howmany) ( const DebugInfo *di );
+extern void VG_(seginfo_syms_getidx)  ( const DebugInfo *di, 
                                         Int idx,
-                                        /*OUT*/Addr*   addr,
+                                        /*OUT*/Addr*   avma,
                                         /*OUT*/Addr*   tocptr,
                                         /*OUT*/UInt*   size,
-                                        /*OUT*/HChar** name );
+                                        /*OUT*/HChar** name,
+                                        /*OUT*/Bool*   isText );
 
 // These ones allow iterating through all the locs in a segment, and getting
 // attributes of each one.  The first one says how many locs are in the
 // segment.  The others get an attribute of a loc;  they return False if 'n'
 // is not a valid loc number.
-extern UInt VG_(seginfo_num_locs)      ( const SegInfo *seg );
-extern Bool VG_(seginfo_locN_addr)     ( const SegInfo *seg, UInt n, Addr* );
-extern Bool VG_(seginfo_locN_size)     ( const SegInfo *seg, UInt n, UInt* );
-extern Bool VG_(seginfo_locN_line)     ( const SegInfo *seg, UInt n, UInt* );
-extern Bool VG_(seginfo_locN_filename) ( const SegInfo *seg, UInt n, Char** );
-extern Bool VG_(seginfo_locN_dirname)  ( const SegInfo *seg, UInt n, Char** );
+extern UInt VG_(seginfo_num_locs)      ( const DebugInfo *di );
+extern Bool VG_(seginfo_locN_addr)     ( const DebugInfo *di, UInt n, Addr* );
+extern Bool VG_(seginfo_locN_size)     ( const DebugInfo *di, UInt n, UInt* );
+extern Bool VG_(seginfo_locN_line)     ( const DebugInfo *di, UInt n, UInt* );
+extern Bool VG_(seginfo_locN_filename) ( const DebugInfo *di, UInt n, Char** );
+extern Bool VG_(seginfo_locN_dirname)  ( const DebugInfo *di, UInt n, Char** );
 
+/* A simple enumeration to describe the 'kind' of various kinds of
+   segments that arise from the mapping of object files. */
 typedef
    enum {
       Vg_SectUnknown,
@@ -141,13 +229,24 @@ typedef
       Vg_SectData,
       Vg_SectBSS,
       Vg_SectGOT,
-      Vg_SectPLT
+      Vg_SectPLT,
+      Vg_SectGOTPLT,
+      Vg_SectOPD
    }
    VgSectKind;
 
-extern VgSectKind VG_(seginfo_sect_kind)(Addr);
+/* Convert a VgSectKind to a string, which must be copied if you want
+   to change it. */
+extern
+const HChar* VG_(pp_SectKind)( VgSectKind kind );
 
-extern Char* VG_(seginfo_sect_kind_name)(Addr a, Char* buf, UInt n_buf);
+/* Given an address 'a', make a guess of which section of which object
+   it comes from.  If name is non-NULL, then the last n_name-1
+   characters of the object's name is put in name[0 .. n_name-2], and
+   name[n_name-1] is set to zero (guaranteed zero terminated). */
+extern 
+VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name, 
+                                   Addr a);
 
 
 #endif   // __PUB_TOOL_DEBUGINFO_H

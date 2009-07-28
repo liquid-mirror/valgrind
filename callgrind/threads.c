@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2007, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -100,7 +100,8 @@ thread_info* new_thread(void)
 {
     thread_info* t;
 
-    t = (thread_info*) CLG_MALLOC(sizeof(thread_info));
+    t = (thread_info*) CLG_MALLOC("cl.threads.nt.1",
+                                  sizeof(thread_info));
 
     /* init state */
     CLG_(init_exec_stack)( &(t->states) );
@@ -207,17 +208,16 @@ void CLG_(pre_signal)(ThreadId tid, Int sigNum, Bool alt_stack)
     /* save current execution state */
     exec_state_save();
 
-    /* setup current state for a spontaneous call */
-    CLG_(init_exec_state)( &CLG_(current_state) );
-    CLG_(push_cxt)(0);
-
     /* setup new cxtinfo struct for this signal handler */
     es = push_exec_state(sigNum);
-    CLG_(init_cost)( CLG_(sets).full, es->cost);
+    // because of this, below call to init_exec_state will zero es->cost
     CLG_(current_state).cost = es->cost;
     es->call_stack_bottom = CLG_(current_call_stack).sp;
 
+    /* setup current state for a spontaneous call */
+    CLG_(init_exec_state)( &CLG_(current_state) );
     CLG_(current_state).sig = sigNum;
+    CLG_(push_cxt)(0);
 }
 
 /* Run post-signal if the stackpointer for call stack is at
@@ -317,18 +317,19 @@ void CLG_(init_exec_state)(exec_state* es)
   es->jmps_passed = 0;
   es->bbcc = 0;
   es->nonskipped = 0;
+  CLG_(init_cost)( CLG_(sets).full, es->cost );
 }
 
 
 static exec_state* new_exec_state(Int sigNum)
 {
     exec_state* es;
-    es = (exec_state*) CLG_MALLOC(sizeof(exec_state));
+    es = (exec_state*) CLG_MALLOC("cl.threads.nes.1",
+                                  sizeof(exec_state));
 
     /* allocate real cost space: needed as incremented by
      * simulation functions */
     es->cost       = CLG_(get_eventset_cost)(CLG_(sets).full);
-    CLG_(init_cost)( CLG_(sets).full, es->cost );
 
     CLG_(init_exec_state)(es);
     es->sig        = sigNum;
@@ -416,11 +417,12 @@ exec_state* exec_state_save(void)
   es->jmps_passed = CLG_(current_state).jmps_passed;
   es->bbcc        = CLG_(current_state).bbcc;
   es->nonskipped  = CLG_(current_state).nonskipped;
+  CLG_ASSERT(es->cost == CLG_(current_state).cost);
 
   CLG_DEBUGIF(1) {
     CLG_DEBUG(1, "  cxtinfo_save(sig %d): collect %s, jmps_passed %d\n",
 	     es->sig, es->collect ? "Yes": "No", es->jmps_passed);	
-    CLG_(print_bbcc)(-9, es->bbcc, False);
+    CLG_(print_bbcc)(-9, es->bbcc);
     CLG_(print_cost)(-9, CLG_(sets).full, es->cost);
   }
 
@@ -446,7 +448,7 @@ exec_state* exec_state_restore(void)
   CLG_DEBUGIF(1) {
 	CLG_DEBUG(1, "  exec_state_restore(sig %d): collect %s, jmps_passed %d\n",
 		  es->sig, es->collect ? "Yes": "No", es->jmps_passed);
-	CLG_(print_bbcc)(-9, es->bbcc, False);
+	CLG_(print_bbcc)(-9, es->bbcc);
 	CLG_(print_cxt)(-9, es->cxt, 0);
 	CLG_(print_cost)(-9, CLG_(sets).full, es->cost);
   }

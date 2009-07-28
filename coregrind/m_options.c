@@ -8,7 +8,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Nicholas Nethercote
+   Copyright (C) 2000-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -56,8 +56,8 @@ HChar* VG_(clo_xml_user_comment) = NULL;
 Bool   VG_(clo_demangle)       = True;
 Bool   VG_(clo_trace_children) = False;
 Bool   VG_(clo_child_silent_after_fork) = False;
-Int    VG_(clo_log_fd)         = 2; /* must be signed, as -1 is possible. */
-Char*  VG_(clo_log_name)       = NULL;
+Char*  VG_(clo_log_fname_expanded) = NULL;
+Char*  VG_(clo_xml_fname_expanded) = NULL;
 Bool   VG_(clo_time_stamp)     = False;
 Int    VG_(clo_input_fd)       = 0; /* stdin */
 Int    VG_(clo_n_suppressions) = 0;
@@ -75,11 +75,12 @@ Bool   VG_(clo_debug_dump_line) = False;
 Bool   VG_(clo_debug_dump_frames) = False;
 Bool   VG_(clo_trace_redir)    = False;
 Bool   VG_(clo_trace_sched)    = False;
-Bool   VG_(clo_trace_pthreads) = False;
+Bool   VG_(clo_profile_heap)   = False;
 Int    VG_(clo_dump_error)     = 0;
 Int    VG_(clo_backtrace_size) = 12;
 Char*  VG_(clo_sim_hints)      = NULL;
 Bool   VG_(clo_sym_offsets)    = False;
+Bool   VG_(clo_read_var_info)  = False;
 Bool   VG_(clo_run_libc_freeres) = True;
 Bool   VG_(clo_track_fds)      = False;
 Bool   VG_(clo_show_below_main)= False;
@@ -89,6 +90,7 @@ Word   VG_(clo_main_stacksize) = 0; /* use client's rlimit.stack */
 Bool   VG_(clo_wait_for_gdb)   = False;
 VgSmc  VG_(clo_smc_check)      = Vg_SmcStack;
 HChar* VG_(clo_kernel_variant) = NULL;
+Bool   VG_(clo_auto_run_dsymutil) = False;
 
 
 /*====================================================================*/
@@ -97,8 +99,8 @@ HChar* VG_(clo_kernel_variant) = NULL;
 
 static void revert_to_stderr ( void )
 {
-   vg_assert( !VG_(logging_to_socket) );
-   VG_(clo_log_fd) = 2; /* stderr */
+   VG_(log_output_sink).fd = 2; /* stderr */
+   VG_(log_output_sink).is_socket = False;
 }
 
 __attribute__((noreturn))
@@ -141,7 +143,20 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
 
    if (VG_STREQ(format, "")) {
       // Empty name, bad.
-      VG_(message)(Vg_UserMsg, "%s: filename is empty", option_name);
+      VG_(umsg)("%s: filename is empty", option_name);
+      goto bad;
+   }
+   
+   // If 'format' starts with a '~', abort -- the user probably expected the
+   // shell to expand but it didn't (see bug 195268 for details).  This means
+   // that we don't allow a legitimate filename beginning with '~' but that
+   // seems very unlikely.
+   if (format[0] == '~') {
+      VG_(umsg)("%s: filename begins with '~'\n", option_name);
+      VG_(umsg)("You probably expected the shell to expand the '~', but it\n");
+      VG_(umsg)("didn't.  The rules for '~'-expansion "
+                "vary from shell to shell.\n");
+      VG_(umsg)("You might have more luck using $HOME instead.\n");
       goto bad;
    }
 
@@ -152,7 +167,7 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
 
    // The 10 is slop, it should be enough in most cases.
    len = j + VG_(strlen)(format) + 10;
-   out = VG_(malloc)( len );
+   out = VG_(malloc)( "options.efn.1", len );
    if (format[0] != '/') {
       VG_(strcpy)(out, base_dir);
       out[j++] = '/';
@@ -161,7 +176,7 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
 #define ENSURE_THIS_MUCH_SPACE(x) \
    if (j + x >= len) { \
       len += (10 + x); \
-      out = VG_(realloc)(out, len); \
+      out = VG_(realloc)("options.efn.2(multiple)", out, len); \
    }
 
    while (format[i]) {
@@ -195,7 +210,7 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
                qualname = &format[i];
                while (True) {
                   if (0 == format[i]) {
-                     VG_(message)(Vg_UserMsg, "%s: malformed %%q specifier",
+                     VG_(message)(Vg_UserMsg, "%s: malformed %%q specifier\n",
                         option_name);
                      goto bad;
                   } else if ('}' == format[i]) {
@@ -205,7 +220,7 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
                      qual = VG_(getenv)(qualname);
                      if (NULL == qual) {
                         VG_(message)(Vg_UserMsg,
-                           "%s: environment variable %s is not set",
+                           "%s: environment variable %s is not set\n",
                            option_name, qualname);
                         format[i] = '}';  // Put the '}' back.
                         goto bad;
@@ -220,14 +235,14 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
                j += VG_(sprintf)(&out[j], "%s", qual);
             } else {
                VG_(message)(Vg_UserMsg,
-                  "%s: expected '{' after '%%q'", option_name);
+                  "%s: expected '{' after '%%q'\n", option_name);
                goto bad;
             }
          } 
          else {
             // Something else, abort.
             VG_(message)(Vg_UserMsg,
-               "%s: expected 'p' or 'q' or '%%' after '%%'", option_name);
+               "%s: expected 'p' or 'q' or '%%' after '%%'\n", option_name);
             goto bad;
          }
       }
@@ -239,7 +254,8 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
 
   bad: {
    Char* opt =    // 2:  1 for the '=', 1 for the NUL.
-      VG_(malloc)( VG_(strlen)(option_name) + VG_(strlen)(format) + 2 );
+      VG_(malloc)( "options.efn.3",
+                   VG_(strlen)(option_name) + VG_(strlen)(format) + 2 );
    VG_(strcpy)(opt, option_name);
    VG_(strcat)(opt, "=");
    VG_(strcat)(opt, format);

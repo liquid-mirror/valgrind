@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2005-2007 Nicholas Nethercote
+   Copyright (C) 2005-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -69,8 +69,9 @@ VgHashTable VG_(HT_construct) ( HChar* name )
    /* Initialises to zero, ie. all entries NULL */
    SizeT       n_chains = primes[0];
    SizeT       sz       = n_chains * sizeof(VgHashNode*);
-   VgHashTable table    = VG_(calloc)(1, sizeof(struct _VgHashTable));
-   table->chains        = VG_(calloc)(1, sz);
+   VgHashTable table    = VG_(calloc)("hashtable.Hc.1",
+                                      1, sizeof(struct _VgHashTable));
+   table->chains        = VG_(calloc)("hashtable.Hc.2", 1, sz);
    table->n_chains      = n_chains;
    table->n_elements    = 0;
    table->iterOK        = True;
@@ -119,7 +120,7 @@ static void resize ( VgHashTable table )
 
    table->n_chains = new_chains;
    sz = new_chains * sizeof(VgHashNode*);
-   chains = VG_(calloc)(1, sz);
+   chains = VG_(calloc)("hashtable.resize.1", 1, sz);
 
    for (i = 0; i < old_chains; i++) {
       node = table->chains[i];
@@ -189,10 +190,9 @@ void* VG_(HT_remove) ( VgHashTable table, UWord key )
    return NULL;
 }
 
-/* Allocates a suitably-sized array, copies all the hashtable elements
-   into it, then returns both the array and the size of it.  This is
-   used by the memory-leak detector.  The array must be freed with
-   VG_(free).
+/* Allocates a suitably-sized array, copies pointers to all the hashtable
+   elements into it, then returns both the array and the size of it.  The
+   array must be freed with VG_(free).
 */
 VgHashNode** VG_(HT_to_array) ( VgHashTable table, /*OUT*/ UInt* n_elems )
 {
@@ -200,16 +200,11 @@ VgHashNode** VG_(HT_to_array) ( VgHashTable table, /*OUT*/ UInt* n_elems )
    VgHashNode** arr;
    VgHashNode*  node;
 
-   *n_elems = 0;
-   for (i = 0; i < table->n_chains; i++) {
-      for (node = table->chains[i]; node != NULL; node = node->next) {
-         (*n_elems)++;
-      }
-   }
+   *n_elems = table->n_elements;
    if (*n_elems == 0)
       return NULL;
 
-   arr = VG_(malloc)( *n_elems * sizeof(VgHashNode*) );
+   arr = VG_(malloc)( "hashtable.Hta.1", *n_elems * sizeof(VgHashNode*) );
 
    j = 0;
    for (i = 0; i < table->n_chains; i++) {
