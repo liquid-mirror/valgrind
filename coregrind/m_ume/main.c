@@ -243,7 +243,7 @@ static Int do_exec_shell_followup(Int ret, HChar* exe_name, ExeInfo* info)
       // Was it not executable?
       } else if (0 != VG_(check_executable)(NULL, exe_name, 
                                             False/*allow_setuid*/)) {
-         VG_(printf)("valgrind: %s: %s\n", exe_name, VG_(strerror)(ret));
+         VG_(msgf)("%s: %s\n", exe_name, VG_(strerror)(ret));
 
       // Did it start with "#!"?  If so, it must have been a bad interpreter.
       } else if (is_hash_bang_file(exe_name)) {

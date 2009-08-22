@@ -160,7 +160,6 @@ UInt VG_(printf_xml) ( const HChar *format, ... )
    return ret;
 }
 
-/* An exact clone of VG_(printf_xml), unfortunately. */
 UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... )
 {
    UInt ret;
@@ -402,14 +401,6 @@ static void add_to__vmessage_buf ( HChar c, void *p )
       HChar ch;
       Int   i, depth;
 
-      switch (b->kind) {
-         case Vg_UserMsg:       ch = '='; break;
-         case Vg_DebugMsg:      ch = '-'; break;
-         case Vg_DebugExtraMsg: ch = '+'; break;
-         case Vg_ClientMsg:     ch = '*'; break;
-         default:               ch = '?'; break;
-      }
-
       // Print one '>' in front of the messages for each level of
       // self-hosting being performed.
       depth = RUNNING_ON_VALGRIND;
@@ -419,25 +410,49 @@ static void add_to__vmessage_buf ( HChar c, void *p )
          b->buf[b->buf_used++] = '>';
       }
 
-      b->buf[b->buf_used++] = ch;
-      b->buf[b->buf_used++] = ch;
+      if (Vg_StartFailMsg == b->kind) {
+         // "valgrind: " prefix.
+         b->buf[b->buf_used++] = 'v';
+         b->buf[b->buf_used++] = 'a';
+         b->buf[b->buf_used++] = 'l';
+         b->buf[b->buf_used++] = 'g';
+         b->buf[b->buf_used++] = 'r';
+         b->buf[b->buf_used++] = 'i';
+         b->buf[b->buf_used++] = 'n';
+         b->buf[b->buf_used++] = 'd';
+         b->buf[b->buf_used++] = ':';
+         b->buf[b->buf_used++] = ' ';
 
-      if (VG_(clo_time_stamp)) {
-         VG_(memset)(tmp, 0, sizeof(tmp));
-         VG_(elapsed_wallclock_time)(tmp);
+      } else {
+         // "==pid=="-style prefix.
+         switch (b->kind) {
+            case Vg_UserMsg:       ch = '='; break;
+            case Vg_ValgrindMsg:   ch = '-'; break;
+            case Vg_DebugMsg:      ch = '+'; break;   // MMM: use debugLog
+            case Vg_ClientMsg:     ch = '*'; break;
+            default:               VG_(core_panic)("add_to__vmessage_buf");
+         }
+
+         b->buf[b->buf_used++] = ch;
+         b->buf[b->buf_used++] = ch;
+
+         if (VG_(clo_time_stamp)) {
+            VG_(memset)(tmp, 0, sizeof(tmp));
+            VG_(elapsed_wallclock_time)(tmp);
+            tmp[sizeof(tmp)-1] = 0;
+            for (i = 0; tmp[i]; i++)
+               b->buf[b->buf_used++] = tmp[i];
+         }
+
+         VG_(sprintf)(tmp, "%d", b->my_pid);
          tmp[sizeof(tmp)-1] = 0;
          for (i = 0; tmp[i]; i++)
             b->buf[b->buf_used++] = tmp[i];
+
+         b->buf[b->buf_used++] = ch;
+         b->buf[b->buf_used++] = ch;
+         b->buf[b->buf_used++] = ' ';
       }
-
-      VG_(sprintf)(tmp, "%d", b->my_pid);
-      tmp[sizeof(tmp)-1] = 0;
-      for (i = 0; tmp[i]; i++)
-         b->buf[b->buf_used++] = tmp[i];
-
-      b->buf[b->buf_used++] = ch;
-      b->buf[b->buf_used++] = ch;
-      b->buf[b->buf_used++] = ' ';
 
       /* We can't possibly have stuffed 96 chars in merely as a result
          of making the preamble (can we?) */
@@ -455,7 +470,7 @@ static void add_to__vmessage_buf ( HChar c, void *p )
    b->atLeft = c == '\n';
 }
 
-
+// MMM: make private
 UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
 {
    UInt ret;
@@ -491,6 +506,7 @@ UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
 }
 
 /* Send a simple single-part XML message. */
+// MMM: make private?
 UInt VG_(message_no_f_c) ( VgMsgKind kind, const HChar* format, ... )
 {
    UInt count;
@@ -502,6 +518,7 @@ UInt VG_(message_no_f_c) ( VgMsgKind kind, const HChar* format, ... )
 }
 
 /* Send a simple single-part message. */
+// MMM: make private
 UInt VG_(message) ( VgMsgKind kind, const HChar* format, ... )
 {
    UInt count;
@@ -513,12 +530,45 @@ UInt VG_(message) ( VgMsgKind kind, const HChar* format, ... )
 }
 
 /* VG_(message) variants with hardwired first argument. */
+
+UInt VG_(msgf) ( const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs,format);
+   count = VG_(vmessage) ( Vg_StartFailMsg, format, vargs );
+   va_end(vargs);
+   return count;
+}
+
+// MMM: get rid of eventually, then rename VG_(msgu) as VG_(umsg).  Likewise
+// for dmsg.
 UInt VG_(umsg) ( const HChar* format, ... )
 {
    UInt count;
    va_list vargs;
    va_start(vargs,format);
    count = VG_(vmessage) ( Vg_UserMsg, format, vargs );
+   va_end(vargs);
+   return count;
+}
+
+UInt VG_(msgu) ( const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs,format);
+   count = VG_(vmessage) ( Vg_UserMsg, format, vargs );
+   va_end(vargs);
+   return count;
+}
+
+UInt VG_(msgv) ( const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs,format);
+   count = VG_(vmessage) ( Vg_ValgrindMsg, format, vargs );
    va_end(vargs);
    return count;
 }
@@ -533,12 +583,12 @@ UInt VG_(dmsg) ( const HChar* format, ... )
    return count;
 }
 
-UInt VG_(emsg) ( const HChar* format, ... )
+UInt VG_(msgd) ( const HChar* format, ... )
 {
    UInt count;
    va_list vargs;
    va_start(vargs,format);
-   count = VG_(vmessage) ( Vg_DebugExtraMsg, format, vargs );
+   count = VG_(vmessage) ( Vg_DebugMsg, format, vargs );
    va_end(vargs);
    return count;
 }

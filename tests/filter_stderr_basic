@@ -13,6 +13,7 @@ dir=`dirname $0`
 perl -p -e 's/(==|--|\+\+|\*\*)[0-9]{1,7}\1 //' |
 
 # Remove any --pid:0: strings (debuglog level zero output)
+# MMM: change/remove
 sed "/^--[0-9]\{1,7\}:0:*/d" |
 
 # Remove "Command: line".  (If wrapping occurs, it won't remove the

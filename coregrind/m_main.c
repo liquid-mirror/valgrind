@@ -1088,8 +1088,8 @@ static void print_preamble ( Bool logging_to_fd,
          VG_(printf_xml_no_f_c)("    <exe>%t</exe>\n",
                                 VG_(name_of_launcher));
       else
-         VG_(printf_xml_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>\n",
-                                            "(launcher name unknown)");
+         VG_(printf_xml_no_f_c)("    <exe>%t</exe>\n",
+                                "(launcher name unknown)");
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_valgrind) ); i++) {
          VG_(printf_xml_no_f_c)(
             "    <arg>%t</arg>\n",

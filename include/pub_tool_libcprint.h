@@ -75,6 +75,8 @@ extern UInt VG_(printf_xml)  ( const HChar *format, ... )
 extern UInt VG_(vprintf_xml) ( const HChar *format, va_list vargs )
                              PRINTF_CHECK(1, 0);
 
+// Just like VG_(printf_xml) but without the PRINTF_CHECK, so it can be used
+// with our non-standard %t format specifier.
 extern UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... );
 
 // Percentify n/m with d decimal places.  Includes the '%' symbol at the end.
@@ -92,11 +94,15 @@ extern void VG_(percentify)(ULong n, ULong m, UInt d, Int n_buf, char buf[]);
 /* Print a message prefixed by "??<pid>?? "; '?' depends on the VgMsgKind.
    Should be used for all user output. */
 
+// MMM: remove all the Vg/Vg_ prefixes here.  Do it after VG_(message) has
+// been made private to minimise changes
 typedef
-   enum { Vg_UserMsg,         /* '?' == '=' */
-          Vg_DebugMsg,        /* '?' == '-' */
-          Vg_DebugExtraMsg,   /* '?' == '+' */
-          Vg_ClientMsg        /* '?' == '*' */
+   enum {                  // Prefix
+      Vg_StartFailMsg,     // "valgrind:"
+      Vg_UserMsg,          // "==pid=="
+      Vg_ValgrindMsg,      // "--pid--"
+      Vg_DebugMsg,         // "++pid++"
+      Vg_ClientMsg         // "**pid**"
    }
    VgMsgKind;
 
@@ -108,18 +114,26 @@ extern UInt VG_(message_no_f_c)( VgMsgKind kind, const HChar* format, ... );
 /* Send a single-part message.  The format specification may contain
    any ISO C format specifier. The gcc compiler will verify
    consistency of the format string and the argument list. */
+// MMM: make private?
 extern UInt VG_(message)( VgMsgKind kind, const HChar* format, ... )
   PRINTF_CHECK(2, 3);
 
+// MMM: remove?
 extern UInt VG_(vmessage)( VgMsgKind kind, const HChar* format, va_list vargs )
   PRINTF_CHECK(2, 0);
 
 // Short-cuts for VG_(message)().
-extern UInt VG_(umsg)( const HChar* format, ... ) PRINTF_CHECK(1, 2);
-extern UInt VG_(dmsg)( const HChar* format, ... ) PRINTF_CHECK(1, 2);
-extern UInt VG_(emsg)( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+// MMM: rename these as vmsg/fmsg/etc eventually
+extern UInt VG_(msgf) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+extern UInt VG_(msgu) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+extern UInt VG_(msgv) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+extern UInt VG_(msgd) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+// MMM: get rid of these to begin with
+extern UInt VG_(umsg) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+extern UInt VG_(dmsg) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
 
 /* Flush any output cached by previous calls to VG_(message) et al. */
+// MMM: remove?
 extern void VG_(message_flush) ( void );
 
 #endif   // __PUB_TOOL_LIBCPRINT_H

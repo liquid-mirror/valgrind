@@ -1655,13 +1655,13 @@ void cg_discard_superblock_info ( Addr64 orig_addr64, VexGuestExtents vge )
 /*--- Command line processing                                      ---*/
 /*--------------------------------------------------------------------*/
 
-static void parse_cache_opt ( cache_t* cache, Char* opt )
+static void parse_cache_opt ( cache_t* cache, Char* opt, Char* optval )
 {
    Long i1, i2, i3;
    Char* endptr;
 
    // Option argument looks like "65536,2,64".  Extract them.
-   i1 = VG_(strtoll10)(opt,      &endptr); if (*endptr != ',')  goto bad;
+   i1 = VG_(strtoll10)(optval,   &endptr); if (*endptr != ',')  goto bad;
    i2 = VG_(strtoll10)(endptr+1, &endptr); if (*endptr != ',')  goto bad;
    i3 = VG_(strtoll10)(endptr+1, &endptr); if (*endptr != '\0') goto bad;
 
@@ -1678,8 +1678,6 @@ static void parse_cache_opt ( cache_t* cache, Char* opt )
   overflow:
    VG_(umsg)("one of the cache parameters was too large and overflowed\n");
   bad:
-   // XXX: this omits the "--I1/D1/L2=" part from the message, but that's
-   // not a big deal.
    VG_(err_bad_option)(opt);
 }
 
@@ -1689,11 +1687,11 @@ static Bool cg_process_cmd_line_option(Char* arg)
 
    // 5 is length of "--I1="
    if      VG_STR_CLO(arg, "--I1", tmp_str)
-      parse_cache_opt(&clo_I1_cache, tmp_str);
+      parse_cache_opt(&clo_I1_cache, arg, tmp_str);
    else if VG_STR_CLO(arg, "--D1", tmp_str)
-      parse_cache_opt(&clo_D1_cache, tmp_str);
+      parse_cache_opt(&clo_D1_cache, arg, tmp_str);
    else if VG_STR_CLO(arg, "--L2", tmp_str)
-      parse_cache_opt(&clo_L2_cache, tmp_str);
+      parse_cache_opt(&clo_L2_cache, arg, tmp_str);
 
    else if VG_STR_CLO( arg, "--cachegrind-out-file", clo_cachegrind_out_file) {}
    else if VG_BOOL_CLO(arg, "--cache-sim",  clo_cache_sim)  {}
