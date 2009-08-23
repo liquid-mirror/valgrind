@@ -296,10 +296,10 @@ static void early_process_cmd_line_options ( /*OUT*/Int* need_help,
          VG_(printf)("valgrind-" VERSION "\n");
          VG_(exit)(0);
       }
-      else if VG_XACT_CLO(str, "--help", *need_help, 1) {}
-      else if VG_XACT_CLO(str, "-h",     *need_help, 1) {}
+      else if VG_XACT_CLO(str, "--help", *need_help, *need_help+1) {}
+      else if VG_XACT_CLO(str, "-h",     *need_help, *need_help+1) {}
 
-      else if VG_XACT_CLO(str, "--help-debug", *need_help, 2) {}
+      else if VG_XACT_CLO(str, "--help-debug", *need_help, *need_help+2) {}
 
       // The tool has already been determined, but we need to know the name
       // here.
@@ -531,10 +531,9 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
 
       else if VG_STR_CLO(arg, "--suppressions", tmp_str) {
          if (VG_(clo_n_suppressions) >= VG_CLO_MAX_SFILES) {
-            VG_(message)(Vg_UserMsg, "Too many suppression files specified.\n");
-            VG_(message)(Vg_UserMsg, 
-                         "Increase VG_CLO_MAX_SFILES and recompile.\n");
-            VG_(err_bad_option)(arg);
+            VG_(msgf_bad_option)(arg,
+               "Too many suppression files specified.\n"
+               "Increase VG_CLO_MAX_SFILES and recompile.\n");
          }
          VG_(clo_suppressions)[VG_(clo_n_suppressions)] = tmp_str;
          VG_(clo_n_suppressions)++;
@@ -545,17 +544,15 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
          Int j;
    
          if (8 != VG_(strlen)(tmp_str)) {
-            VG_(message)(Vg_UserMsg, 
-                         "--trace-flags argument must have 8 digits\n");
-            VG_(err_bad_option)(arg);
+            VG_(msgf_bad_option)(arg,
+               "--trace-flags argument must have 8 digits.\n");
          }
          for (j = 0; j < 8; j++) {
             if      ('0' == tmp_str[j]) { /* do nothing */ }
             else if ('1' == tmp_str[j]) VG_(clo_trace_flags) |= (1 << (7-j));
             else {
-               VG_(message)(Vg_UserMsg, "--trace-flags argument can only "
-                                        "contain 0s and 1s\n");
-               VG_(err_bad_option)(arg);
+               VG_(msgf_bad_option)(arg,
+                  "--trace-flags argument can only contain 0s and 1s.\n");
             }
          }
       }
@@ -565,17 +562,15 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
          Int j;
    
          if (8 != VG_(strlen)(tmp_str)) {
-            VG_(message)(Vg_UserMsg, 
-                         "--profile-flags argument must have 8 digits\n");
-            VG_(err_bad_option)(arg);
+            VG_(msgf_bad_option)(arg,
+               "--profile-flags argument must have 8 digits.\n");
          }
          for (j = 0; j < 8; j++) {
             if      ('0' == tmp_str[j]) { /* do nothing */ }
             else if ('1' == tmp_str[j]) VG_(clo_profile_flags) |= (1 << (7-j));
             else {
-               VG_(message)(Vg_UserMsg, "--profile-flags argument can only "
-                                        "contain 0s and 1s\n");
-               VG_(err_bad_option)(arg);
+               VG_(msgf_bad_option)(arg,
+                  "--profile-flags argument can only contain 0s and 1s.\n");
             }
          }
       }
@@ -591,7 +586,7 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
 
       else if ( ! VG_(needs).command_line_options
              || ! VG_TDICT_CALL(tool_process_cmd_line_option, arg) ) {
-         VG_(err_bad_option)(arg);
+         VG_(msgf_bad_option)(arg, "");
       }
    }
 
@@ -612,22 +607,24 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
    if (VG_(clo_verbosity) < 0)
       VG_(clo_verbosity) = 0;
 
+   // MMM: why single out --gen-suppressions in this way?  Heaps of options
+   // only make sense for error-producing tools.  Either check all or none.
+   // If checking all, need an equivalent to
+   // VG_(replacement_malloc_process_cmd_line_option) for errors.  (See
+   // ms_main.c for more.)
    if (VG_(clo_gen_suppressions) > 0 && 
        !VG_(needs).core_errors && !VG_(needs).tool_errors) {
-      VG_(message)(Vg_UserMsg, 
-                   "Can't use --gen-suppressions= with this tool,\n");
-      VG_(message)(Vg_UserMsg, 
-                   "as it doesn't generate errors.\n");
-      VG_(err_bad_option)("--gen-suppressions=");
+      VG_(msgf_bad_option)("--gen-suppressions=yes",
+         "Can't use --gen-suppressions=yes with %s\n"
+         "because it doesn't generate errors.\n", VG_(details).name);
    }
 
    /* If XML output is requested, check that the tool actually
       supports it. */
    if (VG_(clo_xml) && !VG_(needs).xml_output) {
       VG_(clo_xml) = False;
-      VG_(message)(Vg_UserMsg, 
+      VG_(msgf_bad_option)("--xml=yes",
          "%s does not support XML output.\n", VG_(details).name); 
-      VG_(err_bad_option)("--xml=yes");
       /*NOTREACHED*/
    }
 
@@ -648,33 +645,28 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
          (--gen-suppressions=all is still OK since we don't need any
          user interaction in this case.) */
       if (VG_(clo_gen_suppressions) == 1) {
-         VG_(umsg)(
-            "When --xml=yes is specified, only --gen-suppressions=no\n"
-            "or --gen-suppressions=all are allowed, but not "
+         VG_(msgf_bad_option)(
+            "--xml=yes together with --gen-suppressions=yes",
+            "When --xml=yes is specified, --gen-suppressions=no\n"
+            "or --gen-suppressions=all is allowed, but not "
             "--gen-suppressions=yes.\n");
-         /* FIXME: this is really a misuse of VG_(err_bad_option). */
-         VG_(err_bad_option)(
-            "--xml=yes together with --gen-suppressions=yes");
       }
 
       /* We can't allow DB attaching (or we maybe could, but results
          could be chaotic ..) since it requires user input.  Hence
          disallow. */
       if (VG_(clo_db_attach)) {
-         VG_(umsg)("--db-attach=yes is not allowed in XML mode,\n"
-                  "as it would require user input.\n");
-         /* FIXME: this is really a misuse of VG_(err_bad_option). */
-         VG_(err_bad_option)(
-            "--xml=yes together with --db-attach=yes");
+         VG_(msgf_bad_option)(
+            "--xml=yes together with --db-attach=yes",
+            "--db-attach=yes is not allowed with --xml=yes\n"
+            "because it would require user input.\n");
       }
 
       /* Disallow dump_error in XML mode; sounds like a recipe for
          chaos.  No big deal; dump_error is a flag for debugging V
          itself. */
       if (VG_(clo_dump_error) > 0) {
-         /* FIXME: this is really a misuse of VG_(err_bad_option). */
-         VG_(err_bad_option)(
-            "--xml=yes together with --dump-error=");
+         VG_(msgf_bad_option)("--xml=yes together with --dump-error", "");
       }
 
       /* Disable error limits (this might be a bad idea!) */
@@ -732,11 +724,9 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
             tmp_log_fd = sr_Res(sres);
             VG_(clo_log_fname_expanded) = logfilename;
          } else {
-            VG_(message)(Vg_UserMsg, 
-                         "Can't create log file '%s' (%s); giving up!\n", 
-                         logfilename, VG_(strerror)(sr_Err(sres)));
-            VG_(err_bad_option)(
-               "--log-file=<file> (didn't work out for some reason.)");
+            VG_(msgf)("can't create log file '%s': %s\n", 
+                      logfilename, VG_(strerror)(sr_Err(sres)));
+            VG_(exit)(1);
             /*NOTREACHED*/
          }
          break;
@@ -747,23 +737,15 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
          vg_assert(VG_(strlen)(log_fsname_unexpanded) <= 900); /* paranoia */
          tmp_log_fd = VG_(connect_via_socket)( log_fsname_unexpanded );
          if (tmp_log_fd == -1) {
-            VG_(message)(Vg_UserMsg, 
-               "Invalid --log-socket=ipaddr or "
-               "--log-socket=ipaddr:port spec\n"); 
-            VG_(message)(Vg_UserMsg, 
-               "of '%s'; giving up!\n", log_fsname_unexpanded );
-            VG_(err_bad_option)(
-               "--log-socket=");
+            VG_(msgf)("Invalid --log-socket spec of '%s'\n",
+                      log_fsname_unexpanded);
+            VG_(exit)(1);
             /*NOTREACHED*/
 	 }
          if (tmp_log_fd == -2) {
-            VG_(message)(Vg_UserMsg, 
-               "valgrind: failed to connect to logging server '%s'.\n",
-               log_fsname_unexpanded ); 
-            VG_(message)(Vg_UserMsg, 
-                "Log messages will sent to stderr instead.\n" );
-            VG_(message)(Vg_UserMsg, 
-                "\n" );
+            VG_(msgv)("failed to connect to logging server '%s'.\n"
+                      "Log messages will sent to stderr instead.\n",
+                      log_fsname_unexpanded); 
             /* We don't change anything here. */
             vg_assert(VG_(log_output_sink).fd == 2);
             tmp_log_fd = 2;
@@ -803,11 +785,9 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
             *xml_fname_unexpanded = VG_(strdup)( "main.mpclo.2",
                                                  xml_fsname_unexpanded );
          } else {
-            VG_(message)(Vg_UserMsg, 
-                         "Can't create XML file '%s' (%s); giving up!\n", 
-                         xmlfilename, VG_(strerror)(sr_Err(sres)));
-            VG_(err_bad_option)(
-               "--xml-file=<file> (didn't work out for some reason.)");
+            VG_(msgf)("can't create XML file '%s': %s\n", 
+                      xmlfilename, VG_(strerror)(sr_Err(sres)));
+            VG_(exit)(1);
             /*NOTREACHED*/
          }
          break;
@@ -818,23 +798,15 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
          vg_assert(VG_(strlen)(xml_fsname_unexpanded) <= 900); /* paranoia */
          tmp_xml_fd = VG_(connect_via_socket)( xml_fsname_unexpanded );
          if (tmp_xml_fd == -1) {
-            VG_(message)(Vg_UserMsg, 
-               "Invalid --xml-socket=ipaddr or "
-               "--xml-socket=ipaddr:port spec\n"); 
-            VG_(message)(Vg_UserMsg, 
-               "of '%s'; giving up!\n", xml_fsname_unexpanded );
-            VG_(err_bad_option)(
-               "--xml-socket=");
+            VG_(msgf)("Invalid --xml-socket spec of '%s'\n",
+                      xml_fsname_unexpanded );
+            VG_(exit)(1);
             /*NOTREACHED*/
 	 }
          if (tmp_xml_fd == -2) {
-            VG_(message)(Vg_UserMsg, 
-               "valgrind: failed to connect to XML logging server '%s'.\n",
-               xml_fsname_unexpanded ); 
-            VG_(message)(Vg_UserMsg, 
-                "XML output will sent to stderr instead.\n" );
-            VG_(message)(Vg_UserMsg, 
-                "\n" );
+            VG_(msgv)("failed to connect to XML logging server '%s'.\n"
+                      "XML output will sent to stderr instead.\n",
+                      xml_fsname_unexpanded); 
             /* We don't change anything here. */
             vg_assert(VG_(xml_output_sink).fd == 2);
             tmp_xml_fd = 2;
@@ -852,13 +824,12 @@ void main_process_cmd_line_options ( /*OUT*/Bool* logging_to_fd,
       but that is likely to confuse the hell out of users, which is
       distinctly Ungood. */
    if (VG_(clo_xml) && tmp_xml_fd == -1) {
-      VG_(umsg)(
+      VG_(msgf_bad_option)(
+          "--xml=yes, but no XML destination specified",
           "--xml=yes has been specified, but there is no XML output\n"
           "destination.  You must specify an XML output destination\n"
-          "using --xml-fd=, --xml-file= or --xml=socket=.\n" );
-      /* FIXME: this is really a misuse of VG_(err_bad_option). */
-      VG_(err_bad_option)(
-         "--xml=yes, but no XML destination specified");
+          "using --xml-fd, --xml-file or --xml-socket.\n"
+      );
    }
 
    // Finalise the output fds: the log fd ..
@@ -1861,7 +1832,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Print help and quit, if requested\n");
    if (need_help) {
-      usage_NORETURN(/*--help-debug?*/2 == need_help);
+      usage_NORETURN(/*--help-debug?*/need_help >= 2);
    }
 
    //--------------------------------------------------------------

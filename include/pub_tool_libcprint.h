@@ -32,18 +32,8 @@
 #define __PUB_TOOL_LIBCPRINT_H
 
 /* ---------------------------------------------------------------------
-   Basic printing
+   Formatting functions
    ------------------------------------------------------------------ */
-
-/* Note that they all output to the file descriptor given by the
-   --log-fd/--log-file/--log-socket argument, which defaults to 2
-   (stderr).  Hence no need for VG_(fprintf)().
-*/
-extern UInt VG_(printf)   ( const HChar *format, ... )
-                          PRINTF_CHECK(1, 2);
-
-extern UInt VG_(vprintf)  ( const HChar *format, va_list vargs )
-                          PRINTF_CHECK(1, 0);
 
 extern UInt VG_(sprintf)  ( Char* buf, const HChar* format, ... )
                           PRINTF_CHECK(2, 3);
@@ -65,28 +55,21 @@ extern void VG_(vcbprintf)( void(*char_sink)(HChar, void* opaque),
                             void* opaque,
                             const HChar* format, va_list vargs );
 
-/* These are the same as the non "_xml" versions above, except the
-   output goes on the selected XML output channel instead of the
-   normal one.
-*/
-extern UInt VG_(printf_xml)  ( const HChar *format, ... )
-                             PRINTF_CHECK(1, 2);
-
-extern UInt VG_(vprintf_xml) ( const HChar *format, va_list vargs )
-                             PRINTF_CHECK(1, 0);
-
-// Just like VG_(printf_xml) but without the PRINTF_CHECK, so it can be used
-// with our non-standard %t format specifier.
-extern UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... );
-
 // Percentify n/m with d decimal places.  Includes the '%' symbol at the end.
 // Right justifies in 'buf'.
 extern void VG_(percentify)(ULong n, ULong m, UInt d, Int n_buf, char buf[]);
 
 
 /* ---------------------------------------------------------------------
-   Messages for the user
+   Output-printing functions
    ------------------------------------------------------------------ */
+
+/* Note that almost all output goes to the file descriptor given by the
+   --log-fd/--log-file/--log-socket argument, which defaults to 2 (stderr).
+    (Except that some text always goes to stdout/stderr at startup, and
+    debugging messages always go to stderr.)  Hence no need for
+    VG_(fprintf)().
+*/
 
 /* No, really.  I _am_ that strange. */
 #define OINK(nnn) VG_(message)(Vg_DebugMsg, "OINK %d\n",nnn)
@@ -106,29 +89,64 @@ typedef
    }
    VgMsgKind;
 
-/* Send a single-part message.  The format specification may contain
-   any ISO C format specifier or %t.  No attempt is made to let the
-   compiler verify consistency of the format string and the argument
-   list. */
-extern UInt VG_(message_no_f_c)( VgMsgKind kind, const HChar* format, ... );
-/* Send a single-part message.  The format specification may contain
-   any ISO C format specifier. The gcc compiler will verify
-   consistency of the format string and the argument list. */
-// MMM: make private?
-extern UInt VG_(message)( VgMsgKind kind, const HChar* format, ... )
-  PRINTF_CHECK(2, 3);
+// These print output that isn't prefixed with anything, and should be
+// used in very few cases, such as printing usage messages.
+extern UInt VG_(printf)   ( const HChar *format, ... )
+                          PRINTF_CHECK(1, 2);
+extern UInt VG_(vprintf)  ( const HChar *format, va_list vargs )
+                          PRINTF_CHECK(1, 0);
 
+// The "_no_f_c" functions here are just like their non-"_no_f_c" counterparts
+// but without the PRINTF_CHECK, so they can be used with our non-standard %t
+// format specifier.
+
+// These are the same as the non "_xml" versions above, except the
+// output goes on the selected XML output channel instead of the
+// normal one.
+extern UInt VG_(printf_xml)        ( const HChar *format, ... )
+                                     PRINTF_CHECK(1, 2);
+extern UInt VG_(printf_xml_no_f_c) ( const HChar *format, ... );
+extern UInt VG_(vprintf_xml)       ( const HChar *format, va_list vargs )
+                                     PRINTF_CHECK(1, 0);
+
+// Send a single-part message.  
+// MMM: make private?
+extern UInt VG_(message)       ( VgMsgKind kind, const HChar* format, ... )
+                                 PRINTF_CHECK(2, 3);
+extern UInt VG_(message_no_f_c)( VgMsgKind kind, const HChar* format, ... );
 // MMM: remove?
-extern UInt VG_(vmessage)( VgMsgKind kind, const HChar* format, va_list vargs )
-  PRINTF_CHECK(2, 0);
+extern UInt VG_(vmessage)      ( VgMsgKind kind, const HChar* format,
+                                 va_list vargs )
+                                 PRINTF_CHECK(2, 0);
 
 // Short-cuts for VG_(message)().
 // MMM: rename these as vmsg/fmsg/etc eventually
+// This is used for start-up failures that occur before the preamble is
+// printed, eg. due to a bad executable.
 extern UInt VG_(msgf) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+
+// This is used if an option was bad for some reason.  Note: don't use it just
+// because an option was unrecognised -- return 'False' from
+// VG_(tdict).tool_process_cmd_line_option) to indicate that -- use it if eg.
+// an option was given an inappropriate argument.  This function prints an
+// error message, then shuts down the entire system.
+__attribute__((noreturn))
+extern void VG_(msgf_bad_option) ( HChar* opt, 
+                        const HChar* format, ... ) PRINTF_CHECK(2, 3);
+
+// This is used for messages that are interesting to the user:  info about
+// their program (eg. preamble, tool error messages, postamble) or stuff they
+// requested.
 extern UInt VG_(msgu) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+
+// This is used for messages that are about Valgrind's execution, and of less
+// direct interest to the user.
 extern UInt VG_(msgv) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
+
+// This is used for debugging messages that are only of use to developers.
 extern UInt VG_(msgd) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
-// MMM: get rid of these to begin with
+
+// MMM: synonyms;  get rid of these to begin with
 extern UInt VG_(umsg) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
 extern UInt VG_(dmsg) ( const HChar* format, ... ) PRINTF_CHECK(1, 2);
 

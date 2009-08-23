@@ -95,41 +95,8 @@ Bool   VG_(clo_dsymutil)       = False;
 
 
 /*====================================================================*/
-/*=== Command line errors                                          ===*/
+/*=== File expanstion                                              ===*/
 /*====================================================================*/
-
-static void revert_to_stderr ( void )
-{
-   VG_(log_output_sink).fd = 2; /* stderr */
-   VG_(log_output_sink).is_socket = False;
-}
-
-__attribute__((noreturn))
-void VG_(err_bad_option) ( Char* opt )
-{
-   revert_to_stderr();
-   VG_(msgf)("Bad option '%s'; aborting.\n", opt);
-   VG_(msgf)("Use --help for more information.\n");
-   VG_(exit)(1);
-}
-
-__attribute__((noreturn))
-void VG_(err_missing_prog) ( void  )
-{
-   revert_to_stderr();
-   VG_(msgf)("no program specified\n");
-   VG_(msgf)("Use --help for more information.\n");
-   VG_(exit)(1);
-}
-
-__attribute__((noreturn))
-void VG_(err_config_error) ( Char* msg )
-{
-   revert_to_stderr();
-   VG_(msgf)("Startup or configuration error:\n   %s\n", msg);
-   VG_(msgf)("Unable to start up properly.  Giving up.\n");
-   VG_(exit)(1);
-}
 
 // Copies the string, prepending it with the startup working directory, and
 // expanding %p and %q entries.  Returns a new, malloc'd string.
@@ -258,12 +225,10 @@ Char* VG_(expand_file_name)(Char* option_name, Char* format)
    VG_(strcpy)(opt, option_name);
    VG_(strcat)(opt, "=");
    VG_(strcat)(opt, format);
-   VG_(err_bad_option)(opt);
+   VG_(msgf_bad_option)(opt, "");   // MMM: check this case
   }
 }
 
-
-
 /*--------------------------------------------------------------------*/
-/*--- end                                              m_options.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

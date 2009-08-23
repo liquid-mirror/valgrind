@@ -423,7 +423,12 @@ static Bool ms_process_cmd_line_option(Char* arg)
    else if VG_BINT_CLO(arg, "--heap-admin", clo_heap_admin, 0, 1024) {}
    else if VG_BINT_CLO(arg, "--depth",      clo_depth, 1, MAX_DEPTH) {}
 
-   else if VG_DBL_CLO(arg, "--threshold",  clo_threshold) {}
+   else if VG_DBL_CLO(arg, "--threshold",  clo_threshold) {
+      if (clo_threshold < 0 || clo_threshold > 100) {
+         VG_(msgf_bad_option)(arg,
+            "--threshold must be between 0.0 and 100.0\n");
+      }
+   }
 
    else if VG_DBL_CLO(arg, "--peak-inaccuracy", clo_peak_inaccuracy) {}
 
@@ -443,6 +448,8 @@ static Bool ms_process_cmd_line_option(Char* arg)
    else if VG_STR_CLO(arg, "--massif-out-file", clo_massif_out_file) {}
 
    else
+      // MMM: should handle this in the core if needs_malloc_replacement is
+      // set.
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
    return True;
@@ -2263,12 +2270,6 @@ static void ms_fini(Int exit_status)
 static void ms_post_clo_init(void)
 {
    Int i;
-
-   // Check options.
-   if (clo_threshold < 0 || clo_threshold > 100) {
-      VG_(umsg)("--threshold must be between 0.0 and 100.0\n");
-      VG_(err_bad_option)("--threshold");
-   }
 
    // If we have --heap=no, set --heap-admin to zero, just to make sure we
    // don't accidentally use a non-zero heap-admin size somewhere.

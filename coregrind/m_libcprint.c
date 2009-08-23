@@ -529,6 +529,12 @@ UInt VG_(message) ( VgMsgKind kind, const HChar* format, ... )
    return count;
 }
 
+static void revert_to_stderr ( void )
+{
+   VG_(log_output_sink).fd = 2; /* stderr */
+   VG_(log_output_sink).is_socket = False;
+}
+
 /* VG_(message) variants with hardwired first argument. */
 
 UInt VG_(msgf) ( const HChar* format, ... )
@@ -539,6 +545,18 @@ UInt VG_(msgf) ( const HChar* format, ... )
    count = VG_(vmessage) ( Vg_StartFailMsg, format, vargs );
    va_end(vargs);
    return count;
+}
+
+void VG_(msgf_bad_option) ( HChar* opt, const HChar* format, ... )
+{
+   va_list vargs;
+   va_start(vargs,format);
+   revert_to_stderr();
+   VG_(message) (Vg_StartFailMsg, "Bad option: %s\n", opt);
+   VG_(vmessage)(Vg_StartFailMsg, format, vargs );
+   VG_(message) (Vg_StartFailMsg, "Use --help for more information.\n");
+   VG_(exit)(1);
+   va_end(vargs);
 }
 
 // MMM: get rid of eventually, then rename VG_(msgu) as VG_(umsg).  Likewise
@@ -600,6 +618,24 @@ void VG_(message_flush) ( void )
    vmessage_buf_t* b = &vmessage_buf;
    send_bytes_to_logging_sink( b->sink, b->buf, b->buf_used );
    b->buf_used = 0;
+}
+
+__attribute__((noreturn))
+void VG_(err_missing_prog) ( void  )
+{
+   revert_to_stderr();
+   VG_(msgf)("no program specified\n");
+   VG_(msgf)("Use --help for more information.\n");
+   VG_(exit)(1);
+}
+
+__attribute__((noreturn))
+void VG_(err_config_error) ( Char* msg )
+{
+   revert_to_stderr();
+   VG_(msgf)("Startup or configuration error:\n   %s\n", msg);
+   VG_(msgf)("Unable to start up properly.  Giving up.\n");
+   VG_(exit)(1);
 }
 
 
