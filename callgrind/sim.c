@@ -1540,7 +1540,7 @@ static void parse_opt ( cache_t* cache, Char* opt, Char* optval )
 
    checkRes = check_cache(cache);
    if (checkRes) {
-      VG_(msgf)(checkRes);
+      VG_(msgf)("%s", checkRes);
       goto bad;
    }
 

@@ -933,16 +933,27 @@ static void add_to_buf ( HChar c, void* p )
    is <= the current loglevel. */
 /* EXPORTED */
 __attribute__((format(__printf__, 3, 4)))
-void VG_(debugLog) ( Int level, const HChar* modulename,
+UInt VG_(debugLog) ( Int level, const HChar* modulename,
                                 const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs, format);
+   count = VG_(vdebugLog) ( level, modulename, format, vargs );
+   va_end(vargs);
+   return count;
+}
+
+__attribute__((format(__printf__, 3, 0)))
+UInt VG_(vdebugLog) ( Int level, const HChar* modulename,
+                                 const HChar* format, va_list vargs )
 {
    UInt ret, pid;
    Int indent, depth, i;
-   va_list vargs;
    printf_buf buf;
 
    if (level > loglevel)
-      return;
+      return 0;
 
    indent = 2*level - 1;
    if (indent < 1) indent = 1;
@@ -966,15 +977,13 @@ void VG_(debugLog) ( Int level, const HChar* modulename,
    (void)myvprintf_str ( add_to_buf, &buf, 0, 8, (HChar*)modulename, False );
    (void)myvprintf_str ( add_to_buf, &buf, 0, indent, "", False );
 
-   va_start(vargs,format);
-   
    ret = VG_(debugLog_vprintf) ( add_to_buf, &buf, format, vargs );
 
    if (buf.n > 0) {
       emit( buf.buf, local_strlen(buf.buf) );
    }
 
-   va_end(vargs);
+   return ret;
 }
 
 

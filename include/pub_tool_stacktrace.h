@@ -74,6 +74,7 @@ extern void VG_(apply_StackTrace)(
             );
 
 // Print a StackTrace.
+// MMM: should probably take a VgMsgKind argument.
 extern void VG_(pp_StackTrace) ( StackTrace ips, UInt n_ips );
 
 // Gets and immediately prints a StackTrace.  Just a bit simpler than

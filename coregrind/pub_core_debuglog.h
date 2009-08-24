@@ -69,9 +69,14 @@ Int VG_(debugLog_getLevel) ( void );
 /* Send debugging output.  Nothing happens unless 'level' 
    does not exceed the logging threshold level. */
 extern
+// MMM: use PRINTF_CHECK
 __attribute__((format(__printf__, 3, 4)))
-void VG_(debugLog) ( Int level, const HChar* modulename,
+UInt VG_(debugLog) ( Int level, const HChar* modulename,
                                 const HChar* format, ... );
+extern
+__attribute__((format(__printf__, 3, 0)))
+UInt VG_(vdebugLog) ( Int level, const HChar* modulename,
+                                 const HChar* format, va_list vargs );
 
 
 /* A simple vprintf().  For each emitted byte, (*send_fn) is called with

@@ -171,8 +171,8 @@ static void usage_NORETURN ( Bool debug_help )
    Char* usage2 = 
 "\n"
 "  debugging options for all Valgrind tools:\n"
-"    --stats=no|yes            show tool and core statistics [no]\n"
 "    -d                        show verbose debugging output\n"
+"    --stats=no|yes            show tool and core statistics [no]\n"
 "    --sanity-level=<number>   level of sanity checking to do [1]\n"
 "    --trace-flags=<XXXXXXXX>   show generated code? (X = 0|1) [00000000]\n"
 "    --profile-flags=<XXXXXXXX> ditto, but for profiling (X = 0|1) [00000000]\n"

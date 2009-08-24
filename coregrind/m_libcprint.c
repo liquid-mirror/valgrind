@@ -511,7 +511,7 @@ UInt VG_(message_no_f_c) ( VgMsgKind kind, const HChar* format, ... )
 {
    UInt count;
    va_list vargs;
-   va_start(vargs,format);
+   va_start(vargs, format);
    count = VG_(vmessage) ( kind, format, vargs );
    va_end(vargs);
    return count;
@@ -523,7 +523,7 @@ UInt VG_(message) ( VgMsgKind kind, const HChar* format, ... )
 {
    UInt count;
    va_list vargs;
-   va_start(vargs,format);
+   va_start(vargs, format);
    count = VG_(vmessage) ( kind, format, vargs );
    va_end(vargs);
    return count;
@@ -601,12 +601,14 @@ UInt VG_(dmsg) ( const HChar* format, ... )
    return count;
 }
 
+// MMM: should just merge this with VG_(debugLog)
 UInt VG_(msgd) ( const HChar* format, ... )
 {
    UInt count;
    va_list vargs;
    va_start(vargs,format);
-   count = VG_(vmessage) ( Vg_DebugMsg, format, vargs );
+   // MMM: 0 here... hmm.
+   count = VG_(vdebugLog) ( 0, "MMM", format, vargs );
    va_end(vargs);
    return count;
 }

@@ -1588,31 +1588,31 @@ static void cg_fini(Int exitcode)
       Int debug_lookups = full_debugs      + fn_debugs +
                           file_line_debugs + no_debugs;
 
-      VG_(dmsg)("\n");
-      VG_(dmsg)("cachegrind: distinct files: %d\n", distinct_files);
-      VG_(dmsg)("cachegrind: distinct fns:   %d\n", distinct_fns);
-      VG_(dmsg)("cachegrind: distinct lines: %d\n", distinct_lines);
-      VG_(dmsg)("cachegrind: distinct instrs:%d\n", distinct_instrs);
-      VG_(dmsg)("cachegrind: debug lookups      : %d\n", debug_lookups);
+      VG_(msgd)("\n");
+      VG_(msgd)("cachegrind: distinct files: %d\n", distinct_files);
+      VG_(msgd)("cachegrind: distinct fns:   %d\n", distinct_fns);
+      VG_(msgd)("cachegrind: distinct lines: %d\n", distinct_lines);
+      VG_(msgd)("cachegrind: distinct instrs:%d\n", distinct_instrs);
+      VG_(msgd)("cachegrind: debug lookups      : %d\n", debug_lookups);
       
       VG_(percentify)(full_debugs,      debug_lookups, 1, 6, buf1);
       VG_(percentify)(file_line_debugs, debug_lookups, 1, 6, buf2);
       VG_(percentify)(fn_debugs,        debug_lookups, 1, 6, buf3);
       VG_(percentify)(no_debugs,        debug_lookups, 1, 6, buf4);
-      VG_(dmsg)("cachegrind: with full      info:%s (%d)\n", 
+      VG_(msgd)("cachegrind: with full      info:%s (%d)\n", 
                 buf1, full_debugs);
-      VG_(dmsg)("cachegrind: with file/line info:%s (%d)\n", 
+      VG_(msgd)("cachegrind: with file/line info:%s (%d)\n", 
                 buf2, file_line_debugs);
-      VG_(dmsg)("cachegrind: with fn name   info:%s (%d)\n", 
+      VG_(msgd)("cachegrind: with fn name   info:%s (%d)\n", 
                 buf3, fn_debugs);
-      VG_(dmsg)("cachegrind: with zero      info:%s (%d)\n", 
+      VG_(msgd)("cachegrind: with zero      info:%s (%d)\n", 
                 buf4, no_debugs);
 
-      VG_(dmsg)("cachegrind: string table size: %lu\n",
+      VG_(msgd)("cachegrind: string table size: %lu\n",
                 VG_(OSetGen_Size)(stringTable));
-      VG_(dmsg)("cachegrind: CC table size: %lu\n",
+      VG_(msgd)("cachegrind: CC table size: %lu\n",
                 VG_(OSetGen_Size)(CC_table));
-      VG_(dmsg)("cachegrind: InstrInfo table size: %lu\n",
+      VG_(msgd)("cachegrind: InstrInfo table size: %lu\n",
                 VG_(OSetGen_Size)(instrInfoTable));
    }
 }
@@ -1669,7 +1669,7 @@ static void parse_cache_opt ( cache_t* cache, Char* opt, Char* optval )
 
    checkRes = check_cache(cache);
    if (checkRes) {
-      VG_(msgf)(checkRes);
+      VG_(msgf)("%s", checkRes);
       goto bad;
    }
 
