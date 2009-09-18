@@ -120,6 +120,7 @@ struct _MCEnv;
 static IRType  shadowTypeV ( IRType ty );
 static IRExpr* expr2vbits ( struct _MCEnv* mce, IRExpr* e );
 static IRTemp  findShadowTmpB ( struct _MCEnv* mce, IRTemp orig );
+static void    schemeS ( struct _MCEnv* mce, IRStmt* st );
 
 
 /*------------------------------------------------------------*/
@@ -177,9 +178,10 @@ typedef
          instrumentation process. */
       XArray* /* of TempMapEnt */ tmpMap;
 
-      /* MODIFIED: indicates whether "bogus" literals have so far been
-         found.  Starts off False, and may change to True. */
-      Bool    bogusLiterals;
+      /* READONLY: indicates whether we should use the "expensive" or
+         "normal" V-bit tracking schemes.  See big comment just before
+         stRequiresExpensive(). */
+      Bool expensiveV;
 
       /* READONLY: the guest layout.  This indicates which parts of
          the guest state should be regarded as 'always defined'. */
@@ -1632,6 +1634,42 @@ IRAtom* expensiveAddSub ( MCEnv*  mce,
 }
 
 
+/* A better interpretation for Ctz# (count trailing zeroes).
+
+   Previously, we just pessimised this, viz:
+
+   Ctz#(x, x#) = PCast(x#).
+
+   However, with the advent of SSE2 strlen routines based on
+   pmovmskb(GetMSBs8x8) followed by bsf(Ctz32), we need to do better.
+   Specifically we are asked to count the trailing zeroes in a word
+   which has a rightmost defined 1 but undefined bits to the left of
+   it; that's ok.
+
+   The fix is to compute an improvement mask, which has a 0 for all
+   bit positions to the left of the rightmost 1 in the word, and AND
+   this into x# before the PCast.  Since 0 denotes "defined", this
+   causes us to ignore the undefinedness of any bits to the left of
+   the rightmost 1 bit.  Of course if the rightmost 1 bit or any of
+   the zeroes to its right are undefined then the result as a whole is
+   still undefined.
+
+   Hence: Ctz#(x, x#) = let improver = x ^ (x-1)
+                            improved = x# & improver
+                        in  PCast(improved)
+
+   eg: x               = UUUUU10000,   x# = 1111100000
+       x-1             = UUUUU01111
+       x ^ (x-1)       = 0000011111  (improver)
+       x# & improver   = 1111100000 & 0000011111 = 0000000000 (improved)
+       PCast(improved) = 0000000000 ("all defined")
+
+       x               = UUUUU10000,   x# = 1111110000  (rightmost 1 is undef)
+       x-1             = UUUUU01111
+       x ^ (x-1)       = 0000011111  (improver)
+       x# & improver   = 1111110000 & 0000011111 = 0000010000 (improved)
+       PCast(improved) = 1111111111 ("all undefined")
+*/
 static
 IRAtom* expensiveCountTrailingZeroes32 ( MCEnv* mce,
                                          IRAtom* aa, IRAtom* aav )
@@ -2510,13 +2548,13 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
          return mkLazy2(mce, Ity_I64, vatom1, vatom2);
 
       case Iop_Add32:
-         if (mce->bogusLiterals)
+         if (mce->expensiveV)
             return expensiveAddSub(mce,True,Ity_I32, 
                                    vatom1,vatom2, atom1,atom2);
          else
             goto cheap_AddSub32;
       case Iop_Sub32:
-         if (mce->bogusLiterals)
+         if (mce->expensiveV)
             return expensiveAddSub(mce,False,Ity_I32, 
                                    vatom1,vatom2, atom1,atom2);
          else
@@ -2533,13 +2571,13 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
          return doCmpORD(mce, op, vatom1,vatom2, atom1,atom2);
 
       case Iop_Add64:
-         if (mce->bogusLiterals)
+         if (mce->expensiveV)
             return expensiveAddSub(mce,True,Ity_I64, 
                                    vatom1,vatom2, atom1,atom2);
          else
             goto cheap_AddSub64;
       case Iop_Sub64:
-         if (mce->bogusLiterals)
+         if (mce->expensiveV)
             return expensiveAddSub(mce,False,Ity_I64, 
                                    vatom1,vatom2, atom1,atom2);
          else
@@ -2562,7 +2600,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
 
       case Iop_CmpEQ64: 
       case Iop_CmpNE64:
-         if (mce->bogusLiterals)
+         if (mce->expensiveV)
             goto expensive_cmp64;
          else
             goto cheap_cmp64;
@@ -2579,7 +2617,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
 
       case Iop_CmpEQ32: 
       case Iop_CmpNE32:
-         if (mce->bogusLiterals)
+         if (mce->expensiveV)
             goto expensive_cmp32;
          else
             goto cheap_cmp32;
@@ -2597,7 +2635,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
 
       case Iop_CmpEQ16:
       case Iop_CmpNE16:
-         if (mce->bogusLiterals)
+         if (mce->expensiveV)
             goto expensive_cmp16;
          else
             goto cheap_cmp16;
@@ -3935,8 +3973,41 @@ static void do_shadow_CAS_double ( MCEnv* mce, IRCAS* cas )
 /*--- Memcheck main                                        ---*/
 /*------------------------------------------------------------*/
 
-static void schemeS ( MCEnv* mce, IRStmt* st );
+/* Figure out whether we should use the "normal" or the "expensive"
+   instrumentation schemes for V bit tracking.  We hope that for the
+   vast majority of blocks we can get away with the normal scheme.
+   But there are a few cases, mostly to do with highly optimised
+   strlen implementations, where extra accuracy is needed.  Hence we
+   first scan the block looking for evidence that the expensive
+   schemes are needed.
 
+   What's affected?
+
+   * Add32 Sub32 Add64 Sub64 (expensiveAddSub) 
+
+   * CmpEQ16 CmpNE16 CmpEQ32 CmpNE32 CmpEQ64 CmpNE64
+     (expensiveCmpEQorNE)
+
+   All other primops have unchanging interpretations.
+
+   ExpCmpNE{8,16,32,64} always use the expensive interpretation for
+   EQ/NE.  The need to do so is flagged by the front ends, though; we
+   don't establish that here.
+
+   What evidence do we look for?
+
+   * literals of the form 0xFEFEFEFF and related values, which show up
+     in code that does zero-byte detection in 32/64-bit words by games
+     to do with carry chain propagation.  This necessitates use of
+     more accurate Add and Sub interpretation.  It may well be that
+     this requires expensive EQ/NE interpretations, although I can't
+     remember the reason.
+
+   * appearance of GetMSBs8x8, requiring expensive EQ/NE
+     interpretations for the degenerate-case (argument-is-zero) guards
+     for {Ctz,Clz}{32,64}, since the output from GetMSBs8x8 is fed
+     into a Ctz/Clz operation in x86/amd64 SSE2-based strlen routines.
+*/
 static Bool isBogusAtom ( IRAtom* at )
 {
    ULong n = 0;
@@ -3969,7 +4040,7 @@ static Bool isBogusAtom ( IRAtom* at )
           );
 }
 
-static Bool checkForBogusLiterals ( /*FLAT*/ IRStmt* st )
+static Bool stRequiresExpensive ( /*FLAT*/ IRStmt* st )
 {
    Int      i;
    IRExpr*  e;
@@ -4064,7 +4135,7 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
                         IRType gWordTy, IRType hWordTy )
 {
    Bool    verboze = 0||False;
-   Bool    bogus;
+   Bool    expensiveV;
    Int     i, j, first_stmt;
    IRStmt* st;
    MCEnv   mce;
@@ -4095,11 +4166,11 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
       .sb->tyenv and .tmpMap together, so the valid index-set for
       those two arrays should always be identical. */
    VG_(memset)(&mce, 0, sizeof(mce));
-   mce.sb             = sb_out;
-   mce.trace          = verboze;
-   mce.layout         = layout;
-   mce.hWordTy        = hWordTy;
-   mce.bogusLiterals  = False;
+   mce.sb          = sb_out;
+   mce.trace       = verboze;
+   mce.layout      = layout;
+   mce.hWordTy     = hWordTy;
+   mce.expensiveV  = False;
 
    mce.tmpMap = VG_(newXA)( VG_(malloc), "mc.MC_(instrument).1", VG_(free),
                             sizeof(TempMapEnt));
@@ -4113,12 +4184,12 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    tl_assert( VG_(sizeXA)( mce.tmpMap ) == sb_in->tyenv->types_used );
 
    /* Make a preliminary inspection of the statements, to see if there
-      are any dodgy-looking literals.  If there are, we generate
-      extra-detailed (hence extra-expensive) instrumentation in
-      places.  Scan the whole bb even if dodgyness is found earlier,
-      so that the flatness assertion is applied to all stmts. */
+      we need to use the expensive V-bit instrumentation schemes, as
+      per comment at the start of this fn.  Scan the whole sb even if
+      dodgyness is found earlier, so that the flatness assertion is
+      applied to all stmts. */
 
-   bogus = False;
+   expensiveV = False;
 
    for (i = 0; i < sb_in->stmts_used; i++) {
 
@@ -4126,10 +4197,10 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
 
-      if (!bogus) {
-         bogus = checkForBogusLiterals(st);
-         if (0 && bogus) {
-            VG_(printf)("bogus: ");
+      if (!expensiveV) {
+         expensiveV = stRequiresExpensive(st);
+         if (0 && expensiveV) {
+            VG_(printf)("expensiveV: ");
             ppIRStmt(st);
             VG_(printf)("\n");
          }
@@ -4137,7 +4208,7 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
 
    }
 
-   mce.bogusLiterals = bogus;
+   mce.expensiveV = expensiveV;
 
    /* Copy verbatim any IR preamble preceding the first IMark */
 
