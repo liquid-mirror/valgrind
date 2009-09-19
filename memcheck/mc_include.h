@@ -458,22 +458,38 @@ VG_REGPARM(0) void MC_(helperc_value_check4_fail_no_o) ( void );
 VG_REGPARM(0) void MC_(helperc_value_check1_fail_no_o) ( void );
 VG_REGPARM(0) void MC_(helperc_value_check0_fail_no_o) ( void );
 
-/* V-bits load/store helpers */
+/* V-bits load/store helpers.  64-bit loads have 3 variants: the plain
+   variant, which really is 64-bit, and the LA64of128 and HA64of128
+   variants, which denote that the load is actually the low or high
+   addressed half of a 128-bit load.  These variants all behave the
+   same in the fast paths; they are only distinguished so that
+   mc_LOADVn_slow knows they are components of 128-bit loads when it
+   comes to deciding the precise circumstances under which an
+   addressing error should be reported. */
+
+typedef
+   enum { MoNone=99, MoLA64of128, MoHA64of128 }
+   Modifier;
+
 VG_REGPARM(1) void MC_(helperc_STOREV64be) ( Addr, ULong );
 VG_REGPARM(1) void MC_(helperc_STOREV64le) ( Addr, ULong );
 VG_REGPARM(2) void MC_(helperc_STOREV32be) ( Addr, UWord );
 VG_REGPARM(2) void MC_(helperc_STOREV32le) ( Addr, UWord );
 VG_REGPARM(2) void MC_(helperc_STOREV16be) ( Addr, UWord );
 VG_REGPARM(2) void MC_(helperc_STOREV16le) ( Addr, UWord );
-VG_REGPARM(2) void MC_(helperc_STOREV8)   ( Addr, UWord );
+VG_REGPARM(2) void MC_(helperc_STOREV8)    ( Addr, UWord );
 
-VG_REGPARM(1) ULong MC_(helperc_LOADV64be) ( Addr );
-VG_REGPARM(1) ULong MC_(helperc_LOADV64le) ( Addr );
-VG_REGPARM(1) UWord MC_(helperc_LOADV32be) ( Addr );
-VG_REGPARM(1) UWord MC_(helperc_LOADV32le) ( Addr );
-VG_REGPARM(1) UWord MC_(helperc_LOADV16be) ( Addr );
-VG_REGPARM(1) UWord MC_(helperc_LOADV16le) ( Addr );
-VG_REGPARM(1) UWord MC_(helperc_LOADV8)    ( Addr );
+VG_REGPARM(1) ULong MC_(helperc_LOADV64be)           ( Addr );
+VG_REGPARM(1) ULong MC_(helperc_LOADV64be_LA64of128) ( Addr );
+VG_REGPARM(1) ULong MC_(helperc_LOADV64be_HA64of128) ( Addr );
+VG_REGPARM(1) ULong MC_(helperc_LOADV64le)           ( Addr );
+VG_REGPARM(1) ULong MC_(helperc_LOADV64le_LA64of128) ( Addr );
+VG_REGPARM(1) ULong MC_(helperc_LOADV64le_HA64of128) ( Addr );
+VG_REGPARM(1) UWord MC_(helperc_LOADV32be)           ( Addr );
+VG_REGPARM(1) UWord MC_(helperc_LOADV32le)           ( Addr );
+VG_REGPARM(1) UWord MC_(helperc_LOADV16be)           ( Addr );
+VG_REGPARM(1) UWord MC_(helperc_LOADV16le)           ( Addr );
+VG_REGPARM(1) UWord MC_(helperc_LOADV8)              ( Addr );
 
 void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
                                                  Addr nia );

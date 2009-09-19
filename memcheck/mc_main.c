@@ -1151,7 +1151,7 @@ static
 #ifndef PERF_FAST_LOADV
 INLINE
 #endif
-ULong mc_LOADVn_slow ( Addr a, SizeT nBits, Bool bigendian )
+ULong mc_LOADVn_slow ( Addr a, SizeT nBits, Bool bigendian, Modifier mo )
 {
    /* Make up a 64-bit result V word, which contains the loaded data for
       valid addresses and Defined for invalid addresses.  Iterate over
@@ -1162,7 +1162,6 @@ ULong mc_LOADVn_slow ( Addr a, SizeT nBits, Bool bigendian )
    SSizeT i;                        // Must be signed.
    SizeT n_addrs_bad = 0;
    Addr  ai;
-   Bool  partial_load_exemption_applies;
    UChar vbits8;
    Bool  ok;
 
@@ -1211,26 +1210,37 @@ ULong mc_LOADVn_slow ( Addr a, SizeT nBits, Bool bigendian )
       vbits64 |= vbits8;
    }
 
-   /* This is a hack which avoids producing errors for code which
-      insists in stepping along byte strings in aligned word-sized
-      chunks, and there is a partially defined word at the end.  (eg,
-      optimised strlen).  Such code is basically broken at least WRT
-      semantics of ANSI C, but sometimes users don't have the option
-      to fix it, and so this option is provided.  Note it is now
-      defaulted to not-engaged.
+   /* If there's an addressing error, report it, unless we can find 
+      some reason to ignore it. */
+   if (n_addrs_bad > 0) {
+      /* This is a hack which avoids producing errors for code which
+         insists in stepping along byte strings in aligned word-sized
+         chunks, and there is a partially defined word at the end.
+         (eg, optimised strlen).  Such code is basically broken at
+         least WRT semantics of ANSI C, but sometimes users don't have
+         the option to fix it, and so this option is provided.  Note
+         it is now defaulted to not-engaged.
 
-      A load from a partially-addressible place is allowed if:
-      - the command-line flag is set
-      - it's a word-sized, word-aligned load
-      - at least one of the addresses in the word *is* valid
-   */
-   partial_load_exemption_applies
-      = MC_(clo_partial_loads_ok) && szB == VG_WORDSIZE 
-                                   && VG_IS_WORD_ALIGNED(a) 
-                                   && n_addrs_bad < VG_WORDSIZE;
+         A load from a partially-addressible place is allowed if:
+         - the command-line flag is set
+         - it's a word-sized, word-aligned load
+         - at least one of the addresses in the word *is* valid
+      */
+      Bool partial_load_exemption_applies
+         = MC_(clo_partial_loads_ok) 
+           && szB == VG_WORDSIZE 
+           && VG_IS_WORD_ALIGNED(a) 
+           && n_addrs_bad < VG_WORDSIZE;
+      Bool sse2_strlen_exemption_applies
+         = szB == 8 
+           && (mo == MoLA64of128 || mo == MoHA64of128);
 
-   if (n_addrs_bad > 0 && !partial_load_exemption_applies)
-      MC_(record_address_error)( VG_(get_running_tid)(), a, szB, False );
+      /* If we can't find any reason not to, report the error. */
+      if (! (partial_load_exemption_applies
+             || sse2_strlen_exemption_applies))
+         MC_(record_address_error)( VG_(get_running_tid)(),
+                                    a, szB, False );
+   }
 
    return vbits64;
 }
@@ -3921,7 +3931,7 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, Char* s,
 /* ------------------------ Size = 8 ------------------------ */
 
 static INLINE
-ULong mc_LOADV64 ( Addr a, Bool isBigEndian )
+ULong mc_LOADV64 ( Addr a, Bool isBigEndian, Modifier mo )
 {
    PROF_EVENT(200, "mc_LOADV64");
 
@@ -3934,7 +3944,7 @@ ULong mc_LOADV64 ( Addr a, Bool isBigEndian )
 
       if (UNLIKELY( UNALIGNED_OR_HIGH(a,64) )) {
          PROF_EVENT(201, "mc_LOADV64-slow1");
-         return (ULong)mc_LOADVn_slow( a, 64, isBigEndian );
+         return (ULong)mc_LOADVn_slow( a, 64, isBigEndian, mo );
       }
 
       sm       = get_secmap_for_reading_low(a);
@@ -3951,7 +3961,7 @@ ULong mc_LOADV64 ( Addr a, Bool isBigEndian )
       } else {
          /* Slow case: the 8 bytes are not all-defined or all-undefined. */
          PROF_EVENT(202, "mc_LOADV64-slow2");
-         return mc_LOADVn_slow( a, 64, isBigEndian );
+         return mc_LOADVn_slow( a, 64, isBigEndian, mo );
       }
    }
 #endif
@@ -3959,11 +3969,28 @@ ULong mc_LOADV64 ( Addr a, Bool isBigEndian )
 
 VG_REGPARM(1) ULong MC_(helperc_LOADV64be) ( Addr a )
 {
-   return mc_LOADV64(a, True);
+   return mc_LOADV64(a, True, MoNone);
 }
+VG_REGPARM(1) ULong MC_(helperc_LOADV64be_LA64of128) ( Addr a )
+{
+   return mc_LOADV64(a, True, MoLA64of128);
+}
+VG_REGPARM(1) ULong MC_(helperc_LOADV64be_HA64of128) ( Addr a )
+{
+   return mc_LOADV64(a, True, MoHA64of128);
+}
+
 VG_REGPARM(1) ULong MC_(helperc_LOADV64le) ( Addr a )
 {
-   return mc_LOADV64(a, False);
+   return mc_LOADV64(a, False, MoNone);
+}
+VG_REGPARM(1) ULong MC_(helperc_LOADV64le_LA64of128) ( Addr a )
+{
+   return mc_LOADV64(a, False, MoLA64of128);
+}
+VG_REGPARM(1) ULong MC_(helperc_LOADV64le_HA64of128) ( Addr a )
+{
+   return mc_LOADV64(a, False, MoHA64of128);
 }
 
 
@@ -4042,7 +4069,7 @@ UWord mc_LOADV32 ( Addr a, Bool isBigEndian )
 
       if (UNLIKELY( UNALIGNED_OR_HIGH(a,32) )) {
          PROF_EVENT(221, "mc_LOADV32-slow1");
-         return (UWord)mc_LOADVn_slow( a, 32, isBigEndian );
+         return (UWord)mc_LOADVn_slow( a, 32, isBigEndian, MoNone );
       }
 
       sm      = get_secmap_for_reading_low(a);
@@ -4061,7 +4088,7 @@ UWord mc_LOADV32 ( Addr a, Bool isBigEndian )
       } else {
          /* Slow case: the 4 bytes are not all-defined or all-undefined. */
          PROF_EVENT(222, "mc_LOADV32-slow2");
-         return (UWord)mc_LOADVn_slow( a, 32, isBigEndian );
+         return (UWord)mc_LOADVn_slow( a, 32, isBigEndian, MoNone );
       }
    }
 #endif
@@ -4158,7 +4185,7 @@ UWord mc_LOADV16 ( Addr a, Bool isBigEndian )
 
       if (UNLIKELY( UNALIGNED_OR_HIGH(a,16) )) {
          PROF_EVENT(241, "mc_LOADV16-slow1");
-         return (UWord)mc_LOADVn_slow( a, 16, isBigEndian );
+         return (UWord)mc_LOADVn_slow( a, 16, isBigEndian, MoNone );
       }
 
       sm      = get_secmap_for_reading_low(a);
@@ -4178,7 +4205,7 @@ UWord mc_LOADV16 ( Addr a, Bool isBigEndian )
          else {
             /* Slow case: the two bytes are not all-defined or all-undefined. */
             PROF_EVENT(242, "mc_LOADV16-slow2");
-            return (UWord)mc_LOADVn_slow( a, 16, isBigEndian );
+            return (UWord)mc_LOADVn_slow( a, 16, isBigEndian, MoNone );
          }
       }
    }
@@ -4270,7 +4297,7 @@ UWord MC_(helperc_LOADV8) ( Addr a )
 
       if (UNLIKELY( UNALIGNED_OR_HIGH(a,8) )) {
          PROF_EVENT(261, "mc_LOADV8-slow1");
-         return (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+         return (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/, MoNone );
       }
 
       sm      = get_secmap_for_reading_low(a);
@@ -4290,7 +4317,7 @@ UWord MC_(helperc_LOADV8) ( Addr a )
          else {
             /* Slow case: the byte is not all-defined or all-undefined. */
             PROF_EVENT(262, "mc_LOADV8-slow2");
-            return (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+            return (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/, MoNone );
          }
       }
    }

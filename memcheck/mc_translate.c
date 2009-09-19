@@ -2855,7 +2855,8 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
 /* Worker function; do not call directly. */
 static
 IRAtom* expr2vbits_Load_WRK ( MCEnv* mce, 
-                              IREndness end, IRType ty, 
+                              IREndness end, IRType ty,
+                              Modifier mo,
                               IRAtom* addr, UInt bias )
 {
    void*    helper;
@@ -2866,6 +2867,8 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
 
    tl_assert(isOriginalAtom(mce,addr));
    tl_assert(end == Iend_LE || end == Iend_BE);
+   if (ty != Ity_I64)
+      tl_assert(mo == MoNone);
 
    /* First, emit a definedness test for the address.  This also sets
       the address (shadow) to 'defined' following the test. */
@@ -2877,37 +2880,68 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
 
    if (end == Iend_LE) {   
       switch (ty) {
-         case Ity_I64: helper = &MC_(helperc_LOADV64le);
-                       hname = "MC_(helperc_LOADV64le)";
-                       break;
-         case Ity_I32: helper = &MC_(helperc_LOADV32le);
-                       hname = "MC_(helperc_LOADV32le)";
-                       break;
-         case Ity_I16: helper = &MC_(helperc_LOADV16le);
-                       hname = "MC_(helperc_LOADV16le)";
-                       break;
-         case Ity_I8:  helper = &MC_(helperc_LOADV8);
-                       hname = "MC_(helperc_LOADV8)";
-                       break;
-         default:      ppIRType(ty);
-                       VG_(tool_panic)("memcheck:do_shadow_Load(LE)");
+         case Ity_I64:
+            if (mo == MoLA64of128) {
+               helper = &MC_(helperc_LOADV64le_LA64of128);
+               hname  = "MC_(helperc_LOADV64le_LA64of128)";
+            }
+            else if (mo == MoHA64of128) {
+               helper = &MC_(helperc_LOADV64le_HA64of128);
+               hname  = "MC_(helperc_LOADV64le_HA64of128)";
+            }
+            else {
+               tl_assert(mo == MoNone);
+               helper = &MC_(helperc_LOADV64le);
+               hname  = "MC_(helperc_LOADV64le)";
+            }
+            break;
+         case Ity_I32:
+            helper = &MC_(helperc_LOADV32le);
+            hname = "MC_(helperc_LOADV32le)";
+            break;
+         case Ity_I16:
+            helper = &MC_(helperc_LOADV16le);
+            hname = "MC_(helperc_LOADV16le)";
+            break;
+         case Ity_I8:
+            helper = &MC_(helperc_LOADV8);
+            hname = "MC_(helperc_LOADV8)";
+            break;
+         default:
+            ppIRType(ty);
+            VG_(tool_panic)("memcheck:do_shadow_Load(LE)");
       }
    } else {
       switch (ty) {
-         case Ity_I64: helper = &MC_(helperc_LOADV64be);
-                       hname = "MC_(helperc_LOADV64be)";
-                       break;
-         case Ity_I32: helper = &MC_(helperc_LOADV32be);
-                       hname = "MC_(helperc_LOADV32be)";
-                       break;
-         case Ity_I16: helper = &MC_(helperc_LOADV16be);
-                       hname = "MC_(helperc_LOADV16be)";
-                       break;
-         case Ity_I8:  helper = &MC_(helperc_LOADV8);
-                       hname = "MC_(helperc_LOADV8)";
-                       break;
-         default:      ppIRType(ty);
-                       VG_(tool_panic)("memcheck:do_shadow_Load(BE)");
+         case Ity_I64:
+            if (mo == MoLA64of128) {
+               helper = &MC_(helperc_LOADV64be_LA64of128);
+               hname  = "MC_(helperc_LOADV64be_LA64of128)";
+            }
+            else if (mo == MoHA64of128) {
+               helper = &MC_(helperc_LOADV64be_HA64of128);
+               hname  = "MC_(helperc_LOADV64be_HA64of128)";
+            }
+            else {
+               helper = &MC_(helperc_LOADV64be);
+               hname  = "MC_(helperc_LOADV64be)";
+            }
+            break;
+         case Ity_I32:
+            helper = &MC_(helperc_LOADV32be);
+            hname = "MC_(helperc_LOADV32be)";
+            break;
+         case Ity_I16:
+            helper = &MC_(helperc_LOADV16be);
+            hname = "MC_(helperc_LOADV16be)";
+            break;
+         case Ity_I8:
+            helper = &MC_(helperc_LOADV8);
+            hname = "MC_(helperc_LOADV8)";
+            break;
+         default:
+            ppIRType(ty);
+            VG_(tool_panic)("memcheck:do_shadow_Load(BE)");
       }
    }
 
@@ -2950,14 +2984,18 @@ IRAtom* expr2vbits_Load ( MCEnv* mce,
       case Ity_I16: 
       case Ity_I32: 
       case Ity_I64:
-         return expr2vbits_Load_WRK(mce, end, ty, addr, bias);
+         return expr2vbits_Load_WRK(mce, end, ty, MoNone, addr, bias);
       case Ity_V128:
          if (end == Iend_LE) {
-            v64lo = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias);
-            v64hi = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias+8);
+            v64lo = expr2vbits_Load_WRK(mce, end, Ity_I64, MoLA64of128,
+                                        addr, bias);
+            v64hi = expr2vbits_Load_WRK(mce, end, Ity_I64, MoHA64of128,
+                                        addr, bias+8);
          } else {
-            v64hi = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias);
-            v64lo = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias+8);
+            v64hi = expr2vbits_Load_WRK(mce, end, Ity_I64, MoLA64of128,
+                                        addr, bias);
+            v64lo = expr2vbits_Load_WRK(mce, end, Ity_I64, MoHA64of128,
+                                        addr, bias+8);
          }
          return assignNew( 'V', mce, 
                            Ity_V128, 
