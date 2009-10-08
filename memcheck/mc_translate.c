@@ -1671,27 +1671,38 @@ IRAtom* expensiveAddSub ( MCEnv*  mce,
        PCast(improved) = 1111111111 ("all undefined")
 */
 static
-IRAtom* expensiveCountTrailingZeroes32 ( MCEnv* mce,
-                                         IRAtom* aa, IRAtom* aav )
+IRAtom* expensiveCountTrailingZeroes ( MCEnv* mce, IRType ty,
+                                       IRAtom* aa, IRAtom* aav )
 {
-   IRType ty;
-   IRAtom *improver, *improved;
+   IROp   opXOR, opSUB, opAND;
+   IRAtom *improver, *improved, *one;
    tl_assert(isShadowAtom(mce,aav));
    tl_assert(isOriginalAtom(mce,aa));
    tl_assert(sameKindedAtoms(aav,aa));
 
-   ty = Ity_I32;
+   switch (ty) {
+      case Ity_I32:
+         opXOR = Iop_Xor32; opSUB = Iop_Sub32;
+         opAND = Iop_And32; one = mkU32(1);
+         break;
+      case Ity_I64:
+         opXOR = Iop_Xor64; opSUB = Iop_Sub64;
+         opAND = Iop_And64; one = mkU64(1);
+         break;
+      default:
+         VG_(tool_panic)("expensiveCountTrailingZeroes");
+   }
+
    // improver = aa ^ (aa - 1)
-   improver = assignNew('V', mce,ty,
-                        binop(Iop_Xor32,
-                              aa,
-                              assignNew('V', mce,ty,
-                                        binop(Iop_Sub32,
-                                              aa,
-                                              mkU32(1)))));
+   improver
+      = assignNew('V', mce,ty,
+                  binop(opXOR,
+                        aa,
+                        assignNew('V', mce,ty,
+                                  binop(opSUB, aa, one))));
    // improved = aav & improver
    improved = assignNew('V', mce,ty,
-                        binop(Iop_And32, aav, improver));
+                        binop(opAND, aav, improver));
    // PCast(improved)
    return mkPCastTo(mce, ty, improved);
 }
@@ -2606,6 +2617,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
             goto cheap_cmp64;
 
       expensive_cmp64:
+      case Iop_ExpCmpNE64:
          return expensiveCmpEQorNE(mce,Ity_I64, vatom1,vatom2, atom1,atom2 );
 
       cheap_cmp64:
@@ -2779,15 +2791,16 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
       case Iop_RoundF64toF64_PosINF:
       case Iop_RoundF64toF64_ZERO:
       case Iop_Clz64:
-      case Iop_Ctz64:
          return mkPCastTo(mce, Ity_I64, vatom);
 
       case Iop_Clz32:
       case Iop_TruncF64asF32:
          return mkPCastTo(mce, Ity_I32, vatom);
 
+      case Iop_Ctz64:
+         return expensiveCountTrailingZeroes(mce, Ity_I64, atom, vatom);
       case Iop_Ctz32:
-         return expensiveCountTrailingZeroes32(mce, atom, vatom);
+         return expensiveCountTrailingZeroes(mce, Ity_I32, atom, vatom);
 
       case Iop_1Uto64:
       case Iop_8Uto64:
