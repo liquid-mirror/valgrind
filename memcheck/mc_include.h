@@ -380,8 +380,13 @@ void MC_(get_ClientBlock_array)( /*OUT*/CGenBlock** blocks,
 /*--- Command line options + defaults                      ---*/
 /*------------------------------------------------------------*/
 
-/* Allow loads from partially-valid addresses?  default: YES */
+/* Allow word-sized, word-aligned loads from partially-valid
+   addresses?  default: NO */
 extern Bool MC_(clo_partial_loads_ok);
+
+/* Allow 128-bit sized, 128-bit aligned loads from partially valid
+   addresses?  default: NO */
+extern Bool MC_(clo_partial_load128s_ok);
 
 /* Max volume of the freed blocks queue. */
 extern Long MC_(clo_freelist_vol);

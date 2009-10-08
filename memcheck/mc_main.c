@@ -1153,10 +1153,18 @@ INLINE
 #endif
 ULong mc_LOADVn_slow ( Addr a, SizeT nBits, Bool bigendian, Modifier mo )
 {
-   /* Make up a 64-bit result V word, which contains the loaded data for
-      valid addresses and Defined for invalid addresses.  Iterate over
-      the bytes in the word, from the most significant down to the
-      least. */
+   /* Make up a 64-bit result V word, which contains the loaded data
+      for valid addresses and Defined for invalid addresses.  Up to 64
+      V bits are returned, so this routine works for NBITS being 64,
+      32, 16, or 8.
+
+      The returned V bits are in the lowest NBITS bits of the returned
+      ULong, and are fished out of memory with endianness that is
+      consistent with BIGENDIAN.  For example, if NBITS is 64 and
+      BIGENDIAN is False, then bits 7:0 of the returned value are the
+      V bits for address A+0; but if BIGENDIAN is True the bits 7:0 of
+      the returned value are the V bits from A+7.
+   */
    ULong vbits64     = V_BITS64_UNDEFINED;
    SizeT szB         = nBits / 8;
    SSizeT i;                        // Must be signed.
@@ -1226,18 +1234,51 @@ ULong mc_LOADVn_slow ( Addr a, SizeT nBits, Bool bigendian, Modifier mo )
          - it's a word-sized, word-aligned load
          - at least one of the addresses in the word *is* valid
       */
-      Bool partial_load_exemption_applies
-         = MC_(clo_partial_loads_ok) 
-           && szB == VG_WORDSIZE 
-           && VG_IS_WORD_ALIGNED(a) 
-           && n_addrs_bad < VG_WORDSIZE;
-      Bool sse2_strlen_exemption_applies
-         = szB == 8 
-           && (mo == MoLA64of128 || mo == MoHA64of128);
+      Bool complain = True;
+
+      if (MC_(clo_partial_loads_ok)
+          && szB == VG_WORDSIZE && VG_IS_WORD_ALIGNED(a)
+          && (szB == 8 ? mo == MoNone : True)
+          && n_addrs_bad < VG_WORDSIZE)
+      {
+         complain = False;
+      }
+      else
+      if (MC_(clo_partial_load128s_ok)
+          && szB == 8 
+          && (mo == MoLA64of128 || mo == MoHA64of128)
+          && VG_IS_8_ALIGNED(a)) {
+         /* Examine the entire containing 128-bit aligned, 128-bit
+            sized word, to see if there are any valid addresses in it.
+            We don't care about the endianness here, since we're
+            merely counting how many addresses are invalid.  (Could do
+            better!) */
+VG_(printf)("QQQQ a    = %#lx    mo = %d\n", a, (Int)mo);
+         Addr a128 = mo == MoLA64of128  ?  a  :  a-8;
+         if (VG_IS_16_ALIGNED(a128)) {
+            Int nab128 = 0;
+            for (i = 0; i < 16; i++) {
+               ai = a128 + i;
+               ok = get_vbits8(ai, &vbits8);
+               if (!ok) nab128++;
+            }
+            /* So, there are NAB128 bad addresses in the containing
+               16-byte block.  There must be at least one (else how
+               did we get here?)  If not all of them are bad, let it
+               slide .. let the access through.  Note, we could do
+               much better here; viz, check for an initial prefix of
+               addressible bytes followed by unaddressable bytes,
+               since that's the expected use case (a zero-terminated
+               C-style string). */
+VG_(printf)("QQQQ a128 = %#lx   nab = %d\n", a128, (Int)nab128);
+            tl_assert(nab128 > 0);
+            if (nab128 < 16)
+               complain = False;
+         }
+      }
 
       /* If we can't find any reason not to, report the error. */
-      if (! (partial_load_exemption_applies
-             || sse2_strlen_exemption_applies))
+      if (complain)
          MC_(record_address_error)( VG_(get_running_tid)(),
                                     a, szB, False );
    }
@@ -1252,6 +1293,8 @@ INLINE
 #endif
 void mc_STOREVn_slow ( Addr a, SizeT nBits, ULong vbytes, Bool bigendian )
 {
+   /* The conventions w.r.t. byte ordering in VBYTES are the same as
+      for in mc_LOADVn_slow, detailed above. */
    SizeT szB = nBits / 8;
    SizeT i, n_addrs_bad = 0;
    UChar vbits8;
@@ -4681,6 +4724,7 @@ static Bool mc_expensive_sanity_check ( void )
 /*------------------------------------------------------------*/
 
 Bool          MC_(clo_partial_loads_ok)       = False;
+Bool          MC_(clo_partial_load128s_ok)    = False;
 Long          MC_(clo_freelist_vol)           = 10*1000*1000LL;
 LeakCheckMode MC_(clo_leak_check)             = LC_Summary;
 VgRes         MC_(clo_leak_resolution)        = Vg_HighRes;
@@ -4736,7 +4780,9 @@ static Bool mc_process_cmd_line_options(Char* arg)
       }
    }
 
-	if VG_BOOL_CLO(arg, "--partial-loads-ok", MC_(clo_partial_loads_ok)) {}
+        if VG_BOOL_CLO(arg, "--partial-loads-ok", MC_(clo_partial_loads_ok)) {}
+   else if VG_BOOL_CLO(arg, "--partial-load128s-ok",
+                                               MC_(clo_partial_load128s_ok)) {}
    else if VG_BOOL_CLO(arg, "--show-reachable",   MC_(clo_show_reachable))   {}
    else if VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",
                                             MC_(clo_workaround_gcc296_bugs)) {}
@@ -4806,6 +4852,7 @@ static void mc_print_usage(void)
 "    --undef-value-errors=no|yes      check for undefined value errors [yes]\n"
 "    --track-origins=no|yes           show origins of undefined values? [no]\n"
 "    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
+"    --partial-load128s-ok=no|yes     too hard to explain here; see manual [no]\n"
 "    --freelist-vol=<number>          volume of freed blocks queue [10000000]\n"
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
 "    --ignore-ranges=0xPP-0xQQ[,0xRR-0xSS]   assume given addresses are OK\n"
