@@ -1,0 +1,2 @@
+prog: pmovmskb64
+vgopts: -q

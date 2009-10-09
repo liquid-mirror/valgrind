@@ -1,0 +1,3 @@
+prog: pmovmskb32
+vgopts: -q
+prereq: ../../../tests/x86_amd64_features x86-sse2
