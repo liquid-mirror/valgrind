@@ -19,6 +19,10 @@ EXTRA_DIST = \
 	more_x87_fp.stderr.exp more_x87_fp.stdout.exp more_x87_fp.vgtest \
 	pmovmskb64.stderr.exp pmovmskb64.stdout.exp pmovmskb64.vgtest \
 	sse_memory.stderr.exp sse_memory.stdout.exp sse_memory.vgtest \
+	strlen-sse2-64-1.vgtest strlen-sse2-64-1.stdout.exp \
+		strlen-sse2-64-1.stderr.exp \
+	strlen-sse2-64-2.vgtest strlen-sse2-64-2.stdout.exp \
+		strlen-sse2-64-2.stderr.exp \
 	xor-undef-amd64.stderr.exp xor-undef-amd64.stdout.exp \
 	xor-undef-amd64.vgtest
 
@@ -28,6 +32,7 @@ check_PROGRAMS = \
 	bug132146 \
 	fxsave-amd64 \
 	pmovmskb64 \
+	strlen-sse2-64 \
 	xor-undef-amd64
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should

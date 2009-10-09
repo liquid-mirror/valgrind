@@ -1,0 +1,7 @@
+Invalid read of size 8
+   at 0x........: __strlen_sse2 (in /home/sewardj/VgTRUNK/ic111/memcheck/tests/amd64/strlen-sse2-64)
+   by 0x........: (below main)
+ Address 0x........ is 0 bytes inside a block of size 4 alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (strlen-sse2-64.c:50)
+

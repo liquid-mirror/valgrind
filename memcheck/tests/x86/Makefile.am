@@ -23,6 +23,10 @@ EXTRA_DIST = \
 	more_x86_fp.stderr.exp more_x86_fp.stdout.exp more_x86_fp.vgtest \
 	pmovmskb32.stderr.exp pmovmskb32.stdout.exp pmovmskb32.vgtest \
 	fprem.stderr.exp fprem.stdout.exp fprem.vgtest \
+	strlen-sse2-32-1.vgtest strlen-sse2-32-1.stdout.exp \
+		strlen-sse2-32-1.stderr.exp \
+	strlen-sse2-32-2.vgtest strlen-sse2-32-2.stdout.exp \
+		strlen-sse2-32-2.stderr.exp \
 	xor-undef-x86.stderr.exp xor-undef-x86.stdout.exp \
 	xor-undef-x86.vgtest
 
@@ -39,6 +43,7 @@ check_PROGRAMS = \
 	pushfw_x86 \
 	pushpopmem \
 	sse_memory \
+	strlen-sse2-32 \
 	tronical \
 	xor-undef-x86
 

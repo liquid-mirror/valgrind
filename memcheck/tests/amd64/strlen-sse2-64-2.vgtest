@@ -1,0 +1,2 @@
+prog: strlen-sse2-64
+vgopts: -q --partial-load128s-ok=yes

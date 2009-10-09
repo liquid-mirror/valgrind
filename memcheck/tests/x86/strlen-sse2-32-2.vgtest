@@ -1,0 +1,3 @@
+prog: strlen-sse2-32
+vgopts: -q --partial-load128s-ok=yes
+prereq: ../../../tests/x86_amd64_features x86-sse2
