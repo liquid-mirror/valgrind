@@ -1,0 +1,182 @@
+
+======== 32-bit cases ========
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:90)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:91)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:92)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:93)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:94)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 115900404
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:102)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 115900404
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:103)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 115900404
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 30
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:105)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 30
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 0
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 0
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 1
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:111)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 1
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try32 (bsf32.c:55)
+   by 0x........: main (bsf32.c:112)
+ Address 0x........ is on thread 1's stack
+
+ctz32 ( arg=0x........, undefbits=0x........ ) = 1
+
+Expect: no error
+ctz32 ( arg=0x........, undefbits=0x........ ) = 1
+
+======== 16-bit cases ========
+
+Expect: no error
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try16 (bsf32.c:75)
+   by 0x........: main (bsf32.c:119)
+ Address 0x........ is on thread 1's stack
+
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try16 (bsf32.c:75)
+   by 0x........: main (bsf32.c:120)
+ Address 0x........ is on thread 1's stack
+
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try16 (bsf32.c:75)
+   by 0x........: main (bsf32.c:121)
+ Address 0x........ is on thread 1's stack
+
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try16 (bsf32.c:75)
+   by 0x........: main (bsf32.c:122)
+ Address 0x........ is on thread 1's stack
+
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: ERROR
+Uninitialised byte(s) found during client check request
+   at 0x........: try16 (bsf32.c:75)
+   by 0x........: main (bsf32.c:123)
+ Address 0x........ is on thread 1's stack
+
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+
+Expect: no error
+ctz16 ( arg=0x........, undefbits=0x........ ) = 4
+

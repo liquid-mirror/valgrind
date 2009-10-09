@@ -9,6 +9,7 @@ EXTRA_DIST = \
 	$(addsuffix .stderr.exp,$(INSN_TESTS)) \
 	$(addsuffix .stdout.exp,$(INSN_TESTS)) \
 	$(addsuffix .vgtest,$(INSN_TESTS)) \
+	bsf64.stderr.exp bsf64.stdout.exp bsf64.vgtest \
 	bt_everything.stderr.exp bt_everything.stdout.exp \
 		bt_everything.vgtest \
 	bug132146.vgtest bug132146.stderr.exp bug132146.stdout.exp \
@@ -22,6 +23,7 @@ EXTRA_DIST = \
 	xor-undef-amd64.vgtest
 
 check_PROGRAMS = \
+	bsf64 \
 	bt_everything \
 	bug132146 \
 	fxsave-amd64 \

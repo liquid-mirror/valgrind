@@ -1,0 +1,2 @@
+prog: bsf32
+vgopts: -q
