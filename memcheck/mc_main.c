@@ -1253,8 +1253,8 @@ ULong mc_LOADVn_slow ( Addr a, SizeT nBits, Bool bigendian, Modifier mo )
             We don't care about the endianness here, since we're
             merely counting how many addresses are invalid.  (Could do
             better!) */
-VG_(printf)("QQQQ a    = %#lx    mo = %d\n", a, (Int)mo);
          Addr a128 = mo == MoLA64of128  ?  a  :  a-8;
+         if (0) VG_(printf)("QQQQ a    = %#lx    mo = %d\n", a, (Int)mo);
          if (VG_IS_16_ALIGNED(a128)) {
             Int nab128 = 0;
             for (i = 0; i < 16; i++) {
@@ -1270,7 +1270,7 @@ VG_(printf)("QQQQ a    = %#lx    mo = %d\n", a, (Int)mo);
                addressible bytes followed by unaddressable bytes,
                since that's the expected use case (a zero-terminated
                C-style string). */
-VG_(printf)("QQQQ a128 = %#lx   nab = %d\n", a128, (Int)nab128);
+            if (0) VG_(printf)("QQQQ a128 = %#lx   nab = %d\n", a128, (Int)nab128);
             tl_assert(nab128 > 0);
             if (nab128 < 16)
                complain = False;
