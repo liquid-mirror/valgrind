@@ -90,6 +90,14 @@
             "=r" (fp)               \
           : /* reads none */        \
           : "r0" /* trashed */ );
+#elif defined(VGP_arm_linux)
+#  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)     \
+      asm("mov %0, pc;"            \
+          "mov %1, sp;"            \
+          "mov %2, fp;"            \
+          : "=r" (pc),             \
+            "=r" (sp),             \
+            "=r" (fp));
 #else
 #  error Unknown platform
 #endif

@@ -1782,6 +1782,10 @@ void ML_(read_debuginfo_dwarf1) (
 #  define FP_REG         1
 #  define SP_REG         1
 #  define RA_REG_DEFAULT 8     // CAB: What's a good default ?
+#elif defined(VGP_arm_linux)
+#  define FP_REG         11
+#  define SP_REG         13
+#  define RA_REG_DEFAULT 14    //???
 #elif defined(VGP_x86_darwin)
 #  define FP_REG         5
 #  define SP_REG         4

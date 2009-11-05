@@ -447,6 +447,285 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       }
    }
 
+
+#  elif defined(VGP_arm_linux)
+   if (sps) sps[0] = sp;
+   if (fps) fps[0] = fp;
+   ips[0] = ip;
+   i = 1;
+
+
+   while (True) {
+      Addr prologue;
+      Addr scanaddr;
+      UInt *idx;
+      Int sp_delta = 0; //Offset to old SP from SP, used to recover SP for most functions
+
+      //Set if we spot LR being pushed on the stack
+      Bool tracking_lr = False;
+      Int lr_sp_delta = 0; // <input sp - lr_sp_delta = lr>, only valid if tracking_lr is true
+
+      //Set if we spot FP being pushed on the stack.
+      Bool tracking_fp = False;
+      Int fp_sp_delta = 0; // 
+
+      //We also save offsets from FP
+      //We use this if we can, as variadic functions will fail with SP method.
+      Int fp_lr_offset = 0; // Offset to LR from FP.
+      Int fp_sp_offset = 0; // Offset to old SP from FP.
+      Int fp_fp_offset = 0; // Offset to old FP from FP.
+
+      Bool fp_modified = False; //did anything in the prologue write to FP?
+
+      /* This one is pretty dirty
+       * It seems libc has a tendency of not using standard prologues at all, when it is about to execute a syscall.
+       * In many cases following LR is enough, but we also need to know if the stack was modified.
+       *
+       * If we detect we are trying to generate a stacktrace from a syscall AND we didn't find any "standard" prologue, 
+       * try instead to search backwards from IP, to locate any operations that modify SP (and pick up LR,FP if we find them)
+       *
+       * Not being able to do stacktraces from syscalls decreases the usefulness of memcheck quite a bit, so we go to length to
+       * hack around it. (gdb does not)
+       *
+       */
+      Bool reverse = 0;
+      Bool svc_hack = 0;
+
+      if(debug) {
+         VG_(printf)("i: %d, ip: 0x%x, sp: 0x%x, fp: 0x%x\n",i,(unsigned int)ip,(unsigned int)sp,(unsigned int)fp);
+      }
+
+      if (i >= max_n_ips)
+         break;
+
+      prologue = 0; //VG_(get_fnaddr)(ip);
+      if(prologue != 0){
+         scanaddr = prologue;
+         /* Stack unwinding on ARM is EXTREMELY gnarley. We scan
+          * through the function looking for stuff that affects the stack
+          * pointer in order to figure out what the frame looks like. A lot of this
+          * has been taken from GDB and then hacked up. We really only care about
+          * the EABI calling convention here (feel free to support more ^_^) which is
+          *
+          * push {..., lr}
+          * ...
+          * sub sp, sp, #??
+          *
+          * for functions of fixed arity, and
+          * 
+          * xxx
+          * xxx
+          * xxx
+          *
+          * for variadic functions. To make sure we don't slam into the next function,
+          * we only scan the range between the beginning of the function and the point at
+          * which we called the child, since in order to call the child, the prologue must
+          * have executed to make sure the function can get back. If this is the lowest frame,
+          * we do the same only between [the function's entry, the current pc)
+          */
+
+//See comment above regarding retry, 'reverse' and svc_hack
+         if(*(UInt*)(ip-4) == 0xEF000000) {
+            svc_hack = True;
+         }
+retry: 
+
+         for(idx=(UInt *)scanaddr; idx<(UInt *)ip ;(reverse ? idx-- : idx++)){
+            UInt insn = *idx;
+
+            if(svc_hack && idx < (UInt*)prologue) {
+               break;
+            }
+            if(0) 
+               VG_(printf)("Decoding 0x%x, insn: 0x%x\n",(UInt)idx,insn);
+            if (insn == 0xe52de004 || (i == 1 && (insn & 0xe52d0004) == 0xe52d0004) )   /* str ??, [sp, #-4]! a.k.a. push {one register} */
+            {
+               if(tracking_lr) {
+                  lr_sp_delta+=4;
+               }
+               if(tracking_fp)
+                  fp_sp_delta+=4;
+ 
+               if(insn == 0xe52de004) { /* str lr, [sp, #-4]! */
+                  tracking_lr = True;
+               if(debug) 
+                  VG_(printf)("Backtrace: str lr,[sp, #-4]!\n");
+               }
+               if(insn == 0xe52db004) { /* str fp, [sp, #-4]! */
+                  tracking_fp = True;
+                  if(debug) 
+                     VG_(printf)("Backtrace: str fp,[sp, #-4]!\n");
+               }
+              sp_delta += 4;
+               continue;
+            } else if ((insn & 0xffff0000) == 0xe92d0000)
+            {
+               int mask = insn & 0xffff;
+               int regno;
+
+               /* Calculate offsets of saved registers.  */
+               for (regno = 15; regno >= 0; regno--)
+               {
+
+                  if (mask & (1 << regno))
+                  {
+                     if(tracking_lr == True) { 
+                        lr_sp_delta+=4; //where is LR
+                     }
+                     if(tracking_fp == True) {
+                        fp_sp_delta+=4;
+                     }
+                     if(regno == 14) { 
+                        tracking_lr = True;
+                     }
+                     if(regno == 11) {
+                        tracking_fp = True;
+                     }
+                     sp_delta += 4; 
+                  }
+               }
+               if(debug)
+                  VG_(printf)("push {...} lr_sp_delta: %d sp_delta: %d, tracking_lr=%d, tracking_fp=%d\n",lr_sp_delta,sp_delta,tracking_lr,tracking_fp);
+               continue;
+            } else if ((insn & 0xfffff000) == 0xe24dd000)   /* sub sp, sp #n */
+            {
+               unsigned imm = insn & 0xff;         /* immediate value */
+               unsigned rot = (insn & 0xf00) >> 7;      /* rotate amount */
+               imm = (imm >> rot) | (imm << (32 - rot));
+               if(debug)
+                  VG_(printf)("sub sp,sp #%d\n",imm);
+               if(tracking_lr == True) {
+                  lr_sp_delta += imm;
+               }
+               if(tracking_fp == True) {
+                  fp_sp_delta += imm;
+               }
+               sp_delta += imm;
+               continue;
+            } else if((insn & 0xfffff000) == 0xe28DB000) { /* add fp, sp, #n */
+               unsigned imm = insn & 0xff;         /* immediate value */
+               unsigned rot = (insn & 0xf00) >> 7;      /* rotate amount */
+               imm = (imm >> rot) | (imm << (32 - rot));
+               fp_modified = True;
+               fp_sp_offset = sp_delta - imm;
+               fp_lr_offset = lr_sp_delta - imm;
+               fp_fp_offset = fp_sp_delta - imm;
+               if(debug) {
+                  VG_(printf)("add fp,sp, #%d\n",imm);
+                  VG_(printf)("fp_sp_offset: %d, fp_lr_offset: %d,fp_fp_offset: %d\n",fp_sp_offset,fp_lr_offset,fp_fp_offset);
+               }
+               continue;
+            } else if ((insn & 0xf0000000) != 0xe0000000) {
+               break;         /* Condition not true, exit early */
+            //Syscall hack -- deal with pop.
+            //XXX: We may need to deal with ldr (1 reg pop), haven't seen any code that needs it though.
+            //
+            //Since we are iterating backwards, we really don't know if someone stashed LR/FP on the stack
+            //So we just assume that both lr and fp are on the stack, and the variables will be set later.
+            //This is safe, as the booleans controlling if they are set or not will only be set if they actually get pushed at some point.
+            } else if(svc_hack && ((insn & 0xffff0000) == 0xe8bd0000)) { //LDM (POP)
+               int mask = insn & 0xffff;
+               int regno;
+               for (regno = 15; regno >= 0; regno--)
+               {
+                  if (mask & (1 << regno))
+                  {
+                     lr_sp_delta-=4; //where is LR
+                     fp_sp_delta-=4;
+                     sp_delta -= 4; 
+                  }
+               }
+            } else {
+               /* The optimizer might shove anything into the prologue,
+                  so we just skip what we don't recognize.  */
+               if(0)
+                  VG_(printf)("Ignoring %x\n",insn);
+               continue;
+            }
+         }
+      }
+      if(svc_hack && !reverse && !tracking_lr && !fp_modified && !tracking_fp) {
+         reverse = True;
+         scanaddr = ip - 4;
+         goto retry;
+      }
+
+      if(tracking_lr){
+         if(fp_modified && (fp_min <= fp && fp <= fp_max)) {
+            ip = *((UInt *)(fp+fp_lr_offset));
+            sp = fp+fp_sp_offset;
+            if(tracking_fp) {
+               fp = *((UInt *)(fp+fp_fp_offset));
+            } else {
+               fp = 0x0;
+            }
+            if(debug)
+               VG_(printf)("USING FP: sp: 0x%x ip: 0x%x fp: 0x%x\n",(unsigned int)sp,(unsigned int)ip,(unsigned int)fp);
+         } else {
+            if(debug && fp_modified)
+               VG_(printf)("FP NOT IN RANGE: 0x%x < 0x%x < 0x%x\n",(unsigned int)fp_min,(unsigned int)fp,(unsigned int)fp_max);
+            ip = *((UInt *)(sp+lr_sp_delta));
+            if(tracking_fp) {
+               fp = *((UInt *)(sp+fp_sp_delta));
+            } else {
+               fp = 0x0;
+            }
+            sp = (sp+sp_delta);
+            if (debug) {
+               VG_(printf)("USING SP: lr_sp_delta: %d, sp_delta: %d: sp:0x%x, LR: 0x%x\n",lr_sp_delta,sp_delta,(unsigned int)sp,(unsigned int)ip);
+            }
+         }
+         if (sps) sps[i] = sp;
+         if (fps) fps[i] = fp;
+         if(ip == 0)
+            break;
+         ips[i++] = ip - 1;
+         continue;
+      }else if(i == 1){
+         /* We should be able to follow the link reg at this level,
+          * since we didn't find a particularly interesting prologue, the link reg
+          * is prolly intact. */
+
+         //if fp was modified in the prologue, it is somewhat (more) likely to be intact?
+         if(fp_modified && (fp_min <= fp && fp <= fp_max)) {
+            sp = fp+fp_sp_offset;
+            if(tracking_fp) {
+               fp = *((UInt *)(fp+fp_fp_offset));
+            } else
+               fp = 0x0;
+         } else {
+            sp = (sp + sp_delta);
+            fp = 0x0;
+         }
+         if (sps) sps[i] = sp;
+         if (fps) fps[i] = fp;
+         ip = lr;
+         if(debug)
+            VG_(printf)("USING RAW LR: ip: 0x%x, sp: %x, fp: %x\n",(unsigned int)ip,(unsigned int)sp,(unsigned int)fp);
+         ips[i++] = ip -1;
+         continue;
+      }
+
+
+      //If all else fails, try to use CFI.
+      //Johan: I don't know why I do this. It doesn't make any sense with my very vague understanding of CFI...
+      //But it seems to work :( ??
+      sp = sp+sp_delta+4;
+      if ( VG_(use_CF_info)( &ip, &sp, &fp, fp_min, fp_max ) ) {
+         if (sps) sps[i] = sp;
+         if (fps) fps[i] = fp;
+         ips[i++] = ip -1;
+         if (debug)
+            VG_(printf)("USING CFI: ip: 0x%x, sp: %x, fp: %x\n",(unsigned int)ip,(unsigned int)sp,(unsigned int)fp);
+         ip = ip - 1;
+         continue;
+      }
+      /* No luck.  We have to give up. */
+      break;
+   }
+
+
+
 #  else
 #    error "Unknown platform"
 #  endif

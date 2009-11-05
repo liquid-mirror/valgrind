@@ -1576,7 +1576,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       }
 
       /* PLT is different on different platforms, it seems. */
-#     if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
+#     if defined(VGP_x86_linux) || defined(VGP_amd64_linux) \
+         || defined(VGP_arm_linux)
       /* Accept .plt where mapped as rx (code) */
       if (0 == VG_(strcmp)(name, ".plt")) {
          if (inrx && size > 0 && !di->plt_present) {
@@ -1691,6 +1692,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       UChar*     debug_str_img    = NULL; /* .debug_str    (dwarf2) */
       UChar*     debug_ranges_img = NULL; /* .debug_ranges (dwarf2) */
       UChar*     debug_loc_img    = NULL; /* .debug_loc    (dwarf2) */
+      UChar*     debug_frame_img  = NULL; /* .debug_frame  (dwarf2) */
       UChar*     dwarf1d_img      = NULL; /* .debug        (dwarf1) */
       UChar*     dwarf1l_img      = NULL; /* .line         (dwarf1) */
       UChar*     ehframe_img      = NULL; /* .eh_frame     (dwarf2) */
@@ -1710,6 +1712,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       SizeT      debug_str_sz    = 0;
       SizeT      debug_ranges_sz = 0;
       SizeT      debug_loc_sz    = 0;
+      SizeT      debug_frame_sz  = 0;
       SizeT      dwarf1d_sz      = 0;
       SizeT      dwarf1l_sz      = 0;
       SizeT      ehframe_sz      = 0;
@@ -1767,6 +1770,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          FIND(".debug_str",     debug_str_sz,    debug_str_img)
          FIND(".debug_ranges",  debug_ranges_sz, debug_ranges_img)
          FIND(".debug_loc",     debug_loc_sz,    debug_loc_img)
+         FIND(".debug_frame",   debug_frame_sz,  debug_frame_img)
 
          FIND(".debug",         dwarf1d_sz,      dwarf1d_img)
          FIND(".line",          dwarf1l_sz,      dwarf1l_img)
@@ -1959,6 +1963,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                FIND(need_dwarf2, ".debug_ranges", debug_ranges_sz, 
                                                                debug_ranges_img)
                FIND(need_dwarf2, ".debug_loc",    debug_loc_sz,  debug_loc_img)
+               FIND(need_dwarf2, ".debug_frame",  debug_frame_sz,
+                                                               debug_frame_img)
                FIND(need_dwarf1, ".debug",        dwarf1d_sz,    dwarf1d_img)
                FIND(need_dwarf1, ".line",         dwarf1l_sz,    dwarf1l_img)
 

@@ -357,6 +357,15 @@ typedef struct SigQueue {
    }
 #  define VG_UCONTEXT_LINK_REG(uc)        ((uc)->uc_mcontext.gp_regs[VKI_PT_LNK]) 
 
+#elif defined(VGP_arm_linux)
+#  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.arm_pc)
+#  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.arm_sp)
+#  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.arm_fp)
+#  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                        \
+      /* Convert the value in uc_mcontext.rax into a SysRes. */ \
+      VG_(mk_SysRes_arm_linux)( (uc)->uc_mcontext.arm_r0 )
+#  define VG_UCONTEXT_LINK_REG(uc)        ((uc)->uc_mcontext.arm_lr)
+
 #elif defined(VGP_ppc32_aix5)
 
    /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
@@ -763,6 +772,7 @@ extern void my_sigreturn(void);
    "	movl	$" #name ", %eax\n" \
    "	int	$0x80\n" \
    ".previous\n"
+
 #elif defined(VGP_amd64_linux)
 #  define _MY_SIGRETURN(name) \
    ".text\n" \
@@ -770,6 +780,7 @@ extern void my_sigreturn(void);
    "	movq	$" #name ", %rax\n" \
    "	syscall\n" \
    ".previous\n"
+
 #elif defined(VGP_ppc32_linux)
 #  define _MY_SIGRETURN(name) \
    ".text\n" \
@@ -777,6 +788,7 @@ extern void my_sigreturn(void);
    "	li	0, " #name "\n" \
    "	sc\n" \
    ".previous\n"
+
 #elif defined(VGP_ppc64_linux)
 #  define _MY_SIGRETURN(name) \
    ".align   2\n" \
@@ -791,6 +803,15 @@ extern void my_sigreturn(void);
    ".my_sigreturn:\n" \
    "	li	0, " #name "\n" \
    "	sc\n"
+
+#elif defined(VGP_arm_linux)
+#  define _MY_SIGRETURN(name) \
+   ".text\n" \
+   "my_sigreturn:\n\t" \
+   "    mov  r7, #" #name "\n\t" \
+   "    svc  0x00000000\n" \
+   ".previous\n"
+
 #elif defined(VGP_ppc32_aix5)
 #  define _MY_SIGRETURN(name) \
    ".globl my_sigreturn\n" \
@@ -801,18 +822,21 @@ extern void my_sigreturn(void);
    ".globl my_sigreturn\n" \
    "my_sigreturn:\n" \
    ".long 0\n"
+
 #elif defined(VGP_x86_darwin)
 #  define _MY_SIGRETURN(name) \
    ".text\n" \
    "my_sigreturn:\n" \
    "movl $" VG_STRINGIFY(__NR_DARWIN_FAKE_SIGRETURN) ",%eax\n" \
    "int $0x80"
+
 #elif defined(VGP_amd64_darwin)
    // DDD: todo
 #  define _MY_SIGRETURN(name) \
    ".text\n" \
    "my_sigreturn:\n" \
    "ud2\n"
+
 #else
 #  error Unknown platform
 #endif

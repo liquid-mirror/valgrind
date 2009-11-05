@@ -60,6 +60,11 @@
 #  define VG_ELF_MACHINE      EM_PPC64
 #  define VG_ELF_CLASS        ELFCLASS64
 #  define VG_PLAT_USES_PPCTOC 1
+#elif defined(VGP_arm_linux)
+#  define VG_ELF_DATA2XXX     ELFDATA2LSB
+#  define VG_ELF_MACHINE      EM_ARM
+#  define VG_ELF_CLASS        ELFCLASS32
+#  undef  VG_PLAT_USES_PPCTOC
 #elif defined(VGO_aix5)
 #  undef  VG_ELF_DATA2XXX
 #  undef  VG_ELF_MACHINE
@@ -90,6 +95,10 @@
 #  define VG_INSTR_PTR        guest_CIA
 #  define VG_STACK_PTR        guest_GPR1
 #  define VG_FRAME_PTR        guest_GPR1   // No frame ptr for PPC
+#elif defined(VGA_arm)
+#  define VG_INSTR_PTR        guest_R15
+#  define VG_STACK_PTR        guest_R13
+#  define VG_FRAME_PTR        guest_R11
 #else
 #  error Unknown arch
 #endif
