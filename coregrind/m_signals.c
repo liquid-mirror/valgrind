@@ -360,11 +360,16 @@ typedef struct SigQueue {
 #elif defined(VGP_arm_linux)
 #  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.arm_pc)
 #  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.arm_sp)
-#  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.arm_fp)
 #  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                        \
       /* Convert the value in uc_mcontext.rax into a SysRes. */ \
       VG_(mk_SysRes_arm_linux)( (uc)->uc_mcontext.arm_r0 )
-#  define VG_UCONTEXT_LINK_REG(uc)        ((uc)->uc_mcontext.arm_lr)
+#  define VG_UCONTEXT_TO_UnwindStartRegs(srP, uc)       \
+      { (srP)->r_pc = (uc)->uc_mcontext.arm_pc;         \
+        (srP)->r_sp = (uc)->uc_mcontext.arm_sp;         \
+        (srP)->misc.ARM.r14 = (uc)->uc_mcontext.arm_lr; \
+        (srP)->misc.ARM.r12 = (uc)->uc_mcontext.arm_ip; \
+        (srP)->misc.ARM.r11 = (uc)->uc_mcontext.arm_fp; \
+      }
 
 #elif defined(VGP_ppc32_aix5)
 
@@ -2312,11 +2317,11 @@ void sync_signalhandler_from_kernel ( ThreadId tid,
       //  tid = VG_(master_tid);
       vg_assert(tid != 0);
 
-      VG_(core_panic_at)("Killed by fatal signal",
-                         VG_UCONTEXT_INSTR_PTR(uc),
-                         VG_UCONTEXT_STACK_PTR(uc),
-                         VG_UCONTEXT_FRAME_PTR(uc),
-                         VG_UCONTEXT_LINK_REG(uc));
+      UnwindStartRegs startRegs;
+      VG_(memset)(&startRegs, 0, sizeof(startRegs));
+
+      VG_UCONTEXT_TO_UnwindStartRegs(&startRegs, uc);
+      VG_(core_panic_at)("Killed by fatal signal", &startRegs);
    }
 }
 

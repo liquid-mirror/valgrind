@@ -1657,7 +1657,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
-#    undef BAD
+#     undef BAD
 
    }
 
@@ -2002,10 +2002,20 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                          False, opd_img);
       }
 
-      /* Read .eh_frame (call-frame-info) if any */
+      /* Read call-frame-info in .eh_frame and/or .debug_frame,
+         if any */
       if (ehframe_img) {
          vg_assert(ehframe_sz == di->ehframe_size);
-         ML_(read_callframe_info_dwarf3)( di, ehframe_img );
+         ML_(read_callframe_info_dwarf3)(
+            di, ".eh_frame",
+            ehframe_img, ehframe_sz, di->ehframe_avma
+         );
+      }
+      if (debug_frame_img) {
+         ML_(read_callframe_info_dwarf3)(
+            di, ".debug_frame",
+            debug_frame_img, debug_frame_sz, 0/*AVMA*/
+         );
       }
 
       /* Read the stabs and/or dwarf2 debug information, if any.  It

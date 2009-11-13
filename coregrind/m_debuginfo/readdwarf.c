@@ -1493,8 +1493,25 @@ void ML_(read_debuginfo_dwarf1) (
 
 
 /*------------------------------------------------------------*/
-/*--- Read call-frame info from an .eh_frame section       ---*/
+/*--- Read call-frame info from .{eh,debug}_frame sections ---*/
 /*------------------------------------------------------------*/
+
+/* Note that various variables are called xx_frame.  This means they
+   refer to either .eh_frame things or .debug_frame things.  Which one
+   is taken care of by the caller of the main routine,
+   ML_(read_callframe_info_dwarf3) and so the rest of the frame
+   reading code does not have to worry about which it is.  This also
+   means it's wrong to look at the .eh_frame specific fields in the
+   DebugInfo* which we're passed; and none of the code should do that.
+
+   FIXME: actually we need to know, because .eh_frame is slightly
+   different (and extended) from .debug_frame.
+
+   On amd64-linux, unwind info is in .eh_frame.  If we're using it for
+   x86-linux, then it's also in .eh_frame.
+
+   On arm-linux, unwind info is in .debug_frame.
+*/
 
 /* Sources of info:
 
@@ -1783,7 +1800,7 @@ void ML_(read_debuginfo_dwarf1) (
 #  define SP_REG         1
 #  define RA_REG_DEFAULT 8     // CAB: What's a good default ?
 #elif defined(VGP_arm_linux)
-#  define FP_REG         11
+#  define FP_REG         12
 #  define SP_REG         13
 #  define RA_REG_DEFAULT 14    //???
 #elif defined(VGP_x86_darwin)
@@ -2006,10 +2023,18 @@ static void initUnwindContext ( /*OUT*/UnwindContext* ctx )
       ctx->state[j].cfa_off       = 0;
       ctx->state[j].cfa_expr_ix   = 0; */
       for (i = 0; i < N_CFI_REGS; i++) {
-         if (RR_Undef != 0)
-           ctx->state[j].reg[i].tag = RR_Undef;
+         ctx->state[j].reg[i].tag = RR_Undef;
          /* ctx->state[j].reg[i].arg = 0; */
       }
+// all callee-saved registers (or at least the ones we are summarising for)
+// should start out as RR_Same, on arm
+ctx->state[j].reg[11].tag = RR_Same;
+
+//ctx->state[j].reg[13].tag = RR_Same;
+
+ctx->state[j].reg[14].tag = RR_Same;
+ ctx->state[j].reg[12].tag = RR_Same; // this can't be right though.  
+ // R12 (IP) isn't callee saved.
    }
 }
 
@@ -2019,8 +2044,8 @@ static void initUnwindContext ( /*OUT*/UnwindContext* ctx )
 typedef
    struct {
       UChar  encoding;
-      UChar* ehframe_image;
-      Addr   ehframe_avma;
+      UChar* xxframe_image;
+      Addr   xxframe_avma;
       Addr   text_bias;
    }
    AddressDecodingInfo;
@@ -2034,12 +2059,16 @@ static void initCfiSI ( DiCfSI* si )
    si->len     = 0;
    si->cfa_how = 0;
    si->ra_how  = 0;
-   si->sp_how  = 0;
-   si->fp_how  = 0;
+   si->r14_how = 0;
+   si->r13_how = 0;
+   si->r12_how = 0;
+   si->r11_how = 0;
    si->cfa_off = 0;
    si->ra_off  = 0;
-   si->sp_off  = 0;
-   si->fp_off  = 0;
+   si->r14_off = 0;
+   si->r13_off = 0;
+   si->r12_off = 0;
+   si->r11_off = 0;
 }
 
 
@@ -2094,11 +2123,15 @@ static Bool summarise_context( /*OUT*/DiCfSI* si,
          ML_(ppCfiExpr)(dst, conv);
    } else
    if (ctxs->cfa_is_regoff && ctxs->cfa_reg == SP_REG) {
-      si->cfa_how = CFIC_SPREL;
+      si->cfa_how = CFIC_R13REL;
       si->cfa_off = ctxs->cfa_off;
    } else
    if (ctxs->cfa_is_regoff && ctxs->cfa_reg == FP_REG) {
-      si->cfa_how = CFIC_FPREL;
+      si->cfa_how = CFIC_R12REL;
+      si->cfa_off = ctxs->cfa_off;
+   } else
+   if (ctxs->cfa_is_regoff && ctxs->cfa_reg == 11/*??_REG*/) {
+      si->cfa_how = CFIC_R11REL;
       si->cfa_off = ctxs->cfa_off;
    } else {
       why = 1;
@@ -2142,26 +2175,51 @@ static Bool summarise_context( /*OUT*/DiCfSI* si,
          why = 2; goto failed; /* otherwise give up */        \
    }
 
-   SUMMARISE_HOW(si->ra_how, si->ra_off,
-                             ctxs->reg[ctx->ra_reg] );
-   SUMMARISE_HOW(si->fp_how, si->fp_off,
-                             ctxs->reg[FP_REG] );
+   SUMMARISE_HOW(si->r14_how, si->r14_off,
+                              ctxs->reg[14] );
+
+   //SUMMARISE_HOW(si->r13_how, si->r13_off,
+   //                           ctxs->reg[13] );
+
+   SUMMARISE_HOW(si->r12_how, si->r12_off,
+                              ctxs->reg[FP_REG] );
+
+   SUMMARISE_HOW(si->r11_how, si->r11_off,
+                              ctxs->reg[11/*FP_REG*/] );
+
+   if (ctxs->reg[14/*LR*/].tag == RR_Same
+       && ctx->ra_reg == 14/*as we expect it always to be*/) {
+      /* Generate a trivial CfiExpr, which merely says "r14".  First
+         ensure this DebugInfo has a cfsi_expr array in which to park
+         it. */
+      if (!debuginfo->cfsi_exprs)
+         debuginfo->cfsi_exprs = VG_(newXA)( ML_(dinfo_zalloc),
+                                             "di.ccCt.2a",
+                                             ML_(dinfo_free),
+                                             sizeof(CfiExpr) );
+      si->ra_off = ML_(CfiExpr_CfiReg)( debuginfo->cfsi_exprs, Creg_R14);
+      si->ra_how = CFIR_EXPR;
+   } else {
+      /* Just summarise it in the normal way */
+      SUMMARISE_HOW(si->ra_how, si->ra_off,
+                                ctxs->reg[ctx->ra_reg] );
+   }
 
 #  undef SUMMARISE_HOW
 
    /* on x86/amd64, it seems the old %{e,r}sp value before the call is
       always the same as the CFA.  Therefore ... */
-   si->sp_how = CFIR_CFAREL;
-   si->sp_off = 0;
+   si->r13_how = CFIR_CFAREL;
+   si->r13_off = 0;
 
    /* also, gcc says "Undef" for %{e,r}bp when it is unchanged.  So
       .. */
-   if (ctxs->reg[FP_REG].tag == RR_Undef)
-      si->fp_how = CFIR_SAME;
+   //if (ctxs->reg[FP_REG].tag == RR_Undef)
+   //   si->r12_how = CFIR_SAME;
 
    /* knock out some obviously stupid cases */
-   if (si->ra_how == CFIR_SAME) 
-      { why = 3; goto failed; }
+   //if (si->ra_how == CFIR_SAME) 
+   //   { why = 3; goto failed; }
 
    /* bogus looking range?  Note, we require that the difference is
       representable in 32 bits. */
@@ -2228,11 +2286,11 @@ static Int copy_convert_CfiExpr_tree ( XArray*        dstxa,
          /* This is the only place where the conversion can fail. */
          dwreg = src->Cex.DwReg.reg;
          if (dwreg == SP_REG)
-            return ML_(CfiExpr_CfiReg)( dstxa, Creg_SP );
+            return ML_(CfiExpr_CfiReg)( dstxa, Creg_R13 );
          if (dwreg == FP_REG)
-            return ML_(CfiExpr_CfiReg)( dstxa, Creg_FP );
+            return ML_(CfiExpr_CfiReg)( dstxa, Creg_R12 );
          if (dwreg == srcuc->ra_reg)
-            return ML_(CfiExpr_CfiReg)( dstxa, Creg_IP ); /* correct? */
+            return ML_(CfiExpr_CfiReg)( dstxa, Creg_R15 ); /* correct? */
          /* else we must fail - can't represent the reg */
          return -1;
       default:
@@ -2422,8 +2480,8 @@ static Addr read_encoded_Addr ( /*OUT*/Int* nbytes,
    Addr   base;
    Word   offset;
    UChar  encoding      = adi->encoding;
-   UChar* ehframe_image = adi->ehframe_image;
-   Addr   ehframe_avma  = adi->ehframe_avma;
+   UChar* xxframe_image = adi->xxframe_image;
+   Addr   xxframe_avma  = adi->xxframe_avma;
 
    vg_assert((encoding & DW_EH_PE_indirect) == 0);
 
@@ -2434,7 +2492,7 @@ static Addr read_encoded_Addr ( /*OUT*/Int* nbytes,
          base = adi->text_bias;
          break;
       case DW_EH_PE_pcrel:
-         base = ehframe_avma + ( data - ehframe_image );
+         base = xxframe_avma + ( data - xxframe_image );
          break;
       case DW_EH_PE_datarel:
          vg_assert(0);
@@ -2449,7 +2507,7 @@ static Addr read_encoded_Addr ( /*OUT*/Int* nbytes,
          break;
       case DW_EH_PE_aligned:
          base = 0;
-         offset = data - ehframe_image;
+         offset = data - xxframe_image;
          if ((offset % sizeof(Addr)) != 0) {
             *nbytes = sizeof(Addr) - (offset % sizeof(Addr));
             data += *nbytes;
@@ -3450,23 +3508,57 @@ static CIE the_CIEs[N_CIEs];
 
 
 void ML_(read_callframe_info_dwarf3)
-        ( /*OUT*/struct _DebugInfo* di, UChar* ehframe_image )
+        ( /*OUT*/struct _DebugInfo* di,
+          HChar* xxframe_name,
+          UChar* xxframe_image, SizeT xxframe_size, Addr xxframe_avma )
 {
    Int    nbytes;
    HChar* how = NULL;
    Int    n_CIEs = 0;
-   UChar* data = ehframe_image;
 
-#  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
-   /* These targets don't use CFI-based stack unwinding. */
-   return;
+   /* Read Dwarf3 CFI unwind data from the section described by
+      xxframe_{image,size,avma}.  In practice that means either
+      .eh_frame or .debug_frame.  It appears that .eh_frame is
+      sometimes mapped, but .debug_frame never is.  Hence for
+      .eh_frame, xxframe_avma can be nonzero, but for .debug_frame it
+      must be zero.
+
+      A consequence of this is that, inside this CFI reader, we must
+      not longer refer directly to any di->ehframe_ or di->debugframe_
+      fields in the reader, after this point. */
+
+   /* On amd64-linux and x86-linux, we read .eh_frame and ignore
+      .debug_frame.  On arm-linux, we read .debug_frame and read
+      .eh_frame.  We could loosen these restrictions so as to allow
+      reading from both sections, if required.  For the time being,
+      though, just use one or the other.  FIXME: is this correct for
+      Darwin too? */
+#  if defined(VGP_amd64_linux) || defined(VGP_x86_linux) \
+      || defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
+   if (0 != VG_(strcmp)(xxframe_name, ".eh_frame"))
+      return; /* skip anything except .eh_frame */
+
+#  elif defined(VGP_arm_linux)
+   if (0 != VG_(strcmp)(xxframe_name, ".debug_frame"))
+      return; /* skip anything except .debug_frame */
+   vg_assert(xxframe_avma == 0);
+
+#  elif defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+   return; /* these don't use CFI-based stack unwinding */
+
+#  else
+     /* new platform; need to make a decision about it. */
+#    error "Unsupported platform"
 #  endif
+
+   /* Right.  Finally, we're all set up to read the CFI described by
+      xxframe_{image,size,avma}. */
+   UChar* data = xxframe_image;
 
    if (di->trace_cfi) {
       VG_(printf)("\n-----------------------------------------------\n");
       VG_(printf)("CFI info: szB %ld, _avma %#lx, _image %p\n",
-                  di->ehframe_size, di->ehframe_avma,
-                  ehframe_image );
+                  xxframe_size, xxframe_avma, xxframe_image );
       VG_(printf)("CFI info: name %s\n",
                   di->filename );
    }
@@ -3499,12 +3591,12 @@ void ML_(read_callframe_info_dwarf3)
       Bool   dw64;
 
       /* Are we done? */
-      if (data == ehframe_image + di->ehframe_size)
+      if (data == xxframe_image + xxframe_size)
          return;
 
       /* Overshot the end?  Means something is wrong */
-      if (data > ehframe_image + di->ehframe_size) {
-         how = "overran the end of .eh_frame";
+      if (data > xxframe_image + xxframe_size) {
+         how = "overran the end of .eh_frame or .debug_frame";
          goto bad;
       }
 
@@ -3513,9 +3605,9 @@ void ML_(read_callframe_info_dwarf3)
 
       ciefde_start = data;
       if (di->trace_cfi) 
-         VG_(printf)("\ncie/fde.start   = %p (ehframe_image + 0x%lx)\n", 
+         VG_(printf)("\ncie/fde.start   = %p (xxframe_image + 0x%lx)\n", 
                      ciefde_start,
-                     ciefde_start - ehframe_image + 0UL);
+                     ciefde_start - xxframe_image + 0UL);
 
       ciefde_len = (ULong) read_UInt(data); data += sizeof(UInt);
       if (di->trace_cfi) 
@@ -3528,7 +3620,7 @@ void ML_(read_callframe_info_dwarf3)
       if (ciefde_len == 0) {
          if (di->ddump_frames)
             VG_(printf)("%08lx ZERO terminator\n\n",
-                        ((Addr)ciefde_start) - ((Addr)ehframe_image));
+                        ((Addr)ciefde_start) - ((Addr)xxframe_image));
          return;
       }
 
@@ -3555,7 +3647,8 @@ void ML_(read_callframe_info_dwarf3)
          VG_(printf)("cie.pointer     = %lld\n", cie_pointer);
 
       /* If cie_pointer is zero, we've got a CIE; else it's an FDE. */
-      if (cie_pointer == 0) {
+      if (//cie_pointer == 0 ||   // XXX eh_frame
+          cie_pointer == 0xFFFFFFFFULL) {  //XXX debug_frame
 
          Int    this_CIE;
          UChar  cie_version;
@@ -3577,13 +3670,14 @@ void ML_(read_callframe_info_dwarf3)
          n_CIEs++;
          init_CIE( &the_CIEs[this_CIE] );
 
-	 /* Record its offset.  This is how we will find it again
-            later when looking at an FDE. */
-         the_CIEs[this_CIE].offset = (ULong)(ciefde_start - ehframe_image);
+         /* Record its offset relative to the start of the image.
+            This is how we will find it again later when looking at an
+            FDE. */
+         the_CIEs[this_CIE].offset = (ULong)(ciefde_start - xxframe_image);
 
          if (di->ddump_frames)
             VG_(printf)("%08lx %08lx %08lx CIE\n",
-                        ((Addr)ciefde_start) - ((Addr)ehframe_image),
+                        ((Addr)ciefde_start) - ((Addr)xxframe_image),
                         (Addr)ciefde_len,
                         (Addr)(UWord)cie_pointer );
 
@@ -3706,7 +3800,7 @@ void ML_(read_callframe_info_dwarf3)
 	 }
 
          if (the_CIEs[this_CIE].ilen < 0
-             || the_CIEs[this_CIE].ilen > di->ehframe_size) {
+             || the_CIEs[this_CIE].ilen > xxframe_size) {
             how = "implausible # cie initial insns";
             goto bad;
          }
@@ -3721,8 +3815,8 @@ void ML_(read_callframe_info_dwarf3)
          if (di->trace_cfi || di->ddump_frames) {
             AddressDecodingInfo adi;
             adi.encoding      = the_CIEs[this_CIE].address_encoding;
-            adi.ehframe_image = ehframe_image;
-            adi.ehframe_avma  = di->ehframe_avma;
+            adi.xxframe_image = xxframe_image;
+            adi.xxframe_avma  = xxframe_avma;
             adi.text_bias     = di->text_debug_bias;
             show_CF_instructions( the_CIEs[this_CIE].instrs, 
                                   the_CIEs[this_CIE].ilen, &adi,
@@ -3750,10 +3844,13 @@ void ML_(read_callframe_info_dwarf3)
          /* Find the relevant CIE.  The CIE we want is located
             cie_pointer bytes back from here. */
 
+         // XXX eh_frame
          /* re sizeof(UInt) / sizeof(ULong), matches XXX above. */
-         look_for = (data - (dw64 ? sizeof(ULong) : sizeof(UInt)) 
-                          - ehframe_image) 
-                    - cie_pointer;
+         //  look_for = (data - (dw64 ? sizeof(ULong) : sizeof(UInt)) 
+         //                 - xxframe_image) 
+         //           - cie_pointer;
+         // XXX debug_frame
+         look_for = cie_pointer;
 
          for (cie = 0; cie < n_CIEs; cie++) {
             if (0) VG_(printf)("look for %lld   %lld\n",
@@ -3768,8 +3865,8 @@ void ML_(read_callframe_info_dwarf3)
 	 }
 
          adi.encoding      = the_CIEs[cie].address_encoding;
-         adi.ehframe_image = ehframe_image;
-         adi.ehframe_avma  = di->ehframe_avma;
+         adi.xxframe_image = xxframe_image;
+         adi.xxframe_avma  = xxframe_avma;
          adi.text_bias     = di->text_debug_bias;
          fde_initloc = read_encoded_Addr(&nbytes, &adi, data);
          data += nbytes;
@@ -3777,8 +3874,8 @@ void ML_(read_callframe_info_dwarf3)
             VG_(printf)("fde.initloc     = %#lx\n", fde_initloc);
 
          adi.encoding      = the_CIEs[cie].address_encoding & 0xf;
-         adi.ehframe_image = ehframe_image;
-         adi.ehframe_avma  = di->ehframe_avma;
+         adi.xxframe_image = xxframe_image;
+         adi.xxframe_avma  = xxframe_avma;
          adi.text_bias     = di->text_debug_bias;
 
          /* WAS (incorrectly):
@@ -3804,7 +3901,7 @@ void ML_(read_callframe_info_dwarf3)
 
          if (di->ddump_frames)
             VG_(printf)("%08lx %08lx %08lx FDE cie=%08lx pc=%08lx..%08lx\n",
-                        ((Addr)ciefde_start) - ((Addr)ehframe_image),
+                        ((Addr)ciefde_start) - ((Addr)xxframe_image),
                         (Addr)ciefde_len,
                         (Addr)(UWord)cie_pointer,
                         (Addr)look_for, 
@@ -3831,7 +3928,7 @@ void ML_(read_callframe_info_dwarf3)
             VG_(printf)("fde.ilen        = %d\n", (Int)fde_ilen);
 	 }
 
-         if (fde_ilen < 0 || fde_ilen > di->ehframe_size) {
+         if (fde_ilen < 0 || fde_ilen > xxframe_size) {
             how = "implausible # fde insns";
             goto bad;
          }
@@ -3839,8 +3936,8 @@ void ML_(read_callframe_info_dwarf3)
 	 data += fde_ilen;
 
          adi.encoding      = the_CIEs[cie].address_encoding;
-         adi.ehframe_image = ehframe_image;
-         adi.ehframe_avma  = di->ehframe_avma;
+         adi.xxframe_image = xxframe_image;
+         adi.xxframe_avma  = xxframe_avma;
          adi.text_bias     = di->text_debug_bias;
 
          if (di->trace_cfi)

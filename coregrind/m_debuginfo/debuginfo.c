@@ -1821,9 +1821,10 @@ Char* VG_(describe_IP)(Addr eip, Char* buf, Int n_buf)
    a CfiExpr into one convenient struct. */
 typedef
    struct {
-      Addr ipHere;
-      Addr spHere;
-      Addr fpHere;
+      Addr r15Here;
+      Addr r14Here;
+      Addr r13Here;
+      Addr r12Here;
       Addr min_accessible;
       Addr max_accessible;
    }
@@ -1855,9 +1856,10 @@ UWord evalCfiExpr ( XArray* exprs, Int ix,
          /*NOTREACHED*/
       case Cex_CfiReg:
          switch (e->Cex.CfiReg.reg) {
-            case Creg_IP: return (Addr)eec->ipHere;
-            case Creg_SP: return (Addr)eec->spHere;
-            case Creg_FP: return (Addr)eec->fpHere;
+            case Creg_R15: return (Addr)eec->r15Here;
+            case Creg_R14: return (Addr)eec->r14Here;
+            case Creg_R13: return (Addr)eec->r13Here;
+            case Creg_R12: return (Addr)eec->r12Here;
             default: goto unhandled;
          }
          /*NOTREACHED*/
@@ -2003,22 +2005,26 @@ static void cfsi_cache__invalidate ( void ) {
 }
 
 
-/* The main function for DWARF2/3 CFI-based stack unwinding.
-   Given an IP/SP/FP triple, produce the IP/SP/FP values for the
-   previous frame, if possible. */
-/* Returns True if OK.  If not OK, *{ip,sp,fp}P are not changed. */
+/* The main function for DWARF2/3 CFI-based stack unwinding.  Given an
+   R15/R14/R13/R12/R11 set, produce the R15/R14/R13/R12/R11 values for
+   the previous frame, if possible. */
+/* Returns True if OK.  If not OK, *{r15,r14,r13,r12,r11}P are not
+   changed. */
 /* NOTE: this function may rearrange the order of entries in the
    DebugInfo list. */
-Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
-                        /*MOD*/Addr* spP,
-                        /*MOD*/Addr* fpP,
+Bool VG_(use_CF_info) ( /*MOD*/Addr* r15P,
+                        /*MOD*/Addr* r14P,
+                        /*MOD*/Addr* r13P,
+                        /*MOD*/Addr* r12P,
+                        /*MOD*/Addr* r11P,
                         Addr min_accessible,
                         Addr max_accessible )
 {
    Bool       ok;
    DebugInfo* di;
    DiCfSI*    cfsi = NULL;
-   Addr       cfa, ipHere, spHere, fpHere, ipPrev, spPrev, fpPrev;
+   Addr       r15Here, r14Here, r13Here, r12Here, r11Here, cfa;
+   Addr       r15Prev, r14Prev, r13Prev, r12Prev, r11Prev;
 
    CfiExprEvalContext eec;
 
@@ -2027,16 +2033,16 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
    if (0 && 0 == (n_q & 0x1FFFFF))
       VG_(printf)("QQQ %lu %lu\n", n_q, n_m);
 
-   { UWord hash = (*ipP) % N_CFSI_CACHE;
+   { UWord hash = (*r15P) % N_CFSI_CACHE;
      CFSICacheEnt* ce = &cfsi_cache[hash];
 
-     if (LIKELY(ce->ip == *ipP) && LIKELY(ce->di != NULL)) {
+     if (LIKELY(ce->ip == *r15P) && LIKELY(ce->di != NULL)) {
         /* found an entry in the cache .. */
      } else {
         /* not found in cache.  Search and update. */
         n_m++;
-        ce->ip = *ipP;
-        find_DiCfSI( &ce->di, &ce->ix, *ipP );
+        ce->ip = *r15P;
+        find_DiCfSI( &ce->di, &ce->ix, *r15P );
      }
 
      if (UNLIKELY(ce->di == (DebugInfo*)1)) {
@@ -2058,20 +2064,25 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
       ML_(ppDiCfSI)(di->cfsi_exprs, cfsi);
    }
 
-   ipPrev = spPrev = fpPrev = 0;
+   r15Prev = r14Prev = r13Prev = r12Prev = r11Prev = 0;
 
-   ipHere = *ipP;
-   spHere = *spP;
-   fpHere = *fpP;
+   r15Here = *r15P;
+   r14Here = *r14P;
+   r13Here = *r13P;
+   r12Here = *r12P;
+   r11Here = *r11P;
 
    /* First compute the CFA. */
    cfa = 0;
    switch (cfsi->cfa_how) {
-      case CFIC_SPREL: 
-         cfa = cfsi->cfa_off + spHere;
+      case CFIC_R13REL: 
+         cfa = cfsi->cfa_off + r13Here;
          break;
-      case CFIC_FPREL: 
-         cfa = cfsi->cfa_off + fpHere;
+      case CFIC_R12REL: 
+         cfa = cfsi->cfa_off + r12Here;
+         break;
+      case CFIC_R11REL: 
+         cfa = cfsi->cfa_off + r11Here;
          break;
       case CFIC_EXPR: 
          if (0) {
@@ -2079,9 +2090,10 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
             ML_(ppCfiExpr)(di->cfsi_exprs, cfsi->cfa_off);
             VG_(printf)("\n");
          }
-         eec.ipHere = ipHere;
-         eec.spHere = spHere;
-         eec.fpHere = fpHere;
+         eec.r15Here = r15Here;
+         eec.r14Here = r14Here;
+         eec.r13Here = r13Here;
+         eec.r12Here = r12Here;
          eec.min_accessible = min_accessible;
          eec.max_accessible = max_accessible;
          ok = True;
@@ -2116,9 +2128,10 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
             case CFIR_EXPR:                             \
                if (0)                                   \
                   ML_(ppCfiExpr)(di->cfsi_exprs,_off);  \
-               eec.ipHere = ipHere;                     \
-               eec.spHere = spHere;                     \
-               eec.fpHere = fpHere;                     \
+               eec.r15Here = r15Here;                   \
+               eec.r14Here = r14Here;                   \
+               eec.r13Here = r13Here;                   \
+               eec.r12Here = r12Here;                   \
                eec.min_accessible = min_accessible;     \
                eec.max_accessible = max_accessible;     \
                ok = True;                               \
@@ -2130,15 +2143,19 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
          }                                              \
       } while (0)
 
-   COMPUTE(ipPrev, ipHere, cfsi->ra_how, cfsi->ra_off);
-   COMPUTE(spPrev, spHere, cfsi->sp_how, cfsi->sp_off);
-   COMPUTE(fpPrev, fpHere, cfsi->fp_how, cfsi->fp_off);
+   COMPUTE(r15Prev, r15Here, cfsi->ra_how, cfsi->ra_off);
+   COMPUTE(r14Prev, r14Here, cfsi->r14_how, cfsi->r14_off);
+   COMPUTE(r13Prev, r13Here, cfsi->r13_how, cfsi->r13_off);
+   COMPUTE(r12Prev, r12Here, cfsi->r12_how, cfsi->r12_off);
+   COMPUTE(r11Prev, r11Here, cfsi->r11_how, cfsi->r11_off);
 
 #  undef COMPUTE
 
-   *ipP = ipPrev;
-   *spP = spPrev;
-   *fpP = fpPrev;
+   *r15P = r15Prev;
+   *r14P = r14Prev;
+   *r13P = r13Prev;
+   *r12P = r12Prev;
+   *r11P = r11Prev;
    return True;
 }
 

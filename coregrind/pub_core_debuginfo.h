@@ -107,9 +107,11 @@ extern
 Bool VG_(get_fnname_no_cxx_demangle) ( Addr a, Char* buf, Int nbuf );
 
 /* Use DWARF2/3 CFA information to do one step of stack unwinding. */
-extern Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
-                               /*MOD*/Addr* spP,
-                               /*MOD*/Addr* fpP,
+extern Bool VG_(use_CF_info) ( /*MOD*/Addr* r15P,
+                               /*MOD*/Addr* r14P,
+                               /*MOD*/Addr* r13P,
+                               /*MOD*/Addr* r12P,
+                               /*MOD*/Addr* r11P,
                                Addr min_accessible,
                                Addr max_accessible );
 

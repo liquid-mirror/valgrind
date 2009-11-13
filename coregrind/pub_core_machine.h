@@ -110,6 +110,13 @@
 
 
 //-------------------------------------------------------------
+// Get hold of the values needed for a stack unwind, for the specified
+// (client) thread.
+void VG_(get_UnwindStartRegs) ( /*OUT*/UnwindStartRegs* regs,
+                                ThreadId tid );
+
+
+//-------------------------------------------------------------
 /* Details about the capabilities of the underlying (host) CPU.  These
    details are acquired by (1) enquiring with the CPU at startup, or
    (2) from the AT_SYSINFO entries the kernel gave us (ppc cache

@@ -81,6 +81,45 @@ void VG_(set_IP) ( ThreadId tid, Addr ip )
    INSTR_PTR( VG_(threads)[tid].arch ) = ip;
 }
 
+
+void VG_(get_UnwindStartRegs) ( /*OUT*/UnwindStartRegs* regs,
+                                ThreadId tid )
+{
+#  if defined(VGA_x86)
+   regs->r_pc = (ULong)VG_(threads)[tid].arch.vex.guest_EIP;
+   regs->r_sp = (ULong)VG_(threads)[tid].arch.vex.guest_ESP;
+   regs->misc.X86.r_ebp
+      = VG_(threads)[tid].arch.vex.guest_EBP;
+#  elif defined(VGA_amd64)
+   regs->r_pc = VG_(threads)[tid].arch.vex.guest_RIP;
+   regs->r_pc = VG_(threads)[tid].arch.vex.guest_RSP;
+   regs->misc.AMD64.r_rbp
+      = VG_(threads)[tid].arch.vex.guest_RBP;
+#  elif defined(VGA_ppc32)
+   regs->r_pc = (ULong)VG_(threads)[tid].arch.vex.guest_CIA;
+   regs->r_sp = (ULong)VG_(threads)[tid].arch.vex.guest_R1;
+   regs->misc.PPC32.r_lr
+      = VG_(threads)[tid].arch.vex.guest_LR;
+#  elif defined(VGA_ppc64)
+   regs->r_pc = VG_(threads)[tid].arch.vex.guest_CIA;
+   regs->r_sp = VG_(threads)[tid].arch.vex.guest_R1;
+   regs->misc.PPC64.r_lr
+      = VG_(threads)[tid].arch.vex.guest_LR;
+#  elif defined(VGA_arm)
+   regs->r_pc = (ULong)VG_(threads)[tid].arch.vex.guest_R15;
+   regs->r_sp = (ULong)VG_(threads)[tid].arch.vex.guest_R13;
+   regs->misc.ARM.r14
+      = VG_(threads)[tid].arch.vex.guest_R14;
+   regs->misc.ARM.r12
+      = VG_(threads)[tid].arch.vex.guest_R12;
+   regs->misc.ARM.r11
+      = VG_(threads)[tid].arch.vex.guest_R11;
+#  else
+#    error "Unknown arch"
+#  endif
+}
+
+
 void VG_(set_syscall_return_shadows) ( ThreadId tid,
                                        /* shadow vals for the result */
                                        UWord s1res, UWord s2res,

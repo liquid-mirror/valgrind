@@ -62,8 +62,9 @@ void ML_(read_debuginfo_dwarf1) ( struct _DebugInfo* di,
    -------------------- */
 extern
 void ML_(read_callframe_info_dwarf3)
-    ( /*OUT*/struct _DebugInfo* di, UChar* ehframe );
-
+        ( /*OUT*/struct _DebugInfo* di,
+          HChar* xxframe_name,
+          UChar* xxframe_image, SizeT xxframe_size, Addr xxframe_avma );
 
 #endif /* ndef __PRIV_READDWARF_H */
 
