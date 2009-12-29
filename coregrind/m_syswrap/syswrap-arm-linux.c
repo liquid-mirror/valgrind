@@ -265,8 +265,9 @@ void setup_child ( /*OUT*/ ThreadArchState *child,
    child->vex_shadow2 = parent->vex_shadow2;
 }
 
-static SysRes sys_set_tls ( ThreadId tid, Addr tlsptr ){
-   VG_(threads)[tid].os_state.tls_addr = tlsptr;
+static SysRes sys_set_tls ( ThreadId tid, Addr tlsptr )
+{
+   VG_(threads)[tid].arch.vex.guest_TPIDRURO = tlsptr;
    return VG_(mk_SysRes_Success)( 0 );
 }
 

@@ -152,19 +152,6 @@ typedef
       /* Initial state is False, False, Canc_Normal. */
 #     endif
 
-#     if defined(VGP_arm_linux)
-      // jrs: this seems like a hack.  None of the other linux ports
-      // have this.  Do we really need it?
-      // maybe needs to go in vex, a la x86 ldt/gdt pointer?
-      Addr tls_addr;
-      // The location that linux on ARM puts the TLS is
-      // determined by what's in the commpage. Instead of
-      // switching valgrind's TLS with the syscall on each
-      // context switch (kinda expensive), we can just do our
-      // own syscall to set the TLS, and trap accesses to the
-      // commpage.
-#     endif
-
 #     if defined(VGO_darwin)
       // Mach trap POST handler as chosen by PRE
       void (*post_mach_trap_fn)(ThreadId tid,

@@ -1060,22 +1060,6 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
          vg_assert(trc != VEX_TRC_JMP_NOREDIR);
       }
 
-#     if defined(VGP_arm_linux)
-      /* This is a dirty, dirty hack. When a program jumps to the
-         location 0xFFFF0FE0 on linux, it's trying to read the
-         TLS. The reason we're able to put the check here is because
-         the fast cache will always miss when jumping to 0xFFFF0FE0
-         because it gets trapped here. The check could go in the
-         dispatcher, but ideally we can keep the check out of the fast
-         path.
-      */
-      if (VG_(get_IP)(tid) == 0xFFFF0FE0) {
-         trc = VG_TRC_BORING;
-         VG_(set_IP)(tid, VG_(threads)[tid].arch.vex.guest_R14);
-         VG_(threads)[tid].arch.vex.guest_R0 = VG_(threads)[tid].os_state.tls_addr;
-      }
-#     endif
-
       switch (trc) {
       case VG_TRC_BORING:
          /* no special event, just keep going. */
