@@ -483,8 +483,9 @@ VG_(trampoline_stuff_end):
 
 #elif defined(VGP_arm_linux)
 
-#	define UD2_32     .word 0xFFFFFFFF ;
-#	define UD2_64     UD2_32   ; UD2_32
+#       define UD2_4      .word 0xFFFFFFFF
+#	define UD2_16     UD2_4    ; UD2_4    ; UD2_4    ; UD2_4
+#	define UD2_64     UD2_16   ; UD2_16   ; UD2_16   ; UD2_16
 #	define UD2_256    UD2_64   ; UD2_64   ; UD2_64   ; UD2_64
 #	define UD2_1024   UD2_256  ; UD2_256  ; UD2_256  ; UD2_256
 #	define UD2_PAGE   UD2_1024 ; UD2_1024 ; UD2_1024 ; UD2_1024  
@@ -509,28 +510,28 @@ VG_(arm_linux_REDIR_FOR_strlen):
 	cmp	r3, #0
 	bne	.L5
 	bx	lr
-   UD2_32
+	UD2_4
 
-.global VG_(arm_linux_REDIR_FOR_index)
-VG_(arm_linux_REDIR_FOR_index):
-	ldrb	r3, [r0, #0]	@ zero_extendqisi2
-	and	r1, r1, #255
-	cmp	r3, r1
-	@ lr needed for prologue
-	bne	.L9
-	bx	lr
-.L12:
-	ldrb	r3, [r0, #1]!	@ zero_extendqisi2
-	cmp	r3, r1
-	beq	.L11
-.L9:
-	cmp	r3, #0
-	bne	.L12
-	mov	r0, #0
-	bx	lr
-.L11:
-	bx	lr
-   UD2_32
+//.global VG_(arm_linux_REDIR_FOR_index)
+//VG_(arm_linux_REDIR_FOR_index):
+//	ldrb	r3, [r0, #0]	@ zero_extendqisi2
+//	and	r1, r1, #255
+//	cmp	r3, r1
+//	@ lr needed for prologue
+//	bne	.L9
+//	bx	lr
+//.L12:
+//	ldrb	r3, [r0, #1]!	@ zero_extendqisi2
+//	cmp	r3, r1
+//	beq	.L11
+//.L9:
+//	cmp	r3, #0
+//	bne	.L12
+//	mov	r0, #0
+//	bx	lr
+//.L11:
+//	bx	lr
+//	UD2_4
 
 .global VG_(arm_linux_REDIR_FOR_memcpy)
 VG_(arm_linux_REDIR_FOR_memcpy):
@@ -608,7 +609,7 @@ VG_(arm_linux_REDIR_FOR_memcpy):
 	bne	.L20
 	mov	r0, r5
 	ldmfd	sp!, {r4, r5, pc}
-        UD2_32
+	UD2_4
 
 .global VG_(trampoline_stuff_end)
 VG_(trampoline_stuff_end):
@@ -616,6 +617,7 @@ VG_(trampoline_stuff_end):
 	/* and a trailing page of unexecutable code */
 	UD2_PAGE
 
+#	undef UD2_4
 #	undef UD2_16
 #	undef UD2_64
 #	undef UD2_256

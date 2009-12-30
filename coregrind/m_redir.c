@@ -1000,14 +1000,14 @@ void VG_(redir_initialise) ( void )
          (Addr)&VG_(arm_linux_REDIR_FOR_strlen),
          NULL 
       );
+      //add_hardwired_spec(
+      //   "ld-linux.so.3", "index",
+      //   (Addr)&VG_(arm_linux_REDIR_FOR_index),
+      //   NULL 
+      //);
       add_hardwired_spec(
          "ld-linux.so.3", "memcpy",
          (Addr)&VG_(arm_linux_REDIR_FOR_memcpy),
-         NULL 
-      );
-      add_hardwired_spec(
-         "ld-linux.so.3", "index",
-         (Addr)&VG_(arm_linux_REDIR_FOR_index),
          NULL 
       );
    }

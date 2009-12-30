@@ -92,8 +92,8 @@ extern void VG_(ppctoc_magic_redirect_return_stub);
 #endif
 
 #if defined(VGP_arm_linux)
-extern void* VG_(arm_linux_REDIR_FOR_index) ( void*, Int );
 extern UInt  VG_(arm_linux_REDIR_FOR_strlen)( void* );
+//extern void* VG_(arm_linux_REDIR_FOR_index) ( void*, Int );
 extern void* VG_(arm_linux_REDIR_FOR_memcpy)( void*, void*, Int );
 #endif
 
