@@ -724,7 +724,8 @@ static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB )
    //if (o == GOF(TISTART)     && sz == 4) return -1; /* slot unused */
    //if (o == GOF(NRADDR)     && sz == 4) return -1; /* slot unused */
 
-   if (o == GOF(FPSCR)  && sz == 4) return -1;
+   if (o == GOF(FPSCR)    && sz == 4) return -1;
+   if (o == GOF(TPIDRURO) && sz == 4) return -1;
 
    if (o >= GOF(D0)  && o+sz <= GOF(D0) +SZB(D0))  return -1;
    if (o >= GOF(D1)  && o+sz <= GOF(D1) +SZB(D1))  return -1;
