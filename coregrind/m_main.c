@@ -1047,6 +1047,11 @@ static void print_preamble ( Bool logging_to_fd,
          xpre, VERSION, xpost
       );
 
+      VG_(printf)("\n\nSupport for ARM-Linux was merged to the trunk\n");
+      VG_(printf)("in Jan 2010.  This branch is now closed.  Please use\n");
+      VG_(printf)("svn://svn.valgrind.org/valgrind/trunk instead.\n\n");
+      VG_(exit)(0);
+
       // Print the command line.  At one point we wrapped at 80 chars and
       // printed a '\' as a line joiner, but that makes it hard to cut and
       // paste the command line (because of the "==pid==" prefixes), so we now
