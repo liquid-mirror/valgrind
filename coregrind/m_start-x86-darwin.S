@@ -32,24 +32,6 @@
 
 #include "pub_core_basics_asm.h"
 
-	.text
-	.align	2,0x90
-Ldyld_stub_binding_helper:
-	pushl   $__mh_execute_header
-	jmpl    *Ldyld_lazy_symbol_binding_entry_point
-
-	.dyld
-	.align	2
-Ldyld_lazy_symbol_binding_entry_point:
-	.long	0
-	.long	0
-	.long	0
-	.long	0
-	.long	0
-	.long	Ldyld_stub_binding_helper
-	.long	0
-
-		
 	// Memory layout established by kernel:
 	//
 	//        0

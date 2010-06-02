@@ -54,12 +54,18 @@ valgrind_CPPFLAGS  = $(AM_CPPFLAGS_PRI)
 valgrind_CFLAGS    = $(AM_CFLAGS_PRI)
 valgrind_CCASFLAGS = $(AM_CCASFLAGS_PRI)
 valgrind_LDFLAGS   = $(AM_CFLAGS_PRI)
+if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
+valgrind_LDFLAGS   += -Wl,-read_only_relocs -Wl,suppress
+endif
 
 no_op_client_for_valgrind_SOURCES = no_op_client_for_valgrind.c
 no_op_client_for_valgrind_CPPFLAGS  = $(AM_CPPFLAGS_PRI)
 no_op_client_for_valgrind_CFLAGS    = $(AM_CFLAGS_PRI)
 no_op_client_for_valgrind_CCASFLAGS = $(AM_CCASFLAGS_PRI)
 no_op_client_for_valgrind_LDFLAGS   = $(AM_CFLAGS_PRI)
+if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
+no_op_client_for_valgrind_LDFLAGS   += -Wl,-read_only_relocs -Wl,suppress
+endif
 
 #----------------------------------------------------------------------------
 # Darwin Mach stuff

@@ -32,26 +32,6 @@
 
 #include "pub_core_basics_asm.h"
 
-	.text
-	.align	3,0x90
-Ldyld_stub_binding_helper:
-        pushq   %r11
-        leaq    ___dso_handle(%rip), %r11
-        pushq   %r11
-	jmpq    *Ldyld_lazy_symbol_binding_entry_point(%rip)
-
-	.dyld
-	.align	3
-Ldyld_lazy_symbol_binding_entry_point:
-	.quad	0
-	.quad	0
-	.quad	0
-	.quad	0
-	.quad	0
-	.quad	Ldyld_stub_binding_helper
-	.quad	0
-
-		
 	// Memory layout established by kernel:
 	//
 	//        0
