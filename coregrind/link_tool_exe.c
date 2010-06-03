@@ -205,7 +205,6 @@ int main ( int argc, char** argv )
 {
    int         i;
    int/*bool*/ failed = 0;
-   size_t      reqd = 0;
 
    // expect at least: alt-load-address gcc -o foo bar.o
    assert(argc > 5);
@@ -275,9 +274,9 @@ int main ( int argc, char** argv )
       }
    }
 
-   if (1) printf("\n");
+   if (0) printf("\n");
    printf("link_tool_exe: %s\n", cmd);
-   if (1) printf("\n");
+   if (0) printf("\n");
 
    r = system(cmd);
    if (r == -1 || WEXITSTATUS(r) != 0)
