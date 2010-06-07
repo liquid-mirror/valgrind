@@ -115,11 +115,13 @@ mach_defs += \
         /usr/include/mach/vm_map.defs
 endif
 
-# Be careful w.r.t. parellel builds.  See section 27.9 of the automake info
+# Be careful w.r.t. parallel builds.  See section 27.9 of the automake info
 # page, "Handling Tools that Produce many Outputs".
-$(mach_user_srcs): $(mach_defs)
+$(abs_builddir)/m_mach: 
+	mkdir -p $@
+$(mach_user_srcs): $(mach_defs) $(abs_builddir)/m_mach
 	(cd m_mach && mig $(mach_defs))
-$(mach_hdrs): $(mach_defs) $(mach_user_srcs)
+$(mach_hdrs): $(mach_defs) $(mach_user_srcs) $(abs_builddir)/m_mach
 	(cd m_mach && mig $(mach_defs))
 
 #----------------------------------------------------------------------------
