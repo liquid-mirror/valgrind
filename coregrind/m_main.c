@@ -1526,9 +1526,9 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // Ensure we're on a plausible stack.
    //   p: logging
    //--------------------------------------------------------------
-#if defined(VGO_darwin)
+#  if defined(VGO_darwin)
    // Darwin doesn't use the interim stack.
-#else
+#  else
    VG_(debugLog)(1, "main", "Checking current stack is plausible\n");
    { HChar* limLo  = (HChar*)(&VG_(interim_stack).bytes[0]);
      HChar* limHi  = limLo + sizeof(VG_(interim_stack));
@@ -1556,12 +1556,12 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
       VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
       VG_(exit)(1);
    }
-#endif
+#  endif
 
    //--------------------------------------------------------------
    // Start up the address space manager, and determine the
    // approximate location of the client's stack
-   //   p: logging, plausible-stack, darwin-munmap
+   //   p: logging, plausible-stack
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Starting the address space manager\n");
    vg_assert(VKI_PAGE_SIZE     == 4096 || VKI_PAGE_SIZE     == 65536);
