@@ -314,8 +314,6 @@ COREGRIND_SOURCES_COMMON = \
 	m_sigframe/sigframe-ppc64-aix5.c \
 	m_sigframe/sigframe-x86-darwin.c \
 	m_sigframe/sigframe-amd64-darwin.c \
-	m_start-x86-darwin.S \
-	m_start-amd64-darwin.S \
 	m_syswrap/syscall-x86-linux.S \
 	m_syswrap/syscall-amd64-linux.S \
 	m_syswrap/syscall-ppc32-linux.S \

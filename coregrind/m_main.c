@@ -1526,9 +1526,6 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // Ensure we're on a plausible stack.
    //   p: logging
    //--------------------------------------------------------------
-#  if defined(VGO_darwin)
-   // Darwin doesn't use the interim stack.
-#  else
    VG_(debugLog)(1, "main", "Checking current stack is plausible\n");
    { HChar* limLo  = (HChar*)(&VG_(interim_stack).bytes[0]);
      HChar* limHi  = limLo + sizeof(VG_(interim_stack));
@@ -1556,7 +1553,6 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
       VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
       VG_(exit)(1);
    }
-#  endif
 
    //--------------------------------------------------------------
    // Start up the address space manager, and determine the
@@ -2977,6 +2973,68 @@ void max_pw_passlen       ( void ) { vg_assert(0); }
 
 #elif defined(VGO_darwin)
 
+/*
+   Memory layout established by kernel:
+
+   0(%esp)   argc
+   4(%esp)   argv[0]
+             ...
+             argv[argc-1]
+             NULL
+             envp[0]
+             ...
+             envp[n]
+             NULL
+             executable name (presumably, a pointer to it)
+             NULL
+
+   Ditto in the 64-bit case, except all offsets from SP are obviously
+   twice as large.
+*/
+
+/* The kernel hands control to _start, which extracts the initial
+   stack pointer and calls onwards to _start_in_C_darwin.  This also
+   switches to the new stack.  */
+#if defined(VGP_x86_darwin)
+asm("\n"
+    ".text\n"
+    ".align 2,0x90\n"
+    "\t.globl __start\n"
+    "__start:\n"
+    /* set up the new stack in %eax */
+    "\tmovl  $_vgPlain_interim_stack, %eax\n"
+    "\taddl  $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %eax\n"
+    "\taddl  $"VG_STRINGIFY(VG_STACK_ACTIVE_SZB)", %eax\n"
+    "\tsubl  $16, %eax\n"
+    "\tandl  $~15, %eax\n"
+    /* install it, and collect the original one */
+    "\txchgl %eax, %esp\n"
+    /* call _start_in_C_darwin, passing it the startup %esp */
+    "\tpushl %eax\n"
+    "\tcall  __start_in_C_darwin\n"
+    "\tint $3\n"
+    "\tint $3\n"
+);
+#elif defined(VGP_amd64_darwin)
+asm("\n"
+    ".text\n"
+    "\t.globl __start\n"
+    ".align 3,0x90\n"
+    "__start:\n"
+    /* set up the new stack in %rdi */
+    "\tmovabsq $_vgPlain_interim_stack, %rdi\n"
+    "\taddq    $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %rdi\n"
+    "\taddq    $"VG_STRINGIFY(VG_STACK_ACTIVE_SZB)", %rdi\n"
+    "\tandq    $~15, %rdi\n"
+    /* install it, and collect the original one */
+    "\txchgq %rdi, %rsp\n"
+    /* call _start_in_C_darwin, passing it the startup %rsp */
+    "\tcall  __start_in_C_darwin\n"
+    "\tint $3\n"
+    "\tint $3\n"
+);
+#endif
+
 void* __memcpy_chk(void *dest, const void *src, SizeT n, SizeT n2);
 void* __memcpy_chk(void *dest, const void *src, SizeT n, SizeT n2) {
     // skip check
@@ -3001,15 +3059,13 @@ void* memset(void *s, int c, SizeT n) {
   return VG_(memset)(s,c,n);
 }
 
-/* _start in m_start-<arch>-darwin.S calls _start_in_C_darwin(). */
-
 /* Avoid compiler warnings: this fn _is_ used, but labelling it
    'static' causes gcc to complain it isn't. */
 void _start_in_C_darwin ( UWord* pArgc );
 void _start_in_C_darwin ( UWord* pArgc )
 {
    Int     r;
-   Int    argc = *(Int *)pArgc;  // not pArgc[0] on LP64
+   Int     argc = *(Int *)pArgc;  // not pArgc[0] on LP64
    HChar** argv = (HChar**)&pArgc[1];
    HChar** envp = (HChar**)&pArgc[1+argc+1];
 
