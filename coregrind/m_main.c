@@ -1424,6 +1424,8 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    struct vki_rlimit zero = { 0, 0 };
    XArray* addr2dihandle = NULL;
 
+   #error "The MACOSX106 branch has been merged to the trunk and shouldn't be used any more"
+
    //============================================================
    //
    // Nb: startup is complex.  Prerequisites are shown at every step.
