@@ -96,9 +96,12 @@
 #  define VG_STACK_PTR        guest_GPR1
 #  define VG_FRAME_PTR        guest_GPR1   // No frame ptr for PPC
 #elif defined(VGA_arm)
-#  define VG_INSTR_PTR        guest_R15
+#  define VG_ENCIN_PTR        guest_R15T
 #  define VG_STACK_PTR        guest_R13
 #  define VG_FRAME_PTR        guest_R11
+#  define VG_ENCIN_TO_IP(_encin)        ((_encin) & ~1UL)
+#  define VG_ENCIN_TO_AUX(_encin)       ((_encin) & 1UL)
+#  define VG_IP_AUX_TO_ENCIN(_ip,_aux)  ((_ip) & ~1UL) | ((_aux) & 1UL)
 #else
 #  error Unknown arch
 #endif
@@ -107,6 +110,22 @@
 // Offsets for the Vex state
 #define VG_O_STACK_PTR        (offsetof(VexGuestArchState, VG_STACK_PTR))
 #define VG_O_INSTR_PTR        (offsetof(VexGuestArchState, VG_INSTR_PTR))
+
+
+//-------------------------------------------------------------
+// Guest state accessors not visible to tools (although they
+// could be, I guess)
+Addr  VG_(get_ENCIP)     ( ThreadId tid );
+Addr  VG_(get_ENCIP_IP)  ( ThreadId tid );
+UWord VG_(get_ENCIP_AUX) ( ThreadId tid );
+
+Addr VG_(get_SP) ( ThreadId tid );
+Addr VG_(get_FP) ( ThreadId tid );
+
+void VG_(set_ENCIP)   ( ThreadId tid, Addr encip );
+void VG_(set_ENCIP_2) ( ThreadId tid, Addr ip, UWord aux );
+
+void VG_(set_SP) ( ThreadId tid, Addr sp );
 
 
 //-------------------------------------------------------------

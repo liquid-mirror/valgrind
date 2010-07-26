@@ -99,13 +99,9 @@
 #endif
 
 // Guest state accessors
-extern Addr VG_(get_SP) ( ThreadId tid );
-extern Addr VG_(get_IP) ( ThreadId tid );
-extern Addr VG_(get_FP) ( ThreadId tid );
-extern Addr VG_(get_LR) ( ThreadId tid );
+// Currently all in the core_ header, until we know
+// they are needed here
 
-extern void VG_(set_SP) ( ThreadId tid, Addr sp );
-extern void VG_(set_IP) ( ThreadId tid, Addr ip );
 
 // For get/set, 'area' is where the asked-for guest state will be copied
 // into/from.  If shadowNo == 0, the real (non-shadow) guest state is

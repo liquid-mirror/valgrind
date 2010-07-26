@@ -710,7 +710,7 @@ static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB )
    if (o == GOF(R14) && sz == 4) return o;
 
    /* EAZG: These may be completely wrong. */
-   if (o == GOF(R15)   && sz == 4) return -1; /* slot unused */
+   if (o == GOF(R15T)  && sz == 4) return -1; /* slot unused */
    if (o == GOF(CC_OP) && sz == 4) return -1; /* slot unused */
 
    if (o == GOF(CC_DEP1) && sz == 4) return o;

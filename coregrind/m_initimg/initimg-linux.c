@@ -1026,7 +1026,9 @@ void VG_(ii_finalise_image)( IIFinaliseImageInfo iifii )
    VG_(memset)(&arch->vex_shadow2, 0, sizeof(VexGuestARMState));
 
    arch->vex.guest_R13 = iifii.initial_client_SP;
-   arch->vex.guest_R15 = iifii.initial_client_IP;
+   // INTERWORKING FIXME: assumes starting in ARM mode
+   arch->vex.guest_R15T
+      = VG_IP_AUX_TO_ENCIN(iifii.initial_client_IP, 0);
 
    /* This is just EABI stuff. */
    // FIXME jrs: what's this for?

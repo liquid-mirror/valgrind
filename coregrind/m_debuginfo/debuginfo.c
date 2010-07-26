@@ -3057,7 +3057,7 @@ Bool VG_(get_data_description)(
          continue; /* ignore obviously stupid cases */
       if (consider_vars_in_frame( dname1, dname2,
                                   data_addr,
-                                  VG_(get_IP)(tid),
+                                  VG_(get_ENCIP_IP)(tid),
                                   VG_(get_SP)(tid), 
                                   VG_(get_FP)(tid), tid, 0 )) {
          zterm_XA( dname1 );

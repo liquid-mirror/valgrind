@@ -39,46 +39,38 @@
 #include "pub_core_debuglog.h"
 
 
-#define INSTR_PTR(regs)    ((regs).vex.VG_INSTR_PTR)
+#define ENCIN_PTR(regs)    ((regs).vex.VG_ENCIN_PTR)
 #define STACK_PTR(regs)    ((regs).vex.VG_STACK_PTR)
 #define FRAME_PTR(regs)    ((regs).vex.VG_FRAME_PTR)
 
-Addr VG_(get_SP) ( ThreadId tid )
-{
+Addr VG_(get_ENCIP) ( ThreadId tid ) {
+   return ENCIN_PTR( VG_(threads)[tid].arch );
+}
+Addr VG_(get_ENCIP_IP) ( ThreadId tid ) {
+   return VG_ENCIN_TO_IP(ENCIN_PTR( VG_(threads)[tid].arch ));
+}
+UWord VG_(get_ENCIP_AUX) ( ThreadId tid ) {
+   return VG_ENCIN_TO_AUX(ENCIN_PTR( VG_(threads)[tid].arch ));
+}
+
+Addr VG_(get_SP) ( ThreadId tid ) {
    return STACK_PTR( VG_(threads)[tid].arch );
 }
 
-Addr VG_(get_IP) ( ThreadId tid )
-{
-   return INSTR_PTR( VG_(threads)[tid].arch );
-}
-
-Addr VG_(get_FP) ( ThreadId tid )
-{
+Addr VG_(get_FP) ( ThreadId tid ) {
    return FRAME_PTR( VG_(threads)[tid].arch );
 }
 
-Addr VG_(get_LR) ( ThreadId tid )
-{
-#  if defined(VGA_ppc32) || defined(VGA_ppc64)
-   return VG_(threads)[tid].arch.vex.guest_LR;
-#  elif defined(VGA_x86) || defined(VGA_amd64)
-   return 0;
-#  elif defined(VGA_arm)
-   return VG_(threads)[tid].arch.vex.guest_R14;
-#  else
-#    error "Unknown arch"
-#  endif
+
+void VG_(set_ENCIP) ( ThreadId tid, Addr encip ) {
+   ENCIN_PTR( VG_(threads)[tid].arch ) = encip;
+}
+void VG_(set_ENCIP_2) ( ThreadId tid, Addr ip, UWord aux ) {
+   ENCIN_PTR( VG_(threads)[tid].arch ) = VG_IP_AUX_TO_ENCIN(ip, aux);
 }
 
-void VG_(set_SP) ( ThreadId tid, Addr sp )
-{
+void VG_(set_SP) ( ThreadId tid, Addr sp ) {
    STACK_PTR( VG_(threads)[tid].arch ) = sp;
-}
-
-void VG_(set_IP) ( ThreadId tid, Addr ip )
-{
-   INSTR_PTR( VG_(threads)[tid].arch ) = ip;
 }
 
 
@@ -106,7 +98,7 @@ void VG_(get_UnwindStartRegs) ( /*OUT*/UnwindStartRegs* regs,
    regs->misc.PPC64.r_lr
       = VG_(threads)[tid].arch.vex.guest_LR;
 #  elif defined(VGA_arm)
-   regs->r_pc = (ULong)VG_(threads)[tid].arch.vex.guest_R15;
+   regs->r_pc = (ULong)VG_(threads)[tid].arch.vex.guest_R15T;
    regs->r_sp = (ULong)VG_(threads)[tid].arch.vex.guest_R13;
    regs->misc.ARM.r14
       = VG_(threads)[tid].arch.vex.guest_R14;
@@ -117,6 +109,8 @@ void VG_(get_UnwindStartRegs) ( /*OUT*/UnwindStartRegs* regs,
 #  else
 #    error "Unknown arch"
 #  endif
+   /* Ensure the starting PC is properly decoded. */
+   regs->r_pc = VG_ENCIN_TO_IP(regs->r_pc);
 }
 
 

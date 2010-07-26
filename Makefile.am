@@ -3,17 +3,20 @@ AUTOMAKE_OPTIONS = foreign 1.7 dist-bzip2
 
 include $(top_srcdir)/Makefile.all.am 
 
-TOOLS =		memcheck \
-		cachegrind \
-		callgrind \
-		massif \
-		lackey \
-		none \
-		helgrind \
-		drd
+#TOOLS =		memcheck \
+#		cachegrind \
+#		callgrind \
+#		massif \
+#		lackey \
+#		none \
+#		helgrind \
+#		drd
+#
+#EXP_TOOLS = 	exp-ptrcheck \
+#		exp-bbv
+TOOLS     = memcheck none
+EXP_TOOLS =
 
-EXP_TOOLS = 	exp-ptrcheck \
-		exp-bbv
 
 # DDD: once all tools work on Darwin, TEST_TOOLS and TEST_EXP_TOOLS can be
 # replaced with TOOLS and EXP_TOOLS.

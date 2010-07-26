@@ -139,7 +139,12 @@ static void synth_ucontext( ThreadId tid, const vki_siginfo_t *si,
    SC2(ip,R12);
    SC2(sp,R13);
    SC2(lr,R14);
-   SC2(pc,R15);
+   SC2(pc,R15T); // INTERWORKING FIXME
+   // afaics, this is used for two purposes:
+   // * so the guest can see the faulting address.  Hence it needs
+   //   to be unencoded (the real insn IP)
+   // * so we know where to resume afterwords.  Hence it needs to
+   //   be encoded.  Bah.
 #  undef SC2
 
    sc->trap_no = trapno;
@@ -249,7 +254,9 @@ void VG_(sigframe_create)( ThreadId tid,
     if(flags & VKI_SA_RESTORER)
         tst->arch.vex.guest_R14 = (Addr) restorer; 
 
-   tst->arch.vex.guest_R15 = (Addr) handler; /* R15 == PC */
+   // INTERWORKING FIXME this is almost certainly wrong.  But how
+   // do we know which insn set is to be used for the signal handler?
+   tst->arch.vex.guest_R15T = (Addr) handler; /* R15 == PC */
 }
 
 
@@ -312,7 +319,7 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    REST(ip,R12);
    REST(sp,R13);
    REST(lr,R14);
-   REST(pc,R15);
+   REST(pc,R15T); // INTERWORKING FIXME see comments above
 #  undef REST
 
    tst->arch.vex_shadow1 = priv->vex_shadow1;
@@ -323,8 +330,9 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
              
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg,
-                   "vg_pop_signal_frame (thread %d): isRT=%d valid magic; PC=%#x",
-                   tid, has_siginfo, tst->arch.vex.guest_R15);
+                   "vg_pop_signal_frame (thread %d): "
+                   "isRT=%d valid magic; PC(encoded)=%#x",
+                   tid, has_siginfo, tst->arch.vex.guest_R15T);
 
    /* tell the tools */
    VG_TRACK( post_deliver_signal, tid, sigNo );

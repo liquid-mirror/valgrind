@@ -2523,7 +2523,8 @@ static void final_tidyup(ThreadId tid)
       function entry point, not a fn descriptor, so can use it
       directly.  However, we need to set R2 (the toc pointer)
       appropriately. */
-   VG_(set_IP)(tid, __libc_freeres_wrapper);
+   /* INTERWORKING FIXME: assumes wrapper runs in ARM mode */
+   VG_(set_ENCIP_2)(tid, __libc_freeres_wrapper, 0);
 #  if defined(VGP_ppc64_linux)
    VG_(threads)[tid].arch.vex.guest_GPR2 = r2;
 #  endif
