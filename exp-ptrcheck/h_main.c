@@ -4338,7 +4338,7 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_CmpEQ32x2: case Iop_CmpEQ16x4: case Iop_CmpGT8Sx8:
          case Iop_CmpGT32Sx2: case Iop_CmpGT16Sx4: case Iop_MulHi16Sx4:
          case Iop_Mul16x4: case Iop_ShlN32x2: case Iop_ShlN16x4:
-         case Iop_SarN32x2: case Iop_SarN16x4: case Iop_ShrN32x2:
+         case Iop_SarN32x2: case Iop_SarN16x4: case Iop_ShrN32x2: case Iop_ShrN8x8:
          case Iop_ShrN16x4: case Iop_Sub8x8: case Iop_Sub32x2:
          case Iop_QSub8Sx8: case Iop_QSub16Sx4: case Iop_QSub8Ux8:
          case Iop_QSub16Ux4: case Iop_Sub16x4: case Iop_InterleaveHI8x8:
