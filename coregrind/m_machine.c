@@ -379,13 +379,16 @@ UInt VG_(machine_ppc32_has_VMX) = 0;
 #if defined(VGA_ppc64)
 ULong VG_(machine_ppc64_has_VMX) = 0;
 #endif
+#if defined(VGA_arm)
+Int VG_(machine_arm_archlevel) = 4;
+#endif
 
 
 /* Determine what insn set and insn set variant the host has, and
    record it.  To be called once at system startup.  Returns False if
    this a CPU incapable of running Valgrind. */
 
-#if defined(VGA_ppc32) || defined(VGA_ppc64)
+#if defined(VGA_ppc32) || defined(VGA_ppc64) || defined(VGA_arm)
 #include <setjmp.h> // For jmp_buf
 static jmp_buf env_unsup_insn;
 static void handler_unsup_insn ( Int x ) { __builtin_longjmp(env_unsup_insn,1); }
@@ -709,8 +712,110 @@ Bool VG_(machine_get_hwcaps)( void )
 
 #elif defined(VGA_arm)
    {
+     /* Same instruction set detection algorithm as for ppc32. */
+     vki_sigset_t          saved_set, tmp_set;
+     vki_sigaction_fromK_t saved_sigill_act, saved_sigfpe_act;
+     vki_sigaction_toK_t     tmp_sigill_act,   tmp_sigfpe_act;
+
+     volatile Bool have_VFP, have_VFP2, have_VFP3, have_NEON;
+     volatile Int archlevel;
+     Int r;
+
+     /* This is a kludge.  Really we ought to back-convert saved_act
+        into a toK_t using VG_(convert_sigaction_fromK_to_toK), but
+        since that's a no-op on all ppc64 platforms so far supported,
+        it's not worth the typing effort.  At least include most basic
+        sanity check: */
+     vg_assert(sizeof(vki_sigaction_fromK_t) == sizeof(vki_sigaction_toK_t));
+
+     VG_(sigemptyset)(&tmp_set);
+     VG_(sigaddset)(&tmp_set, VKI_SIGILL);
+     VG_(sigaddset)(&tmp_set, VKI_SIGFPE);
+
+     r = VG_(sigprocmask)(VKI_SIG_UNBLOCK, &tmp_set, &saved_set);
+     vg_assert(r == 0);
+
+     r = VG_(sigaction)(VKI_SIGILL, NULL, &saved_sigill_act);
+     vg_assert(r == 0);
+     tmp_sigill_act = saved_sigill_act;
+
+     VG_(sigaction)(VKI_SIGFPE, NULL, &saved_sigfpe_act);
+     tmp_sigfpe_act = saved_sigfpe_act;
+
+     /* NODEFER: signal handler does not return (from the kernel's point of
+        view), hence if it is to successfully catch a signal more than once,
+        we need the NODEFER flag. */
+     tmp_sigill_act.sa_flags &= ~VKI_SA_RESETHAND;
+     tmp_sigill_act.sa_flags &= ~VKI_SA_SIGINFO;
+     tmp_sigill_act.sa_flags |=  VKI_SA_NODEFER;
+     tmp_sigill_act.ksa_handler = handler_unsup_insn;
+     VG_(sigaction)(VKI_SIGILL, &tmp_sigill_act, NULL);
+
+     tmp_sigfpe_act.sa_flags &= ~VKI_SA_RESETHAND;
+     tmp_sigfpe_act.sa_flags &= ~VKI_SA_SIGINFO;
+     tmp_sigfpe_act.sa_flags |=  VKI_SA_NODEFER;
+     tmp_sigfpe_act.ksa_handler = handler_unsup_insn;
+     VG_(sigaction)(VKI_SIGFPE, &tmp_sigfpe_act, NULL);
+
+     /* VFP insns */
+     have_VFP = True;
+     if (__builtin_setjmp(env_unsup_insn)) {
+        have_VFP = False;
+     } else {
+        __asm__ __volatile__(".word 0xEEB02B42"); /* VMOV.F64 d2, d2 */
+     }
+     /* There are several generation of VFP extension but they differs very
+        little so for now we will not distinguish them. */
+     have_VFP2 = have_VFP;
+     have_VFP3 = have_VFP;
+
+     /* NEON insns */
+     have_NEON = True;
+     if (__builtin_setjmp(env_unsup_insn)) {
+        have_NEON = False;
+     } else {
+        __asm__ __volatile__(".word 0xF2244154"); /* VMOV q2, q2 */
+     }
+
+     /* ARM architecture level */
+     archlevel = 5; /* v5 will be base level */
+     if (archlevel < 7) {
+        archlevel = 7;
+        if (__builtin_setjmp(env_unsup_insn)) {
+           archlevel = 5;
+        } else {
+           __asm__ __volatile__(".word 0xF45FF000"); /* PLI [PC,#-0] */
+        }
+     }
+     if (archlevel < 6) {
+        archlevel = 6;
+        if (__builtin_setjmp(env_unsup_insn)) {
+           archlevel = 5;
+        } else {
+           __asm__ __volatile__(".word 0xE6822012"); /* PKHBT r2, r2, r2 */
+        }
+     }
+
+     VG_(convert_sigaction_fromK_to_toK)(&saved_sigill_act, &tmp_sigill_act);
+     VG_(convert_sigaction_fromK_to_toK)(&saved_sigfpe_act, &tmp_sigfpe_act);
+     VG_(sigaction)(VKI_SIGILL, &tmp_sigill_act, NULL);
+     VG_(sigaction)(VKI_SIGFPE, &tmp_sigfpe_act, NULL);
+     VG_(sigprocmask)(VKI_SIG_SETMASK, &saved_set, NULL);
+
+     VG_(debugLog)(1, "machine", "ARMv%d VFP %d VFP2 %d VFP3 %d NEON %d\n",
+           archlevel, (Int)have_VFP, (Int)have_VFP2, (Int)have_VFP3,
+           (Int)have_NEON);
+
+     VG_(machine_arm_archlevel) = archlevel;
+
      va = VexArchARM;
-     vai.hwcaps = 0;
+
+     vai.hwcaps = VEX_ARM_ARCHLEVEL(archlevel);
+     if (have_VFP3) vai.hwcaps |= VEX_HWCAPS_ARM_VFP3;
+     if (have_VFP2) vai.hwcaps |= VEX_HWCAPS_ARM_VFP2;
+     if (have_VFP)  vai.hwcaps |= VEX_HWCAPS_ARM_VFP;
+     if (have_NEON) vai.hwcaps |= VEX_HWCAPS_ARM_NEON;
+
      return True;
    }
 

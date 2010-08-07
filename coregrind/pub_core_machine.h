@@ -217,6 +217,10 @@ extern UInt VG_(machine_ppc32_has_VMX);
 extern ULong VG_(machine_ppc64_has_VMX);
 #endif
 
+#if defined(VGA_arm)
+extern Int VG_(machine_arm_archlevel);
+#endif
+
 #endif   // __PUB_CORE_MACHINE_H
 
 /*--------------------------------------------------------------------*/

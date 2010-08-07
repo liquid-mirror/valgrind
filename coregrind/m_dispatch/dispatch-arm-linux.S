@@ -1,4 +1,3 @@
-
 /*--------------------------------------------------------------------*/
 /*--- The core dispatch loop, for jumping to a code address.       ---*/
 /*---                                         dispatch-arm-linux.S ---*/
@@ -30,6 +29,7 @@
 */
 
 #if defined(VGP_arm_linux)
+	.fpu vfp
 
 #include "pub_core_basics_asm.h"
 #include "pub_core_dispatch_asm.h"
@@ -215,8 +215,8 @@ run_innerloop_exit:
         /* We're leaving.  Check that nobody messed with
            FPSCR in ways we don't expect. */
         fmrx r4, fpscr
-        bic  r4, #0xF0000000 /* mask out NZCV */
-        bic  r4, #0x0000001F /* mask out IXC,UFC,OFC,DZC,IOC */
+        bic  r4, #0xF8000000 /* mask out NZCV and QC */
+        bic  r4, #0x0000009F /* mask out IDC,IXC,UFC,OFC,DZC,IOC */
         cmp  r4, #0
         bne  invariant_violation
         b    run_innerloop_exit_REALLY
