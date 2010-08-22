@@ -39,40 +39,26 @@
 #include "pub_core_debuglog.h"
 
 
-#define ENCIN_PTR(regs)    ((regs).vex.VG_ENCIN_PTR)
+#define INSTR_PTR(regs)    ((regs).vex.VG_INSTR_PTR)
 #define STACK_PTR(regs)    ((regs).vex.VG_STACK_PTR)
 #define FRAME_PTR(regs)    ((regs).vex.VG_FRAME_PTR)
 
-Addr VG_(get_ENCIP) ( ThreadId tid ) {
-   return ENCIN_PTR( VG_(threads)[tid].arch );
+Addr VG_(get_IP) ( ThreadId tid ) {
+   return INSTR_PTR( VG_(threads)[tid].arch );
 }
-Addr VG_(get_ENCIP_IP) ( ThreadId tid ) {
-   return VG_ENCIN_TO_IP(ENCIN_PTR( VG_(threads)[tid].arch ));
-}
-UWord VG_(get_ENCIP_AUX) ( ThreadId tid ) {
-   return VG_ENCIN_TO_AUX(ENCIN_PTR( VG_(threads)[tid].arch ));
-}
-
 Addr VG_(get_SP) ( ThreadId tid ) {
    return STACK_PTR( VG_(threads)[tid].arch );
 }
-
 Addr VG_(get_FP) ( ThreadId tid ) {
    return FRAME_PTR( VG_(threads)[tid].arch );
 }
 
-
-void VG_(set_ENCIP) ( ThreadId tid, Addr encip ) {
-   ENCIN_PTR( VG_(threads)[tid].arch ) = encip;
+void VG_(set_IP) ( ThreadId tid, Addr ip ) {
+   INSTR_PTR( VG_(threads)[tid].arch ) = ip;
 }
-void VG_(set_ENCIP_2) ( ThreadId tid, Addr ip, UWord aux ) {
-   ENCIN_PTR( VG_(threads)[tid].arch ) = VG_IP_AUX_TO_ENCIN(ip, aux);
-}
-
 void VG_(set_SP) ( ThreadId tid, Addr sp ) {
    STACK_PTR( VG_(threads)[tid].arch ) = sp;
 }
-
 
 void VG_(get_UnwindStartRegs) ( /*OUT*/UnwindStartRegs* regs,
                                 ThreadId tid )
@@ -109,8 +95,6 @@ void VG_(get_UnwindStartRegs) ( /*OUT*/UnwindStartRegs* regs,
 #  else
 #    error "Unknown arch"
 #  endif
-   /* Ensure the starting PC is properly decoded. */
-   regs->r_pc = VG_ENCIN_TO_IP(regs->r_pc);
 }
 
 

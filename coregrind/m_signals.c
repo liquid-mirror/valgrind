@@ -2362,7 +2362,7 @@ void sync_signalhandler ( Int sigNo,
    if (VG_(clo_trace_signals)) {
       VG_(dmsg)("sync signal handler: "
                 "signal=%d, si_code=%d, EIP=%#lx, eip=%#lx, from %s\n",
-                sigNo, info->si_code, VG_(get_ENCIP_IP)(tid), 
+                sigNo, info->si_code, VG_(get_IP)(tid), 
                 VG_UCONTEXT_INSTR_PTR(uc),
                 ( from_user ? "user" : "kernel" ));
    }

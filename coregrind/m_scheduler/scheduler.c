@@ -654,7 +654,7 @@ static void do_pre_run_checks ( ThreadState* tst )
    vg_assert(VG_IS_16_ALIGNED(& tst->arch.vex.guest_VR1));
    vg_assert(VG_IS_16_ALIGNED(& tst->arch.vex_shadow1.guest_VR1));
    vg_assert(VG_IS_16_ALIGNED(& tst->arch.vex_shadow2.guest_VR1));
-#  endif   
+#  endif
 
 #  if defined(VGA_arm)
    /* arm guest_state VFP regs must be 8 byte aligned for
@@ -823,7 +823,7 @@ static UInt run_noredir_translation ( Addr hcode, ThreadId tid )
       retval = VG_TRC_FAULT_SIGNAL;
    } else {
       /* store away the guest program counter */
-      VG_(set_ENCIP)( tid, argblock[2] );
+      VG_(set_IP)( tid, argblock[2] );
       if (argblock[3] == argblock[1])
          /* the guest state pointer afterwards was unchanged */
          retval = VG_TRC_BORING;
@@ -847,16 +847,16 @@ static UInt run_noredir_translation ( Addr hcode, ThreadId tid )
 static void handle_tt_miss ( ThreadId tid )
 {
    Bool found;
-   Addr encip = VG_(get_ENCIP)(tid);
+   Addr ip = VG_(get_IP)(tid);
 
    /* Trivial event.  Miss in the fast-cache.  Do a full
       lookup for it. */
-   found = VG_(search_transtab)( NULL, encip, True/*upd_fast_cache*/ );
+   found = VG_(search_transtab)( NULL, ip, True/*upd_fast_cache*/ );
    if (UNLIKELY(!found)) {
       /* Not found; we need to request a translation. */
-      if (VG_(translate)( tid, encip, /*debug*/False, 0/*not verbose*/, 
+      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, 
                           bbs_done, True/*allow redirection*/ )) {
-	 found = VG_(search_transtab)( NULL, encip, True ); 
+	 found = VG_(search_transtab)( NULL, ip, True ); 
          vg_assert2(found, "VG_TRC_INNER_FASTMISS: missing tt_fast entry");
       
       } else {
@@ -904,15 +904,17 @@ static void handle_syscall(ThreadId tid, UInt trc)
 static UInt/*trc*/ handle_noredir_jump ( ThreadId tid )
 {
    AddrH hcode = 0;
-   Addr  encip = VG_(get_ENCIP)(tid);
+   Addr  ip    = VG_(get_IP)(tid);
 
-   Bool  found = VG_(search_unredir_transtab)( &hcode, encip );
+   Bool  found = VG_(search_unredir_transtab)( &hcode, ip );
    if (!found) {
       /* Not found; we need to request a translation. */
-      if (VG_(translate)( tid, encip, /*debug*/False, 0/*not verbose*/,
-                          bbs_done, False/*NO REDIRECTION*/ )) {
-         found = VG_(search_unredir_transtab)( &hcode, encip );
+      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, bbs_done,
+                          False/*NO REDIRECTION*/ )) {
+
+         found = VG_(search_unredir_transtab)( &hcode, ip );
          vg_assert2(found, "unredir translation missing after creation?!");
+      
       } else {
 	 // If VG_(translate)() fails, it's because it had to throw a
 	 // signal because the client jumped to a bad address.  That
@@ -1171,7 +1173,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       case VEX_TRC_JMP_NODECODE:
          VG_(umsg)(
             "valgrind: Unrecognised instruction at address %#lx.\n",
-            VG_(get_ENCIP_IP)(tid));
+            VG_(get_IP)(tid));
 #define M(a) VG_(umsg)(a "\n");
    M("Your program just tried to execute an instruction that Valgrind" );
    M("did not recognise.  There are two possible reasons for this."    );
@@ -1184,8 +1186,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
    M("Either way, Valgrind will now raise a SIGILL signal which will"  );
    M("probably kill your program."                                     );
 #undef M
-         // INTERWORKING FIXME is this correct (the use of get_ENCIP) ?
-         VG_(synth_sigill)(tid, VG_(get_ENCIP)(tid));
+         VG_(synth_sigill)(tid, VG_(get_IP)(tid));
          break;
 
       case VEX_TRC_JMP_TINVAL:

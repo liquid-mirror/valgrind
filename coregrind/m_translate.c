@@ -1253,7 +1253,6 @@ typedef
    TID is the identity of the thread requesting this translation.
 */
 
-// INTERWORKING FIXME this requires careful consideration
 Bool VG_(translate) ( ThreadId tid, 
                       Addr64   nraddr,
                       Bool     debugging_translation,
