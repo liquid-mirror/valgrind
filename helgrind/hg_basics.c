@@ -82,6 +82,7 @@ Word  HG_(clo_sanity_flags) = 0;
 
 Bool  HG_(clo_free_is_write) = False;
 
+UWord HG_(clo_vts_pruning) = 1;
 
 /*--------------------------------------------------------------------*/
 /*--- end                                              hg_basics.c ---*/

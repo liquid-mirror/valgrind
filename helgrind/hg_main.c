@@ -120,6 +120,7 @@ static void all__sanity_check ( Char* who ); /* fwds */
 
 /* Admin linked list of Threads */
 static Thread* admin_threads = NULL;
+Thread* get_admin_threads ( void ) { return admin_threads; }
 
 /* Admin double linked list of Locks */
 /* We need a double linked list to properly and efficiently
@@ -1653,9 +1654,20 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    /* Send last arg of _so_send as False, since the sending thread
       doesn't actually exist any more, so we don't want _so_send to
       try taking stack snapshots of it. */
-   libhb_so_send(hbthr_q, so, True/*strong_send*/);
+   libhb_so_send(hbthr_q, so, True/*strong_send*//*?!? wrt comment above*/);
    libhb_so_recv(hbthr_s, so, True/*strong_recv*/);
    libhb_so_dealloc(so);
+
+   /* Tell libhb that the quitter has been reaped.  Note that we might
+      have to be cleverer about this, to exclude 2nd and subsequent
+      notifications for the same hbthr_q, in the case where the app is
+      buggy (calls pthread_join twice or more on the same thread) AND
+      where libpthread is also buggy and doesn't return ESRCH on
+      subsequent calls.  (If libpthread isn't thusly buggy, then the
+      wrapper for pthread_join in hg_intercepts.c will stop us getting
+      notified here multiple times for the same joinee.)  See also
+      comments in helgrind/tests/jointwice.c. */
+   libhb_joinedwith_done(hbthr_q);
 
    /* evh__pre_thread_ll_exit issues an error message if the exiting
       thread holds any locks.  No need to check here. */
@@ -4620,6 +4632,14 @@ static Bool hg_process_cmd_line_option ( Char* arg )
 
    else if VG_BOOL_CLO(arg, "--free-is-write",
                             HG_(clo_free_is_write)) {}
+
+   else if VG_XACT_CLO(arg, "--vts-pruning=never",
+                            HG_(clo_vts_pruning), 0);
+   else if VG_XACT_CLO(arg, "--vts-pruning=auto",
+                            HG_(clo_vts_pruning), 1);
+   else if VG_XACT_CLO(arg, "--vts-pruning=always",
+                            HG_(clo_vts_pruning), 2);
+
    else 
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -4653,6 +4673,12 @@ static void hg_print_debug_usage ( void )
                "ranges >= %d bytes\n", SCE_BIGRANGE_T);
    VG_(printf)("       000010   at lock/unlock events\n");
    VG_(printf)("       000001   at thread create/join events\n");
+   VG_(printf)(
+"    --vts-pruning=never|auto|always [auto]\n"
+"       never:   is never done (may cause big space leaks in Helgrind)\n"
+"       auto:    done just often enough to keep space usage under control\n"
+"       always:  done after every VTS GC (mostly just a big time waster)\n"
+    );
 }
 
 static void hg_fini ( Int exitcode )

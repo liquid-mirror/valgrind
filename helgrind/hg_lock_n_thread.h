@@ -97,6 +97,8 @@ typedef
    }
    Thread;
 
+/* Get hg's admin_threads value, so libhb can visit all of them. */
+Thread* get_admin_threads ( void );
 
 /* Stores information about a lock's current state.  These are
    allocated and later freed (when the containing memory becomes

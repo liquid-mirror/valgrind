@@ -55,7 +55,8 @@ void libhb_shutdown ( Bool show_stats );
 Thr* libhb_create ( Thr* parent );
 
 /* Thread async exit */
-void libhb_async_exit ( Thr* exitter );
+void libhb_async_exit      ( Thr* exitter );
+void libhb_joinedwith_done ( Thr* exitter );
 
 /* Synchronisation objects (abstract to caller) */
 
