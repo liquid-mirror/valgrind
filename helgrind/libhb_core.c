@@ -152,11 +152,11 @@ typedef  ULong  SVal;
    at a clock rate of 5 GHz is 162.9 days.  And that's doing nothing
    but VTS ticks, which isn't realistic.
 
-   NB1: SCALARTS_N_THRBITS must be 21 or lower.  The obvious limit is
-   32 since a ThrID is a UInt.  21 comes from the fact that
+   NB1: SCALARTS_N_THRBITS must be 29 or lower.  The obvious limit is
+   32 since a ThrID is a UInt.  29 comes from the fact that
    'Thr_n_RCEC', which records information about old accesses, packs
-   not only a ThrID but also 2+1+8 other bits in a UInt, hence
-   limiting size to 32-(2+1+8) == 21.
+   not only a ThrID but also 2+1 other bits (access size and
+   writeness) in a UInt, hence limiting size to 32-(2+1) == 29.
 
    NB2: thrid values are issued upwards from 1024, and values less
    than that aren't valid.  This isn't per se necessary (any order
@@ -182,7 +182,8 @@ typedef  ULong  SVal;
    ThrID == 0 to denote an empty Thr_n_RCEC record.  So ThrID == 0
    must never be a valid ThrID.  Given NB2 that's OK.
 */
-#define SCALARTS_N_THRBITS 18  /* valid range: 11 to 21 inclusive */
+#define SCALARTS_N_THRBITS 18  /* valid range: 11 to 29 inclusive */
+
 #define SCALARTS_N_TYMBITS (64 - SCALARTS_N_THRBITS)
 typedef
    struct {
@@ -4175,13 +4176,19 @@ static RCEC* get_RCEC ( Thr* thr )
 // (UInt) `echo "Old Reference Information" | md5sum`
 #define OldRef_MAGIC 0x30b1f075UL
 
-/* Records an access: a thread and a context.  The size
-   (1,2,4,8) and read-or-writeness are also encoded as
-   follows: bottom bit of .thr is 1 if write, 0 if read
-            bottom 2 bits of .rcec are encode size:
-            00 = 1, 01 = 2, 10 = 4, 11 = 8
+/* Records an access: a thread, a context (size & writeness) and the
+   number of held locks. The size (1,2,4,8) is encoded as 00 = 1, 01 =
+   2, 10 = 4, 11 = 8. 
 */
-typedef  struct { Thr* thr; RCEC* rcec; }  Thr_n_RCEC;
+typedef
+   struct { 
+      RCEC*     rcec;
+      WordSetID locksHeldW;
+      UInt      thrid  : SCALARTS_N_THRBITS;
+      UInt      szLg2B : 2;
+      UInt      isW    : 1;
+   }
+   Thr_n_RCEC;
 
 #define N_OLDREF_ACCS 5
 
@@ -4190,7 +4197,7 @@ typedef
       UWord magic;  /* sanity check only */
       UWord gen;    /* when most recently accessed */
                     /* or free list when not in use */
-      /* unused slots in this array have .thr == NULL */
+      /* unused slots in this array have .thrid == 0, which is invalid */
       Thr_n_RCEC accs[N_OLDREF_ACCS];
    }
    OldRef;
@@ -4214,13 +4221,6 @@ static SparseWA* oldrefTree     = NULL; /* SparseWA* OldRef* */
 static UWord     oldrefGen      = 0;    /* current LRU generation # */
 static UWord     oldrefTreeN    = 0;    /* # elems in oldrefTree */
 static UWord     oldrefGenIncAt = 0;    /* inc gen # when size hits this */
-
-inline static void* ptr_or_UWord ( void* p, UWord w ) {
-   return (void*)( ((UWord)p) | ((UWord)w) );
-}
-inline static void* ptr_and_UWord ( void* p, UWord w ) {
-   return (void*)( ((UWord)p) & ((UWord)w) );
-}
 
 inline static UInt min_UInt ( UInt a, UInt b ) {
    return a < b ? a : b;
@@ -4253,50 +4253,51 @@ static void event_map_bind ( Addr a, SizeT szB, Bool isW, Thr* thr )
    UWord   keyW, valW;
    Bool    b;
 
+   tl_assert(thr);
+   ThrID thrid = thr->thrid;
+   tl_assert(thrid != 0); /* zero is used to denote an empty slot. */
+
+   WordSetID locksHeldW = thr->hgthread->locksetW;
+
    rcec = get_RCEC( thr );
    ctxt__rcinc(rcec);
 
-   /* encode the size and writeness of the transaction in the bottom
-      two bits of thr and rcec. */
-   thr = ptr_or_UWord(thr, isW ? 1 : 0);
+   UInt szLg2B = 0;
    switch (szB) {
       /* This doesn't look particularly branch-predictor friendly. */
-      case 1:  rcec = ptr_or_UWord(rcec, 0); break;
-      case 2:  rcec = ptr_or_UWord(rcec, 1); break;
-      case 4:  rcec = ptr_or_UWord(rcec, 2); break;
-      case 8:  rcec = ptr_or_UWord(rcec, 3); break;
+      case 1:  szLg2B = 0; break;
+      case 2:  szLg2B = 1; break;
+      case 4:  szLg2B = 2; break;
+      case 8:  szLg2B = 3; break;
       default: tl_assert(0);
    }
 
-   /* Look in the map to see if we already have this. */
+   /* Look in the map to see if we already have a record for this
+      address. */
    b = VG_(lookupSWA)( oldrefTree, &keyW, &valW, a );
 
    if (b) {
 
       /* We already have a record for this address.  We now need to
-         see if we have a stack trace pertaining to this (thread, R/W,
+         see if we have a stack trace pertaining to this (thrid, R/W,
          size) triple. */
       tl_assert(keyW == a);
       ref = (OldRef*)valW;
       tl_assert(ref->magic == OldRef_MAGIC);
 
-      tl_assert(thr);
       for (i = 0; i < N_OLDREF_ACCS; i++) {
-         if (ref->accs[i].thr != thr)
+         if (ref->accs[i].thrid != thrid)
             continue;
-         /* since .thr encodes both the accessing thread and the
-            read/writeness, we know now that at least those features
-            of the access match this entry.  So we just need to check
-            the size indication.  Do this by inspecting the lowest 2 bits of
-            .rcec, which contain the encoded size info. */
-         if (ptr_and_UWord(ref->accs[i].rcec,3) != ptr_and_UWord(rcec,3))
+         if (ref->accs[i].szLg2B != szLg2B)
+            continue;
+         if (ref->accs[i].isW != (UInt)(isW & 1))
             continue;
          /* else we have a match, so stop looking. */
          break;
       }
 
       if (i < N_OLDREF_ACCS) {
-         /* thread 'thr' has an entry at index 'i'.  Update it. */
+         /* thread 'thr' has an entry at index 'i'.  Update its RCEC. */
          if (i > 0) {
             Thr_n_RCEC tmp = ref->accs[i-1];
             ref->accs[i-1] = ref->accs[i];
@@ -4305,31 +4306,36 @@ static void event_map_bind ( Addr a, SizeT szB, Bool isW, Thr* thr )
          }
          if (rcec == ref->accs[i].rcec) stats__ctxt_rcdec1_eq++;
          stats__ctxt_rcdec1++;
-         ctxt__rcdec( ptr_and_UWord(ref->accs[i].rcec, ~3) );
-         ref->accs[i].rcec = rcec;
-         tl_assert(ref->accs[i].thr == thr);
+         ctxt__rcdec( ref->accs[i].rcec );
+         tl_assert(ref->accs[i].thrid == thrid);
+         /* Update the RCEC and the W-held lockset. */
+         ref->accs[i].rcec       = rcec;
+         ref->accs[i].locksHeldW = locksHeldW;
       } else {
-         /* No entry for this (thread, R/W, size) triple.  Shuffle all
-            of them down one slot, and put the new entry at the start
-            of the array. */
-         if (ref->accs[N_OLDREF_ACCS-1].thr) {
+         /* No entry for this (thread, R/W, size, nWHeld) quad.
+            Shuffle all of them down one slot, and put the new entry
+            at the start of the array. */
+         if (ref->accs[N_OLDREF_ACCS-1].thrid != 0) {
             /* the last slot is in use.  We must dec the rc on the
                associated rcec. */
             tl_assert(ref->accs[N_OLDREF_ACCS-1].rcec);
             stats__ctxt_rcdec2++;
             if (0 && 0 == (stats__ctxt_rcdec2 & 0xFFF))
                VG_(printf)("QQQQ %lu overflows\n",stats__ctxt_rcdec2);
-            ctxt__rcdec( ptr_and_UWord(ref->accs[N_OLDREF_ACCS-1].rcec, ~3) );
+            ctxt__rcdec( ref->accs[N_OLDREF_ACCS-1].rcec );
          } else {
             tl_assert(!ref->accs[N_OLDREF_ACCS-1].rcec);
          }
          for (j = N_OLDREF_ACCS-1; j >= 1; j--)
             ref->accs[j] = ref->accs[j-1];
-         ref->accs[0].thr = thr;
-         ref->accs[0].rcec = rcec;
-         /* thr==NULL is used to signify an empty slot, so we can't
-            add a NULL thr. */
-         tl_assert(ptr_and_UWord(thr, ~3) != 0); 
+         ref->accs[0].thrid      = thrid;
+         ref->accs[0].szLg2B     = szLg2B;
+         ref->accs[0].isW        = (UInt)(isW & 1);
+         ref->accs[0].locksHeldW = locksHeldW;
+         ref->accs[0].rcec       = rcec;
+         /* thrid==0 is used to signify an empty slot, so we can't
+            add zero thrid (such a ThrID is invalid anyway). */
+         /* tl_assert(thrid != 0); */ /* There's a dominating assert above. */
       }
 
       ref->gen = oldrefGen;
@@ -4346,15 +4352,24 @@ static void event_map_bind ( Addr a, SizeT szB, Bool isW, Thr* thr )
 
       ref = alloc_OldRef();
       ref->magic = OldRef_MAGIC;
-      ref->gen = oldrefGen;
-      ref->accs[0].rcec = rcec;
-      ref->accs[0].thr = thr;
-      /* thr==NULL is used to signify an empty slot, so we can't add a
-         NULL thr. */
-      tl_assert(ptr_and_UWord(thr, ~3) != 0); 
+      ref->gen   = oldrefGen;
+      ref->accs[0].thrid      = thrid;
+      ref->accs[0].szLg2B     = szLg2B;
+      ref->accs[0].isW        = (UInt)(isW & 1);
+      ref->accs[0].locksHeldW = locksHeldW;
+      ref->accs[0].rcec       = rcec;
+
+      /* thrid==0 is used to signify an empty slot, so we can't
+         add zero thrid (such a ThrID is invalid anyway). */
+      /* tl_assert(thrid != 0); */ /* There's a dominating assert above. */
+
+      /* Clear out the rest of the entries */
       for (j = 1; j < N_OLDREF_ACCS; j++) {
-         ref->accs[j].thr = NULL;
-         ref->accs[j].rcec = NULL;
+         ref->accs[j].rcec       = NULL;
+         ref->accs[j].thrid      = 0;
+         ref->accs[j].szLg2B     = 0;
+         ref->accs[j].isW        = 0;
+         ref->accs[j].locksHeldW = 0;
       }
       VG_(addToSWA)( oldrefTree, a, (UWord)ref );
       oldrefTreeN++;
@@ -4363,10 +4378,12 @@ static void event_map_bind ( Addr a, SizeT szB, Bool isW, Thr* thr )
 }
 
 
+/* Extract info from the conflicting-access machinery. */
 Bool libhb_event_map_lookup ( /*OUT*/ExeContext** resEC,
-                              /*OUT*/Thr**  resThr,
-                              /*OUT*/SizeT* resSzB,
-                              /*OUT*/Bool*  resIsW,
+                              /*OUT*/Thr**        resThr,
+                              /*OUT*/SizeT*       resSzB,
+                              /*OUT*/Bool*        resIsW,
+                              /*OUT*/WordSetID*   locksHeldW,
                               Thr* thr, Addr a, SizeT szB, Bool isW )
 {
    Word    i, j;
@@ -4374,17 +4391,20 @@ Bool libhb_event_map_lookup ( /*OUT*/ExeContext** resEC,
    UWord   keyW, valW;
    Bool    b;
 
-   Thr*    cand_thr;
-   RCEC*   cand_rcec;
-   Bool    cand_isW;
-   SizeT   cand_szB;
-   Addr    cand_a;
+   ThrID     cand_thrid;
+   RCEC*     cand_rcec;
+   Bool      cand_isW;
+   SizeT     cand_szB;
+   WordSetID cand_locksHeldW;
+   Addr      cand_a;
 
    Addr toCheck[15];
    Int  nToCheck = 0;
 
    tl_assert(thr);
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
+
+   ThrID thrid = thr->thrid;
 
    toCheck[nToCheck++] = a;
    for (i = -7; i < (Word)szB; i++) {
@@ -4407,33 +4427,27 @@ Bool libhb_event_map_lookup ( /*OUT*/ExeContext** resEC,
       ref = (OldRef*)valW;
       tl_assert(keyW == cand_a);
       tl_assert(ref->magic == OldRef_MAGIC);
-      tl_assert(ref->accs[0].thr); /* first slot must always be used */
+      tl_assert(ref->accs[0].thrid != 0); /* first slot must always be used */
 
-      cand_thr  = NULL;
-      cand_rcec = NULL;
-      cand_isW  = False;
-      cand_szB  = 0;
+      cand_thrid      = 0; /* invalid; see comments in event_map_bind */
+      cand_rcec       = NULL;
+      cand_isW        = False;
+      cand_szB        = 0;
+      cand_locksHeldW = 0; /* always valid; see initialise_data_structures() */
 
       for (i = 0; i < N_OLDREF_ACCS; i++) {
          Thr_n_RCEC* cand = &ref->accs[i];
-         cand_thr  = ptr_and_UWord(cand->thr, ~3);
-         cand_rcec = ptr_and_UWord(cand->rcec, ~3);
-         /* Decode the writeness from the bottom bit of .thr. */
-         cand_isW = 1 == (UWord)ptr_and_UWord(cand->thr, 1);
-         /* Decode the size from the bottom two bits of .rcec. */
-         switch ((UWord)ptr_and_UWord(cand->rcec, 3)) {
-            case 0:  cand_szB = 1; break;
-            case 1:  cand_szB = 2; break;
-            case 2:  cand_szB = 4; break;
-            case 3:  cand_szB = 8; break;
-            default: tl_assert(0);
-         }
+         cand_rcec       = cand->rcec;
+         cand_thrid      = cand->thrid;
+         cand_isW        = (Bool)cand->isW;
+         cand_szB        = 1 << cand->szLg2B;
+         cand_locksHeldW = cand->locksHeldW;
 
-         if (cand_thr == NULL) 
+         if (cand_thrid == 0) 
             /* This slot isn't in use.  Ignore it. */
             continue;
 
-         if (cand_thr == thr)
+         if (cand_thrid == thrid)
             /* This is an access by the same thread, but we're only
                interested in accesses from other threads.  Ignore. */
             continue;
@@ -4456,7 +4470,7 @@ Bool libhb_event_map_lookup ( /*OUT*/ExeContext** resEC,
       if (i < N_OLDREF_ACCS) {
          Int n, maxNFrames;
          /* return with success */
-         tl_assert(cand_thr);
+         tl_assert(cand_thrid);
          tl_assert(cand_rcec);
          tl_assert(cand_rcec->magic == RCEC_MAGIC);
          tl_assert(cand_szB >= 1);
@@ -4465,10 +4479,12 @@ Bool libhb_event_map_lookup ( /*OUT*/ExeContext** resEC,
          for (n = 0; n < maxNFrames; n++) {
             if (0 == cand_rcec->frames[n]) break;
          }
-         *resEC  = VG_(make_ExeContext_from_StackTrace)(cand_rcec->frames, n);
-         *resThr = cand_thr;
-         *resSzB = cand_szB;
-         *resIsW = cand_isW;
+         *resEC      = VG_(make_ExeContext_from_StackTrace)
+                          (cand_rcec->frames, n);
+         *resThr     = Thr__from_ThrID(cand_thrid);
+         *resSzB     = cand_szB;
+         *resIsW     = cand_isW;
+         *locksHeldW = cand_locksHeldW;
          return True;
       }
 
@@ -4555,9 +4571,9 @@ static void event_map__check_reference_counts ( Bool before )
       oldref = (OldRef*)valW;
       tl_assert(oldref->magic == OldRef_MAGIC);
       for (i = 0; i < N_OLDREF_ACCS; i++) {
-         Thr*  aThr = ptr_and_UWord(oldref->accs[i].thr, ~3);
-         RCEC* aRef = ptr_and_UWord(oldref->accs[i].rcec, ~3);
-         if (aThr) {
+         ThrID aThrID = oldref->accs[i].thrid;
+         RCEC* aRef   = oldref->accs[i].rcec;
+         if (aThrID != 0) {
             tl_assert(aRef);
             tl_assert(aRef->magic == RCEC_MAGIC);
             aRef->rcX++;
@@ -4798,14 +4814,14 @@ static void event_map_maybe_GC ( void )
       tl_assert(keyW == ga2del);
       oldref = (OldRef*)valW;
       for (j = 0; j < N_OLDREF_ACCS; j++) {
-         Thr*  aThr = ptr_and_UWord(oldref->accs[j].thr, ~3);
-         RCEC* aRef = ptr_and_UWord(oldref->accs[j].rcec, ~3);
+         ThrID aThrID = oldref->accs[j].thrid;
+         RCEC* aRef   = oldref->accs[j].rcec;
          if (aRef) {
-            tl_assert(aThr);
+            tl_assert(aThrID != 0);
             stats__ctxt_rcdec3++;
             ctxt__rcdec( aRef );
          } else {
-            tl_assert(!aThr);
+            tl_assert(aThrID == 0);
          }
       }
 
@@ -6158,8 +6174,26 @@ Thr* libhb_init (
    // We will have to have to store a large number of these,
    // so make sure they're the size we expect them to be.
    tl_assert(sizeof(ScalarTS) == 8);
-   tl_assert(SCALARTS_N_THRBITS >= 11); /* because first 1024 unusable */
-   tl_assert(SCALARTS_N_THRBITS <= 32); /* so as to fit in a UInt */
+
+   /* because first 1024 unusable */
+   tl_assert(SCALARTS_N_THRBITS >= 11);
+   /* so as to fit in a UInt w/ 3 bits to spare (see defn of
+      Thr_n_RCEC). */
+   tl_assert(SCALARTS_N_THRBITS <= 29);
+
+   /* Need to be sure that Thr_n_RCEC is 2 words (64-bit) or 3 words
+      (32-bit).  It's not correctness-critical, but there are a lot of
+      them, so it's important from a space viewpoint.  Unfortunately
+      we simply can't pack it into 2 words on a 32-bit target. */
+   if (sizeof(UWord) == 8) {
+      tl_assert(sizeof(Thr_n_RCEC) == 16);
+   } else {
+      tl_assert(sizeof(Thr_n_RCEC) == 12);
+   }
+
+   /* Word sets really are 32 bits.  Even on a 64 bit target. */
+   tl_assert(sizeof(WordSetID) == 4);
+   tl_assert(sizeof(WordSet) == sizeof(WordSetID));
 
    tl_assert(get_stacktrace);
    tl_assert(get_EC);

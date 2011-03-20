@@ -137,6 +137,14 @@ static WordFM* map_locks = NULL; /* WordFM LockAddr Lock* */
 static WordSetU* univ_lsets = NULL; /* sets of Lock* */
 static WordSetU* univ_laog  = NULL; /* sets of Lock*, for LAOG */
 
+/* Allow libhb to get at the universe of locksets stored
+   here.  Sigh. */
+WordSetU* HG_(get_univ_lsets) ( void ) { return univ_lsets; }
+
+/* Allow libhb to get at the list of locks stored here.  Ditto
+   sigh. */
+Lock* HG_(get_admin_locks) ( void ) { return admin_locks; }
+
 
 /*----------------------------------------------------------------*/
 /*--- Simple helpers for the data structures                   ---*/
@@ -538,6 +546,7 @@ static void pp_everything ( Int flags, Char* caller )
 static void initialise_data_structures ( Thr* hbthr_root )
 {
    Thread*   thr;
+   WordSetID wsid;
 
    /* Get everything initialised and zeroed. */
    tl_assert(admin_threads == NULL);
@@ -559,6 +568,11 @@ static void initialise_data_structures ( Thr* hbthr_root )
    univ_lsets = HG_(newWordSetU)( HG_(zalloc), "hg.ids.4", HG_(free),
                                   8/*cacheSize*/ );
    tl_assert(univ_lsets != NULL);
+   /* Ensure that univ_lsets is non-empty, with lockset zero being the
+      empty lockset.  hg_errors.c relies on the assumption that
+      lockset number zero in univ_lsets is always valid. */
+   wsid = HG_(emptyWS)(univ_lsets);
+   tl_assert(wsid == 0);
 
    tl_assert(univ_laog == NULL);
    if (HG_(clo_track_lockorders)) {
