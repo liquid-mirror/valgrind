@@ -1178,8 +1178,8 @@ void HG_(pp_Error) ( Error* err )
          emit( "  <kind>Race</kind>\n" );
          emit( "  <xwhat>\n" );
          emit( "    <text>Possible data race during %s of size %d "
-                    "at %#lx by thread #%d</text>\n",
-              what, szB, err_ga, (Int)xe->XE.Race.thr->errmsg_index );
+                    "at %p by thread #%d</text>\n",
+               what, szB, (void*)err_ga, (Int)xe->XE.Race.thr->errmsg_index );
          emit( "    <hthreadid>%d</hthreadid>\n",
                (Int)xe->XE.Race.thr->errmsg_index );
          emit( "  </xwhat>\n" );
@@ -1227,8 +1227,8 @@ void HG_(pp_Error) ( Error* err )
                                        xe->XE.Race.h2_ct_locksHeldW );
 
          emit( "Possible data race during %s of size %d "
-               "at %#lx by thread #%d\n",
-               what, szB, err_ga, (Int)xe->XE.Race.thr->errmsg_index );
+               "at %p by thread #%d\n",
+               what, szB, (void*)err_ga, (Int)xe->XE.Race.thr->errmsg_index );
 
          tl_assert(xe->XE.Race.locksHeldW);
          show_LockP_summary_textmode( xe->XE.Race.locksHeldW, "" );
@@ -1271,14 +1271,14 @@ void HG_(pp_Error) ( Error* err )
       if (xe->XE.Race.hctxt) {
          SizeT delta = err_ga - xe->XE.Race.haddr;
          if (xml) {
-            emit("  <auxwhat>Address %#lx is %ld bytes inside a block "
-                 "of size %ld alloc'd</auxwhat>\n", err_ga, delta, 
+            emit("  <auxwhat>Address %p is %ld bytes inside a block "
+                 "of size %ld alloc'd</auxwhat>\n", (void*)err_ga, delta, 
                  xe->XE.Race.hszB);
             VG_(pp_ExeContext)( xe->XE.Race.hctxt );
          } else {
             emit("\n");
-            emit("Address %#lx is %ld bytes inside a block "
-                 "of size %ld alloc'd\n", err_ga, delta, 
+            emit("Address %p is %ld bytes inside a block "
+                 "of size %ld alloc'd\n", (void*)err_ga, delta, 
                  xe->XE.Race.hszB);
             VG_(pp_ExeContext)( xe->XE.Race.hctxt );
          }
