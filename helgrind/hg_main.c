@@ -3927,11 +3927,18 @@ Bool HG_(mm_find_containing_block)( /*OUT*/ExeContext** where,
 /*--- Instrumentation                                        ---*/
 /*--------------------------------------------------------------*/
 
-static void instrument_mem_access ( IRSB*   bbOut, 
+#define binop(_op, _arg1, _arg2) IRExpr_Binop((_op),(_arg1),(_arg2))
+#define mkexpr(_tmp)             IRExpr_RdTmp((_tmp))
+#define mkU32(_n)                IRExpr_Const(IRConst_U32(_n))
+#define mkU64(_n)                IRExpr_Const(IRConst_U64(_n))
+#define assign(_t, _e)           IRStmt_WrTmp((_t), (_e))
+
+static void instrument_mem_access ( IRSB*   sbOut, 
                                     IRExpr* addr,
                                     Int     szB,
                                     Bool    isStore,
-                                    Int     hWordTy_szB )
+                                    Int     hWordTy_szB,
+                                    Int     goff_sp )
 {
    IRType   tyAddr   = Ity_INVALID;
    HChar*   hName    = NULL;
@@ -3940,10 +3947,15 @@ static void instrument_mem_access ( IRSB*   bbOut,
    IRExpr** argv     = NULL;
    IRDirty* di       = NULL;
 
+   // THRESH is the size of the window above SP (well,
+   // mostly above) that we assume implies a stack reference.
+   const Int THRESH = 4096 * 4; // somewhat arbitrary
+   const Int rz_szB = VG_STACK_REDZONE_SZB;
+
    tl_assert(isIRAtom(addr));
    tl_assert(hWordTy_szB == 4 || hWordTy_szB == 8);
 
-   tyAddr = typeOfIRExpr( bbOut->tyenv, addr );
+   tyAddr = typeOfIRExpr( sbOut->tyenv, addr );
    tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
 
    /* So the effective address is in 'addr' now. */
@@ -4010,14 +4022,71 @@ static void instrument_mem_access ( IRSB*   bbOut,
       }
    }
 
-   /* Add the helper. */
+   /* Create the helper. */
    tl_assert(hName);
    tl_assert(hAddr);
    tl_assert(argv);
    di = unsafeIRDirty_0_N( regparms,
                            hName, VG_(fnptr_to_fnentry)( hAddr ),
                            argv );
-   addStmtToIRSB( bbOut, IRStmt_Dirty(di) );
+
+   if (! HG_(clo_check_stack_refs)) {
+      /* We're ignoring memory references which are (obviously) to the
+         stack.  In fact just skip stack refs that are within 4 pages
+         of SP (SP - the redzone, really), as that's simple, easy, and
+         filters out most stack references. */
+      /* Generate the guard condition: "(addr - (SP - RZ)) >u N", for
+         some arbitrary N.  If that is true then addr is outside the
+         range (SP - RZ .. SP + N - RZ).  If N is smallish (a few
+         pages) then we can say addr is within a few pages of SP and
+         so can't possibly be a heap access, and so can be skipped.
+
+         Note that the condition simplifies to
+            (addr - SP + RZ) >u N
+         which generates better code in x86/amd64 backends, but it does
+         not unfortunately simplify to
+            (addr - SP) >u (N - RZ)
+         (would be beneficial because N - RZ is a constant) because
+         wraparound arithmetic messes up the comparison.  eg.
+         20 >u 10 == True,
+         but (20 - 15) >u (10 - 15) == 5 >u (MAXINT-5) == False.
+      */
+      IRTemp sp = newIRTemp(sbOut->tyenv, tyAddr);
+      addStmtToIRSB( sbOut, assign(sp, IRExpr_Get(goff_sp, tyAddr)));
+
+      /* "addr - SP" */
+      IRTemp addr_minus_sp = newIRTemp(sbOut->tyenv, tyAddr);
+      addStmtToIRSB(
+         sbOut,
+         assign(addr_minus_sp,
+                tyAddr == Ity_I32
+                   ? binop(Iop_Sub32, addr, mkexpr(sp))
+                   : binop(Iop_Sub64, addr, mkexpr(sp)))
+      );
+
+      /* "addr - SP + RZ" */
+      IRTemp diff = newIRTemp(sbOut->tyenv, tyAddr);
+      addStmtToIRSB(
+         sbOut,
+         assign(diff,
+                tyAddr == Ity_I32 
+                   ? binop(Iop_Add32, mkexpr(addr_minus_sp), mkU32(rz_szB))
+                   : binop(Iop_Add64, mkexpr(addr_minus_sp), mkU64(rz_szB)))
+      );
+
+      IRTemp guard = newIRTemp(sbOut->tyenv, Ity_I1);
+      addStmtToIRSB(
+         sbOut,
+         assign(guard,
+                tyAddr == Ity_I32 
+                   ? binop(Iop_CmpLT32U, mkU32(THRESH), mkexpr(diff))
+                   : binop(Iop_CmpLT64U, mkU64(THRESH), mkexpr(diff)))
+      );
+      di->guard = mkexpr(guard);
+   }
+
+   /* Add the helper. */
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
 }
 
 
@@ -4064,6 +4133,8 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
    IRStmt* st;
    Bool    inLDSO = False;
    Addr64  inLDSOmask4K = 1; /* mismatches on first check */
+
+   const Int goff_sp = layout->offset_SP;
 
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
@@ -4156,7 +4227,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                   (isDCAS ? 2 : 1)
                      * sizeofIRType(typeOfIRExpr(bbIn->tyenv, cas->dataLo)),
                   False/*!isStore*/,
-                  sizeofIRType(hWordTy)
+                  sizeofIRType(hWordTy), goff_sp
                );
             }
             break;
@@ -4176,7 +4247,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                      st->Ist.LLSC.addr,
                      sizeofIRType(dataTy),
                      False/*!isStore*/,
-                     sizeofIRType(hWordTy)
+                     sizeofIRType(hWordTy), goff_sp
                   );
                }
             } else {
@@ -4195,7 +4266,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                   st->Ist.Store.addr, 
                   sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
                   True/*isStore*/,
-                  sizeofIRType(hWordTy)
+                  sizeofIRType(hWordTy), goff_sp
                );
             }
             break;
@@ -4211,7 +4282,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                      data->Iex.Load.addr,
                      sizeofIRType(data->Iex.Load.ty),
                      False/*!isStore*/,
-                     sizeofIRType(hWordTy)
+                     sizeofIRType(hWordTy), goff_sp
                   );
                }
             }
@@ -4231,7 +4302,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                   if (!inLDSO) {
                      instrument_mem_access( 
                         bbOut, d->mAddr, dataSize, False/*!isStore*/,
-                        sizeofIRType(hWordTy)
+                        sizeofIRType(hWordTy), goff_sp
                      );
                   }
                }
@@ -4239,7 +4310,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                   if (!inLDSO) {
                      instrument_mem_access( 
                         bbOut, d->mAddr, dataSize, True/*isStore*/,
-                        sizeofIRType(hWordTy)
+                        sizeofIRType(hWordTy), goff_sp
                      );
                   }
                }
@@ -4262,6 +4333,12 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
 
    return bbOut;
 }
+
+#undef binop
+#undef mkexpr
+#undef mkU32
+#undef mkU64
+#undef assign
 
 
 /*----------------------------------------------------------------*/
@@ -4654,6 +4731,9 @@ static Bool hg_process_cmd_line_option ( Char* arg )
    else if VG_XACT_CLO(arg, "--vts-pruning=always",
                             HG_(clo_vts_pruning), 2);
 
+   else if VG_BOOL_CLO(arg, "--check-stack-refs",
+                            HG_(clo_check_stack_refs)) {}
+
    else 
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -4670,6 +4750,8 @@ static void hg_print_usage ( void )
 "       approx: full trace for one thread, approx for the other (faster)\n"
 "       none:   only show trace for one thread in a race (fastest)\n"
 "    --conflict-cache-size=N   size of 'full' history cache [1000000]\n"
+"    --check-stack-refs=no|yes race-check reads and writes on the\n"
+"                              main stack and thread stacks? [yes]\n"
    );
 }
 

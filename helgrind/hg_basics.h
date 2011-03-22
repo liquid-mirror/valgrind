@@ -122,6 +122,9 @@ extern Bool HG_(clo_free_is_write);
       mostly a big time waster, but minimises space use. */
 extern UWord HG_(clo_vts_pruning);
 
+/* When False, race checking ignores memory references which are to
+   the stack, which speeds things up a bit.  Default: True. */
+extern Bool HG_(clo_check_stack_refs); 
 
 #endif /* ! __HG_BASICS_H */
 
