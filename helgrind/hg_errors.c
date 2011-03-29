@@ -333,10 +333,19 @@ typedef
          } PthAPIerror;
          struct {
             Thread*     thr;
-            Addr        before_ga; /* always locked first in prog. history */
-            Addr        after_ga;
-            ExeContext* before_ec;
-            ExeContext* after_ec;
+            /* The first 4 fields describe the previously observed
+               (should-be) ordering. */
+            Addr        shouldbe_earlier_ga;
+            Addr        shouldbe_later_ga;
+            ExeContext* shouldbe_earlier_ec;
+            ExeContext* shouldbe_later_ec;
+            /* In principle we need to record two more stacks, from
+               this thread, when acquiring the locks in the "wrong"
+               order.  In fact the wallclock-later acquisition by this
+               thread is recorded in the main stack for this error.
+               So we only need a stack for the earlier acquisition by
+               this thread. */
+            ExeContext* actual_earlier_ec;
          } LockOrder;
          struct {
             Thread*     thr;
@@ -606,8 +615,12 @@ void HG_(record_error_UnlockBogus) ( Thread* thr, Addr lock_ga )
 }
 
 void HG_(record_error_LockOrder)(
-        Thread* thr, Addr before_ga, Addr after_ga,
-        ExeContext* before_ec, ExeContext* after_ec 
+        Thread*     thr, 
+        Addr        shouldbe_earlier_ga,
+        Addr        shouldbe_later_ga,
+        ExeContext* shouldbe_earlier_ec,
+        ExeContext* shouldbe_later_ec,
+        ExeContext* actual_earlier_ec
      )
 {
    XError xe;
@@ -616,10 +629,11 @@ void HG_(record_error_LockOrder)(
    init_XError(&xe);
    xe.tag = XE_LockOrder;
    xe.XE.LockOrder.thr       = thr;
-   xe.XE.LockOrder.before_ga = before_ga;
-   xe.XE.LockOrder.before_ec = before_ec;
-   xe.XE.LockOrder.after_ga  = after_ga;
-   xe.XE.LockOrder.after_ec  = after_ec;
+   xe.XE.LockOrder.shouldbe_earlier_ga = shouldbe_earlier_ga;
+   xe.XE.LockOrder.shouldbe_earlier_ec = shouldbe_earlier_ec;
+   xe.XE.LockOrder.shouldbe_later_ga   = shouldbe_later_ga;
+   xe.XE.LockOrder.shouldbe_later_ec   = shouldbe_later_ec;
+   xe.XE.LockOrder.actual_earlier_ec   = actual_earlier_ec;
    // FIXME: tid vs thr
    tl_assert( HG_(is_sane_ThreadId)(thr->coretid) );
    tl_assert( thr->coretid != VG_INVALID_THREADID );
@@ -976,38 +990,54 @@ void HG_(pp_Error) ( Error* err )
          emit( "    <text>Thread #%d: lock order \"%p before %p\" "
                     "violated</text>\n",
                (Int)xe->XE.LockOrder.thr->errmsg_index,
-               (void*)xe->XE.LockOrder.before_ga,
-               (void*)xe->XE.LockOrder.after_ga );
+               (void*)xe->XE.LockOrder.shouldbe_earlier_ga,
+               (void*)xe->XE.LockOrder.shouldbe_later_ga );
          emit( "    <hthreadid>%d</hthreadid>\n",
                (Int)xe->XE.LockOrder.thr->errmsg_index );
          emit( "  </xwhat>\n" );
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
+         if (xe->XE.LockOrder.shouldbe_earlier_ec
+             && xe->XE.LockOrder.shouldbe_later_ec) {
             emit( "  <auxwhat>Required order was established by "
                   "acquisition of lock at %p</auxwhat>\n",
-                  (void*)xe->XE.LockOrder.before_ga );
-            VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
+                  (void*)xe->XE.LockOrder.shouldbe_earlier_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.shouldbe_earlier_ec );
             emit( "  <auxwhat>followed by a later acquisition "
                   "of lock at %p</auxwhat>\n",
-                  (void*)xe->XE.LockOrder.after_ga );
-            VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
+                  (void*)xe->XE.LockOrder.shouldbe_later_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.shouldbe_later_ec );
          }
 
       } else {
 
          emit( "Thread #%d: lock order \"%p before %p\" violated\n",
                (Int)xe->XE.LockOrder.thr->errmsg_index,
-               (void*)xe->XE.LockOrder.before_ga,
-               (void*)xe->XE.LockOrder.after_ga );
+               (void*)xe->XE.LockOrder.shouldbe_earlier_ga,
+               (void*)xe->XE.LockOrder.shouldbe_later_ga );
+         emit( "\n" );
+         emit( "Observed (incorrect) order is: "
+               "acquisition of lock at %p\n",
+               (void*)xe->XE.LockOrder.shouldbe_later_ga);
+         if (xe->XE.LockOrder.actual_earlier_ec) {
+             VG_(pp_ExeContext)(xe->XE.LockOrder.actual_earlier_ec);
+         } else {
+            emit("   (stack unavailable)\n");
+         }
+         emit( "\n" );
+         emit(" followed by a later acquisition of lock at %p\n",
+              (void*)xe->XE.LockOrder.shouldbe_earlier_ga);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
-            emit( "  Required order was established by "
+         if (xe->XE.LockOrder.shouldbe_earlier_ec
+             && xe->XE.LockOrder.shouldbe_later_ec) {
+            emit("\n");
+            emit( "Required order was established by "
                   "acquisition of lock at %p\n",
-                  (void*)xe->XE.LockOrder.before_ga );
-            VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
-            emit( "  followed by a later acquisition of lock at %p\n",
-                  (void*)xe->XE.LockOrder.after_ga );
-            VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
+                  (void*)xe->XE.LockOrder.shouldbe_earlier_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.shouldbe_earlier_ec );
+            emit( "\n" );
+            emit( " followed by a later acquisition of lock at %p\n",
+                  (void*)xe->XE.LockOrder.shouldbe_later_ga );
+            VG_(pp_ExeContext)( xe->XE.LockOrder.shouldbe_later_ec );
          }
 
       }
