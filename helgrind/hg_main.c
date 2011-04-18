@@ -2178,32 +2178,53 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
    // Hmm.  POSIX doesn't actually say that it's an error to call 
    // pthread_cond_signal with the associated mutex being unlocked.
    // Although it does say that it should be "if consistent scheduling
-   // is desired."
+   // is desired."  For that reason, print "dubious" if the lock isn't
+   // held by any thread.  Skip the "dubious" if it is held by some
+   // other thread; that sounds straight-out wrong.
    //
-   // For the moment, disable these checks.
-   //lk = map_locks_maybe_lookup(cvi->mx_ga);
-   //if (lk == NULL || cvi->mx_ga == 0) {
-   //   HG_(record_error_Misc)( thr, 
-   //      "pthread_cond_{signal,broadcast}: "
-   //      "no or invalid mutex associated with cond");
-   //}
-   ///* note: lk could be NULL.  Be careful. */
-   //if (lk) {
-   //   if (lk->kind == LK_rdwr) {
-   //      HG_(record_error_Misc)(thr,
-   //         "pthread_cond_{signal,broadcast}: associated lock is a rwlock");
-   //   }
-   //   if (lk->heldBy == NULL) {
-   //      HG_(record_error_Misc)(thr,
-   //         "pthread_cond_{signal,broadcast}: "
-   //         "associated lock is not held by any thread");
-   //   }
-   //   if (lk->heldBy != NULL && 0 == VG_(elemBag)(lk->heldBy, (Word)thr)) {
-   //      HG_(record_error_Misc)(thr,
-   //         "pthread_cond_{signal,broadcast}: "
-   //         "associated lock is not held by calling thread");
-   //   }
-   //}
+   // Anybody who writes code that signals on a CV without holding
+   // the associated MX needs to be shipped off to a lunatic asylum
+   // ASAP, even though POSIX doesn't actually declare such behaviour
+   // illegal -- it makes code extremely difficult to understand/
+   // reason about.  In particular it puts the signalling thread in
+   // a situation where it is racing against the released waiter
+   // as soon as the signalling is done, and so there needs to be
+   // some auxiliary synchronisation mechanism in the program that
+   // makes this safe -- or the race(s) need to be harmless, or
+   // probably nonexistent.
+   //
+   if (1) {
+      Lock* lk = NULL;
+      if (cvi->mx_ga != 0) {
+         lk = map_locks_maybe_lookup( (Addr)cvi->mx_ga );
+      }
+      /* note: lk could be NULL.  Be careful. */
+      if (lk) {
+         if (lk->kind == LK_rdwr) {
+            HG_(record_error_Misc)(thr,
+               "pthread_cond_{signal,broadcast}: associated lock is a rwlock");
+         }
+         if (lk->heldBy == NULL) {
+            HG_(record_error_Misc)(thr,
+               "pthread_cond_{signal,broadcast}: dubious: "
+               "associated lock is not held by any thread");
+         }
+         if (lk->heldBy != NULL && 0 == VG_(elemBag)(lk->heldBy, (Word)thr)) {
+            HG_(record_error_Misc)(thr,
+               "pthread_cond_{signal,broadcast}: "
+               "associated lock is not held by calling thread");
+         }
+      } else {
+         /* Couldn't even find the damn thing. */
+         // But actually .. that's not necessarily an error.  We don't
+         // know the (CV,MX) binding until a pthread_cond_wait or bcast
+         // shows us what it is, and if that may not have happened yet.
+         // So just keep quiet in this circumstance.
+         //HG_(record_error_Misc)( thr, 
+         //   "pthread_cond_{signal,broadcast}: "
+         //   "no or invalid mutex associated with cond");
+      }
+   }
 
    libhb_so_send( thr->hbthr, cvi->so, True/*strong_send*/ );
 }
