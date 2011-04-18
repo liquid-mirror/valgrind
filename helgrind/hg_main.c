@@ -2306,7 +2306,7 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
          it?  If this happened it would surely be a bug in the threads
          library.  Or one of those fabled "spurious wakeups". */
       HG_(record_error_Misc)( thr, "Bug in libpthread: pthread_cond_wait "
-                                   "succeeded on"
+                                   "succeeded"
                                    " without prior pthread_cond_post");
    }
 
