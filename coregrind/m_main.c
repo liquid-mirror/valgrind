@@ -1444,6 +1444,8 @@ void shutdown_actions_NORETURN( ThreadId tid,
 static
 Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
 {
+   VG_(debugLog)(0, "main", "branches/TCHAIN is now merged to trunk.  Use trunk instead.\n");
+   VG_(exit)(0);
    HChar*  toolname           = "memcheck";    // default to Memcheck
    Int     need_help          = 0; // 0 = no, 1 = --help, 2 = --help-debug
    ThreadId tid_main          = VG_INVALID_THREADID;
