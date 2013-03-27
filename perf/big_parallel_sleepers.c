@@ -8,11 +8,31 @@
 #include <sys/types.h>
 #include <sys/syscall.h>
 #include <sched.h>
+#include <string.h>
+#include <assert.h>
+#include <sys/mman.h>
 
 static int loops = 15; // each thread+main will do this amount of loop
 static int sleepms = 1000; // in each loop, will sleep "sleepms" milliseconds
 static int burn = 0; // after each sleep, will burn cpu in a tight 'burn' loop 
 
+#define FN_SIZE   996      // Must be big enough to hold the compiled f()
+#define N_LOOPS   20000    // Should be divisible by four
+#define RATIO     4        // Ratio of code sizes between the two modes
+
+int f(int x, int y)
+{
+   int i;
+   for (i = 0; i < 5000; i++) {
+      switch (x % 8) {
+       case 1:  y += 3;
+       case 2:  y += x;
+       case 3:  y *= 2;
+       default: y--;
+      }
+   }
+   return y;
+}
 
 static pid_t gettid()
 {
@@ -30,13 +50,28 @@ static void whoami(char *msg)
    fflush(stderr);
 }
 
+static int n_fns, n_reps;
+static char* a;
 
 static void do_burn ()
 {
-   int i;
-   int loopnr = 0;
-   // one single line for the below, to ensure interrupt on this line.
-   for (i = 0; i < burn; i++) loopnr++;
+   int h, i, sum1 = 0, sum2 = 0, sum3 = 0, sum4 = 0;
+
+   for (h = 0; h < n_reps; h += 1) {
+      for (i = 0; i < n_fns; i += 4) {
+         int(*f1)(int,int) = (void*)&a[FN_SIZE*(i+0)];
+         int(*f2)(int,int) = (void*)&a[FN_SIZE*(i+1)];
+         int(*f3)(int,int) = (void*)&a[FN_SIZE*(i+2)];
+         int(*f4)(int,int) = (void*)&a[FN_SIZE*(i+3)];
+         sum1 += f1(i+0, n_fns-i+0);
+         sum2 += f2(i+1, n_fns-i+1);
+         sum3 += f3(i+2, n_fns-i+2);
+         sum4 += f4(i+3, n_fns-i+3);
+         if (i % 1000 == 0)
+            printf(".");
+      }
+   }
+   printf("result = %d\n", sum1 + sum2 + sum3 + sum4);
 }
 
 static int thread_ready = 0;
@@ -117,7 +152,7 @@ static void wait_ready(void)
 // threads wanting to burn cpu.
 static void setaffinity(void)
 {
-#ifdef VGO_linux
+#ifdef xxxxxxVGO_linux
    cpu_set_t single_cpu;
    CPU_ZERO(&single_cpu);
    CPU_SET(1, &single_cpu);
@@ -131,9 +166,25 @@ int main (int argc, char *argv[])
   char *threads_spec;
   pthread_t ebbr, egll, zzzz;
   struct spec b, l, p, m;
+  int i;
   char *some_mem __attribute__((unused)) = malloc(100);
-  if (argc < 6) setaffinity(); // add -p to have parallel sleepers
+  setaffinity();
 
+  a = mmap(0, FN_SIZE * N_LOOPS, 
+           PROT_EXEC|PROT_WRITE, 
+           MAP_PRIVATE|MAP_ANONYMOUS, -1,0);
+  assert(a != (char*)MAP_FAILED);
+  
+  // Mode 2: lots of code
+  n_fns  = N_LOOPS;
+  n_reps = 1;
+  printf("%d copies of f(), %d reps\n", n_fns, n_reps);
+  // Make a whole lot of copies of f().  FN_SIZE is much bigger than f()
+  // will ever be (we hope).
+  for (i = 0; i < n_fns; i++) {
+     memcpy(&a[FN_SIZE*i], f, FN_SIZE);
+  }
+  
   if (argc > 1)
      loops = atoi(argv[1]);
 

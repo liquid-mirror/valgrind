@@ -258,6 +258,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_libcproc.c \
 	m_libcsetjmp.c \
 	m_libcsignal.c \
+	m_lock.c \
 	m_machine.c \
 	m_main.c \
 	m_mallocfree.c \
@@ -340,6 +341,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_scheduler/sema.c \
 	m_scheduler/sched-lock.c \
 	m_scheduler/sched-lock-generic.c \
+	m_scheduler/sched-lock-rwlock.c \
 	m_sigframe/sigframe-x86-linux.c \
 	m_sigframe/sigframe-amd64-linux.c \
 	m_sigframe/sigframe-ppc32-linux.c \

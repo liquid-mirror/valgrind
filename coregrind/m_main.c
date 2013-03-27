@@ -1385,7 +1385,8 @@ static void print_preamble ( Bool logging_to_fd,
 
 /* Number of file descriptors that Valgrind tries to reserve for
    it's own use - just a small constant. */
-#define N_RESERVED_FDS (10)
+//mt??? we need more FDs due to the read/write locks
+#define N_RESERVED_FDS (20)
 
 static void setup_file_descriptors(void)
 {
@@ -2506,6 +2507,13 @@ void shutdown_actions_NORETURN( ThreadId tid,
    VG_(debugLog)(1, "core_os", 
                     "VG_(terminate_NORETURN)(tid=%lld)\n", (ULong)tid);
 
+   // Release the lock. Needed to avoid having helgrind complaining
+   // a thread exits with a lot. The scheduler has exited with this
+   // thread having a read lock.
+   // mtV? This might allow other threads to run. But with mtV, this
+   // can happen in any case as the Scheduler only runs with a read lock.
+   VG_(release_BigLock_LL)(tid, VgTs_ReadLock, "shutdown_actions_NORETURN");
+
    switch (tids_schedretcode) {
    case VgSrc_ExitThread:  /* the normal way out (Linux) */
    case VgSrc_ExitProcess: /* the normal way out (AIX) -- still needed? */
@@ -2610,6 +2618,9 @@ static void final_tidyup(ThreadId tid)
    vg_assert(VG_(is_exiting)(tid));
    // ...but now we're not again
    VG_(threads)[tid].exitreason = VgSrc_None;
+   // and we need the big lock in write mode to enter the scheduler
+   VG_(release_BigLock)(tid, VgTs_Yielding, "m_main final_tidyup");
+   VG_(acquire_BigLock)(tid, VgTs_WriteLock, "m_main final_tidyup");
 
    // run until client thread exits - ideally with LIBC_FREERES_DONE,
    // but exit/exitgroup/signal will do

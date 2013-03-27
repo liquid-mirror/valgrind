@@ -1633,7 +1633,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
             VG_(fixup_guest_state_after_syscall_interrupted). */
 
          /* Reacquire the lock */
-         VG_(acquire_BigLock)(tid, "VG_(client_syscall)[async]");
+         VG_(acquire_BigLock)(tid, VgTs_ReadLock, "VG_(client_syscall)[async]");
 
          /* Even more impedance matching.  Extract the syscall status
             from the guest state. */

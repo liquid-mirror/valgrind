@@ -34,15 +34,15 @@
 
 struct sched_lock;
 
-enum SchedLockType { sched_lock_generic, sched_lock_ticket };
+enum SchedLockType { sched_lock_generic, sched_lock_rwlock, sched_lock_ticket };
 
 Bool ML_(set_sched_lock_impl)(const enum SchedLockType t);
 const HChar *ML_(get_sched_lock_name)(void);
 struct sched_lock *ML_(create_sched_lock)(void);
 void ML_(destroy_sched_lock)(struct sched_lock *p);
 int ML_(get_sched_lock_owner)(struct sched_lock *p);
-void ML_(acquire_sched_lock)(struct sched_lock *p);
-void ML_(release_sched_lock)(struct sched_lock *p);
+void ML_(acquire_sched_lock)(struct sched_lock *p, ThreadId tid, SchedLockKind slk);
+void ML_(release_sched_lock)(struct sched_lock *p, ThreadId tid, SchedLockKind slk);
 
 #endif   // __PRIV_SCHED_LOCK_H
 

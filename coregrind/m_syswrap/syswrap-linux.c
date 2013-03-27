@@ -80,7 +80,7 @@ static VgSchedReturnCode thread_wrapper(Word /*ThreadId*/ tidW)
    vg_assert(tst->status == VgTs_Init);
 
    /* make sure we get the CPU lock before doing anything significant */
-   VG_(acquire_BigLock)(tid, "thread_wrapper(starting new thread)");
+   VG_(acquire_BigLock)(tid, VgTs_WriteLock, "thread_wrapper(starting new thread)");
 
    if (0)
       VG_(printf)("thread tid %d started: stack = %p\n",
@@ -423,6 +423,13 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
 
    VG_(do_atfork_pre)(tid);
+
+#ifdef SINGLEV
+   vg_assert(VG_(owns_BigLock_LL)(ptid));
+#else
+   vg_assert(VG_(threads)[tid].slk == VgTs_ReadLock);
+   //mtV? or should we rather have the write lock ?
+#endif
 
    /* Since this is the fork() form of clone, we don't need all that
       VG_(clone) stuff */

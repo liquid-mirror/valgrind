@@ -52,17 +52,37 @@ extern void VG_(get_thread_out_of_syscall)(ThreadId tid);
 extern void VG_(nuke_all_threads_except) ( ThreadId me,
                                            VgSchedReturnCode reason );
 
-/* Make a thread the running thread.  The thread must previously been
-   sleeping, and not holding the CPU lock.  This will set the
-   thread state to VgTs_Runnable, and the thread will attempt to take
-   the CPU lock.  By the time it returns, tid will be the running
-   thread. */
-extern void VG_(acquire_BigLock) ( ThreadId tid, const HChar* who );
+/* Make a thread acquire a lock of kind slk.
+   slk can be either VgTs_ReadLock or VgTs_WriteLock.
+   The thread cannot currently have the big lock.
+   This will set the  thread state to VgTs_Runnable.
+   By the time it returns, tid will be a running thread.
+   The global idea is:
+     A thread having the write lock can change 
+     shared state/shared data structures.
+     A thread having a read lock can read safely shared
+     state/shared data structures. 
+
+   Note that not all shared data structures are protected in read
+   mode by the shared lock. Having all data structures read-only
+   would give a very low level of parallelism. So, a read big lock
+   protects many but not all shared data structures.
+   The data structures not protected by the big read lock must use
+   other techniques to be thread safe such as
+     use atomic instruction
+     use specific mutex or rw lock
+     use lock-less algorithms. 
+
+     ??? Need to describe which data structures are supposed to
+     be protected by this big lock ???? */
+extern void VG_(acquire_BigLock) ( ThreadId tid, SchedLockKind slk,
+                                   const HChar* who );
 
 /* Simple version, which simply acquires the lock, but does not mess
    with the guest state in the same way as the non _LL version
    does. */
-extern void VG_(acquire_BigLock_LL) ( const HChar* who );
+extern void VG_(acquire_BigLock_LL) ( ThreadId tid, SchedLockKind slk,
+                                      const HChar* who);
 
 /* Set a thread into a sleeping state.  Before the call, the thread
    must be runnable, and holding the CPU lock.  When this call
@@ -73,10 +93,12 @@ extern void VG_(acquire_BigLock_LL) ( const HChar* who );
    the caller's responsibility to actually block until the thread is
    ready to run again. */
 extern void VG_(release_BigLock) ( ThreadId tid,
-                                   ThreadStatus state, const HChar* who );
+                                   ThreadStatus state,
+                                   const HChar* who );
 
 /* Matching function to acquire_BigLock_LL. */
-extern void VG_(release_BigLock_LL) ( const HChar* who );
+extern void VG_(release_BigLock_LL) ( ThreadId tid, SchedLockKind slk,
+                                      const HChar* who );
 
 /* Whether the specified thread owns the big lock. */
 extern Bool VG_(owns_BigLock_LL) ( ThreadId tid );
@@ -105,9 +127,6 @@ extern void VG_(force_vgdb_poll) ( void );
 
 /* Stats ... */
 extern void VG_(print_scheduler_stats) ( void );
-
-/* If False, a fault is Valgrind-internal (ie, a bug) */
-extern Bool VG_(in_generated_code);
 
 /* Sanity checks which may be done at any time.  The scheduler decides when. */
 extern void VG_(sanity_check_general) ( Bool force_expensive );

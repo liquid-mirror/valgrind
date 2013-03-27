@@ -300,6 +300,8 @@ static Int     segnames_used = 0;
 static NSegment nsegments[VG_N_SEGMENTS];
 static Int      nsegments_used = 0;
 
+static Mutex ns_mutex;
+
 #define Addr_MIN ((Addr)0)
 #define Addr_MAX ((Addr)(-1ULL))
 
@@ -1196,14 +1198,22 @@ inline static Int find_nsegment_idx ( Addr a )
    readonly data. */
 NSegment const * VG_(am_find_nsegment) ( Addr a )
 {
+   // mtV? Well, we are locking the data structure while we search it.
+   // But we return a pointer to it ???
+   // So, what if nsegments[i] is changed afterwards by another thread ?
+   VG_(mutex_lock)(&ns_mutex);
    Int i = find_nsegment_idx(a);
    aspacem_assert(i >= 0 && i < nsegments_used);
    aspacem_assert(nsegments[i].start <= a);
    aspacem_assert(a <= nsegments[i].end);
-   if (nsegments[i].kind == SkFree) 
+   if (nsegments[i].kind == SkFree) {
+      VG_(mutex_unlock)(&ns_mutex);
       return NULL;
-   else
+   }
+   else {
+      VG_(mutex_unlock)(&ns_mutex);
       return &nsegments[i];
+   }
 }
 
 
@@ -1323,7 +1333,10 @@ Bool is_valid_for_client( Addr start, SizeT len, UInt prot, Bool freeOk )
 Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, 
                                   UInt prot )
 {
-   return is_valid_for_client( start, len, prot, False/*free not OK*/ );
+   VG_(mutex_lock)(&ns_mutex);
+   Bool res = is_valid_for_client( start, len, prot, False/*free not OK*/ );
+   VG_(mutex_unlock)(&ns_mutex);
+   return res;
 }
 
 /* Variant of VG_(am_is_valid_for_client) which allows free areas to
@@ -1333,7 +1346,10 @@ Bool VG_(am_is_valid_for_client)( Addr start, SizeT len,
 Bool VG_(am_is_valid_for_client_or_free_or_resvn)
    ( Addr start, SizeT len, UInt prot )
 {
-   return is_valid_for_client( start, len, prot, True/*free is OK*/ );
+   VG_(mutex_lock)(&ns_mutex);
+   Bool res = is_valid_for_client( start, len, prot, True/*free is OK*/ );
+   VG_(mutex_unlock)(&ns_mutex);
+   return res;
 }
 
 
@@ -1597,6 +1613,8 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
 {
    NSegment seg;
    Addr     suggested_clstack_top;
+
+   VG_(mutex_init)(&ns_mutex);
 
    aspacem_assert(sizeof(Word)   == sizeof(void*));
    aspacem_assert(sizeof(Addr)   == sizeof(void*));
@@ -2023,6 +2041,7 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    NSegment seg;
    Bool     needDiscard;
 
+   VG_(mutex_lock)(&ns_mutex);
    aspacem_assert(len > 0);
    aspacem_assert(VG_IS_PAGE_ALIGNED(a));
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
@@ -2052,6 +2071,7 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    }
    add_segment( &seg );
    AM_SANITY_CHECK;
+   VG_(mutex_unlock)(&ns_mutex);
    return needDiscard;
 }
 
@@ -2748,11 +2768,13 @@ void VG_(am_set_segment_isCH_if_SkAnonC)( const NSegment* seg )
    segment. */
 void VG_(am_set_segment_hasT_if_SkFileC_or_SkAnonC)( const NSegment* seg )
 {
+   VG_(mutex_lock)(&ns_mutex);
    Int i = segAddr_to_index( seg );
    aspacem_assert(i >= 0 && i < nsegments_used);
    if (nsegments[i].kind == SkAnonC || nsegments[i].kind == SkFileC) {
       nsegments[i].hasT = True;
    }
+   VG_(mutex_unlock)(&ns_mutex);
 }
 
 

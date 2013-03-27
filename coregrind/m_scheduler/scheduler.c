@@ -94,8 +94,12 @@
 #include "priv_sched-lock.h"
 #include "pub_core_scheduler.h"     // self
 #include "pub_core_redir.h"
+#include "pub_tool_atomic.h"
+#include "pub_tool_inner.h"
+#if defined(ENABLE_INNER_CLIENT_REQUEST)
+#include "helgrind/helgrind.h"
+#endif
 #include "libvex_emnote.h"          // VexEmNote
-
 
 /* ---------------------------------------------------------------------
    Types and globals for the scheduler.
@@ -107,9 +111,6 @@
    basic blocks we attempt to run each thread for.  Smaller values
    give finer interleaving but much increased scheduling overheads. */
 #define SCHEDULING_QUANTUM   100000
-
-/* If False, a fault is Valgrind-internal (ie, a bug) */
-Bool VG_(in_generated_code) = False;
 
 /* 64-bit counter for the number of basic blocks done. */
 static ULong bbs_done = 0;
@@ -248,14 +249,12 @@ ThreadId VG_(alloc_ThreadState) ( void )
 }
 
 /* 
-   Mark a thread as Runnable.  This will block until the_BigLock is
-   available, so that we get exclusive access to all the shared
-   structures and the CPU.  Up until we get the_BigLock, we must not
-   touch any shared state.
+   Mark a thread as Runnable by acquiring a lock of kind slk.
+   This will block until the_BigLock is available.
 
    When this returns, we'll actually be running.
  */
-void VG_(acquire_BigLock)(ThreadId tid, const HChar* who)
+void VG_(acquire_BigLock)(ThreadId tid, SchedLockKind slk, const HChar* who)
 {
    ThreadState *tst;
 
@@ -271,18 +270,21 @@ void VG_(acquire_BigLock)(ThreadId tid, const HChar* who)
    /* First, acquire the_BigLock.  We can't do anything else safely
       prior to this point.  Even doing debug printing prior to this
       point is, technically, wrong. */
-   VG_(acquire_BigLock_LL)(NULL);
+   // mtV? do we need a lock in debug log to allow debug printing ?
+   VG_(acquire_BigLock_LL)(tid, slk, NULL);
 
    tst = VG_(get_ThreadState)(tid);
-
    vg_assert(tst->status != VgTs_Runnable);
-   
    tst->status = VgTs_Runnable;
+   tst->slk = slk;
 
+#if SINGLEV
+   // The concept of 'THE' running_tid does not exist with mtV.
    if (VG_(running_tid) != VG_INVALID_THREADID)
       VG_(printf)("tid %d found %d running\n", tid, VG_(running_tid));
    vg_assert(VG_(running_tid) == VG_INVALID_THREADID);
    VG_(running_tid) = tid;
+#endif
 
    { Addr gsp = VG_(get_SP)(tid);
       if (NULL != VG_(tdict).track_new_mem_stack_w_ECU)
@@ -294,13 +296,13 @@ void VG_(acquire_BigLock)(ThreadId tid, const HChar* who)
    if (VG_(clo_trace_sched)) {
       HChar buf[150];
       vg_assert(VG_(strlen)(who) <= 150-50);
-      VG_(sprintf)(buf, " acquired lock (%s)", who);
+      VG_(sprintf)(buf, " acquired %s lock (%s)", VG_(name_of_SchedLockKind)(tst->slk), who);
       print_sched_event(tid, buf);
    }
 }
 
 /* 
-   Set a thread into a sleeping state, and give up exclusive access to
+   Set a thread into a sleeping state, and give up access to
    the CPU.  On return, the thread must be prepared to block until it
    is ready to run again (generally this means blocking in a syscall,
    but it may mean that we remain in a Runnable state and we're just
@@ -310,6 +312,7 @@ void VG_(release_BigLock)(ThreadId tid, ThreadStatus sleepstate,
                           const HChar* who)
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
+   SchedLockKind oldslk = tst->slk;
 
    vg_assert(tst->status == VgTs_Runnable);
 
@@ -317,22 +320,56 @@ void VG_(release_BigLock)(ThreadId tid, ThreadStatus sleepstate,
 	     sleepstate == VgTs_Yielding);
 
    tst->status = sleepstate;
+   tst->slk = VgTs_NoLock;
 
+#ifdef SINGLEV
+   // No concept of running_tid with mtV
    vg_assert(VG_(running_tid) == tid);
    VG_(running_tid) = VG_INVALID_THREADID;
+#endif
 
    if (VG_(clo_trace_sched)) {
       HChar buf[200];
       vg_assert(VG_(strlen)(who) <= 200-100);
-      VG_(sprintf)(buf, "releasing lock (%s) -> %s",
+      VG_(sprintf)(buf, "releasing %s lock (%s) -> %s",
+                        VG_(name_of_SchedLockKind)(oldslk),
                         who, VG_(name_of_ThreadStatus)(sleepstate));
       print_sched_event(tid, buf);
    }
 
    /* Release the_BigLock; this will reschedule any runnable
       thread. */
-   VG_(release_BigLock_LL)(NULL);
+   VG_(release_BigLock_LL)(tid, oldslk, NULL);
 }
+
+// downgrade write lock to readlock.
+static void VG_(wr2rd_BigLock)(ThreadId tid, const HChar* who)
+{
+   ThreadState *tst = VG_(get_ThreadState)(tid);
+   vg_assert(tst->status == VgTs_Runnable);
+   vg_assert(tst->slk == VgTs_WriteLock);
+   VG_(release_BigLock)(tid, VgTs_Yielding, who);
+   VG_(acquire_BigLock)(tid, VgTs_ReadLock, who);
+   //mtV? implement one single operation for efficiency
+   // (but needs to be functionally equivalent to release/acquire
+   // So, if there is another writer queued, this one should be waken up
+   // rather than a reader.
+}
+
+// upgrade read lock to write lock.
+static void VG_(rd2wr_BigLock)(ThreadId tid, const HChar* who)
+{
+   ThreadState *tst = VG_(get_ThreadState)(tid);
+   vg_assert(tst->status == VgTs_Runnable);
+   vg_assert(tst->slk == VgTs_ReadLock);
+   VG_(release_BigLock)(tid, VgTs_Yielding, who);
+   VG_(acquire_BigLock)(tid, VgTs_WriteLock, who);
+   //mtV? implement one single operation for efficiency
+   // (but needs to be functionally equivalent to release/acquire
+   // So, should just become write if there is no other 
+   // reader and no writer queued.
+}
+
 
 static void init_BigLock(void)
 {
@@ -342,20 +379,33 @@ static void init_BigLock(void)
 
 static void deinit_BigLock(void)
 {
+#ifndef SINGLEV
+   /* Indicate to an outer helgrind that the readlock is released.
+      We cannot call VG_(rwlock_unlock) as the rwlock state
+      does not correspond to the child state.
+      E.g. if there was a writer queued in the parent, we
+      cannot wake it up if releasing the read lock. */
+   INNER_REQUEST(ANNOTATE_RWLOCK_RELEASED(the_BigLock, /*is_w*/0));
+   //mtV? this is an horror: we annotate using the address of the_BigLock
+   // while the annotations are done in m_locks.c. We are just lucky
+   // that the addresses are the same.
+   // We should move this to m_locks.c and inform
+   // m_locks.c that a release annotation is needed before destroy.
+#endif
    ML_(destroy_sched_lock)(the_BigLock);
    the_BigLock = NULL;
 }
 
 /* See pub_core_scheduler.h for description */
-void VG_(acquire_BigLock_LL) ( const HChar* who )
+void VG_(acquire_BigLock_LL) (ThreadId tid, SchedLockKind slk,  const HChar* who )
 {
-   ML_(acquire_sched_lock)(the_BigLock);
+   ML_(acquire_sched_lock)(the_BigLock, tid, slk);
 }
 
 /* See pub_core_scheduler.h for description */
-void VG_(release_BigLock_LL) ( const HChar* who )
+void VG_(release_BigLock_LL) ( ThreadId tid, SchedLockKind slk, const HChar* who )
 {
-   ML_(release_sched_lock)(the_BigLock);
+   ML_(release_sched_lock)(the_BigLock, tid, slk);
 }
 
 Bool VG_(owns_BigLock_LL) ( ThreadId tid )
@@ -370,12 +420,16 @@ Bool VG_(owns_BigLock_LL) ( ThreadId tid )
    reallocated until the caller is really ready. */
 void VG_(exit_thread)(ThreadId tid)
 {
+   SchedLockKind oldslk;
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(VG_(is_running_thread)(tid));
    vg_assert(VG_(is_exiting)(tid));
 
+   oldslk = VG_(threads)[tid].slk;
    mostly_clear_thread_record(tid);
+#ifdef SINGLEV
    VG_(running_tid) = VG_INVALID_THREADID;
+#endif
 
    /* There should still be a valid exitreason for this thread */
    vg_assert(VG_(threads)[tid].exitreason != VgSrc_None);
@@ -383,7 +437,8 @@ void VG_(exit_thread)(ThreadId tid)
    if (VG_(clo_trace_sched))
       print_sched_event(tid, "release lock in VG_(exit_thread)");
 
-   VG_(release_BigLock_LL)(NULL);
+   VG_(threads)[tid].slk = VgTs_NoLock;
+   VG_(release_BigLock_LL)(tid, oldslk, NULL);
 }
 
 /* If 'tid' is blocked in a syscall, send it SIGVGKILL so as to get it
@@ -392,7 +447,10 @@ void VG_(exit_thread)(ThreadId tid)
 void VG_(get_thread_out_of_syscall)(ThreadId tid)
 {
    vg_assert(VG_(is_valid_tid)(tid));
+#ifdef SINGLEV
+   // With mtV, other threads can be running when a kill signal arrives.
    vg_assert(!VG_(is_running_thread)(tid));
+#endif
 
    if (VG_(threads)[tid].status == VgTs_WaitSys) {
       if (VG_(clo_trace_signals)) {
@@ -436,10 +494,10 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
  */
 void VG_(vg_yield)(void)
 {
-   ThreadId tid = VG_(running_tid);
+   ThreadId tid = VG_(get_running_tid)(); // mtV? this is costly : syscall + linear search. TLS ?
 
    vg_assert(tid != VG_INVALID_THREADID);
-   vg_assert(VG_(threads)[tid].os_state.lwpid == VG_(gettid)());
+   vg_assert(VG_(threads)[tid].os_state.lwpid == VG_(gettid)()); // mtV? same syscall as in  VG_(get_running_tid)
 
    VG_(release_BigLock)(tid, VgTs_Yielding, "VG_(vg_yield)");
 
@@ -448,7 +506,7 @@ void VG_(vg_yield)(void)
     */
    VG_(do_syscall0)(__NR_sched_yield);
 
-   VG_(acquire_BigLock)(tid, "VG_(vg_yield)");
+   VG_(acquire_BigLock)(tid, VgTs_ReadLock, "VG_(vg_yield)");
 }
 
 
@@ -514,6 +572,7 @@ void mostly_clear_thread_record ( ThreadId tid )
    /* Leave the thread in Zombie, so that it doesn't get reallocated
       until the caller is finally done with the thread stack. */
    VG_(threads)[tid].status               = VgTs_Zombie;
+   VG_(threads)[tid].slk                  = VgTs_NoLock;
 
    VG_(sigemptyset)(&VG_(threads)[tid].sig_mask);
    VG_(sigemptyset)(&VG_(threads)[tid].tmp_sig_mask);
@@ -550,7 +609,11 @@ void mostly_clear_thread_record ( ThreadId tid )
 static void sched_fork_cleanup(ThreadId me)
 {
    ThreadId tid;
+#ifdef SINGLEV
    vg_assert(VG_(running_tid) == me);
+#else
+   vg_assert(VG_(threads)[me].slk == VgTs_ReadLock);
+#endif
 
 #  if defined(VGO_darwin)
    // GrP fixme hack reset Mach ports
@@ -572,7 +635,9 @@ static void sched_fork_cleanup(ThreadId me)
    /* re-init and take the sema */
    deinit_BigLock();
    init_BigLock();
-   VG_(acquire_BigLock_LL)(NULL);
+   VG_(threads)[me].slk = VgTs_NoLock;
+   VG_(acquire_BigLock_LL)(me, VgTs_ReadLock, NULL);
+   VG_(threads)[me].slk = VgTs_ReadLock;
 }
 
 
@@ -846,9 +911,22 @@ void run_thread_for_a_while ( /*OUT*/HWord* two_words,
    do_pre_run_checks( (ThreadState*)tst );
    /* end Paranoia */
 
+#ifdef SINGLEV
+   // mtV? Need to see what to do with these stat counters.
+   // These are costing atomic increment on the hot path so ????
+   // for VG_(stats__n_xindir_misses_32) inc, we know the asm dispatcher
+   // exits to C code. So, we could do the addition in C (in a per thread
+   // variable or a specific location in the thread state).
+   // For VG_(stats__n_xindirs_32), either we have to give to
+   // the asm dispatcher an address to increment, or it increments
+   // a cntr at a known place somewhere in the thread state (close to the
+   // ev Counter) ???
    /* Futz with the XIndir stats counters. */
    vg_assert(VG_(stats__n_xindirs_32) == 0);
    vg_assert(VG_(stats__n_xindir_misses_32) == 0);
+#else
+   vg_assert(tst->slk == VgTs_ReadLock);
+#endif
 
    /* Clear return area. */
    two_words[0] = two_words[1] = 0;
@@ -910,8 +988,8 @@ void run_thread_for_a_while ( /*OUT*/HWord* two_words,
    // Tell the tool this thread is about to run client code
    VG_TRACK( start_client_code, tid, bbs_done );
 
-   vg_assert(VG_(in_generated_code) == False);
-   VG_(in_generated_code) = True;
+   vg_assert(tst->in_generated_code == False);
+   tst->in_generated_code = True;
 
    SCHEDSETJMP(
       tid, 
@@ -923,8 +1001,8 @@ void run_thread_for_a_while ( /*OUT*/HWord* two_words,
       )
    );
 
-   vg_assert(VG_(in_generated_code) == True);
-   VG_(in_generated_code) = False;
+   vg_assert(tst->in_generated_code == True);
+   tst->in_generated_code = False;
 
    if (jumped != (HWord)0) {
       /* We get here if the client took a fault that caused our signal
@@ -938,10 +1016,8 @@ void run_thread_for_a_while ( /*OUT*/HWord* two_words,
    /* Merge the 32-bit XIndir/miss counters into the 64 bit versions,
       and zero out the 32-bit ones in preparation for the next run of
       generated code. */
-   stats__n_xindirs += (ULong)VG_(stats__n_xindirs_32);
-   VG_(stats__n_xindirs_32) = 0;
-   stats__n_xindir_misses += (ULong)VG_(stats__n_xindir_misses_32);
-   VG_(stats__n_xindir_misses_32) = 0;
+   atomic_add (&stats__n_xindirs, (ULong)atomic_zero_val(&VG_(stats__n_xindirs_32)));
+   atomic_add (&stats__n_xindir_misses, (ULong)atomic_zero_val(&VG_(stats__n_xindir_misses_32)));
 
    /* Inspect the event counter. */
    vg_assert((Int)tst->arch.vex.host_EvC_COUNTER >= -1);
@@ -951,7 +1027,7 @@ void run_thread_for_a_while ( /*OUT*/HWord* two_words,
    done_this_time = *dispatchCtrP - ((Int)tst->arch.vex.host_EvC_COUNTER + 1);
 
    vg_assert(done_this_time >= 0);
-   bbs_done += (ULong)done_this_time;
+   atomic_add (&bbs_done, (ULong)done_this_time);
 
    *dispatchCtrP -= done_this_time;
    vg_assert(*dispatchCtrP >= 0);
@@ -965,8 +1041,11 @@ void run_thread_for_a_while ( /*OUT*/HWord* two_words,
       else
          /* value was changed due to gdbserver invocation via ptrace */
          vgdb_next_poll = NO_VGDB_POLL;
-      if (VG_(gdbserver_activity) (tid))
+      if (VG_(gdbserver_activity) (tid)) {
+         VG_(rd2wr_BigLock)(tid, "VG_(scheduler):gdbserver.enter");
          VG_(gdbserver) (tid);
+         VG_(wr2rd_BigLock)(tid, "VG_(scheduler):gdbserver.exit");
+      }
    }
 
    /* TRC value and possible auxiliary patch-address word are already
@@ -990,15 +1069,21 @@ static void handle_tt_miss ( ThreadId tid )
 {
    Bool found;
    Addr ip = VG_(get_IP)(tid);
+   ThreadState *tst = VG_(get_ThreadState)(tid);
 
+   vg_assert (tst->slk == VgTs_ReadLock);
    /* Trivial event.  Miss in the fast-cache.  Do a full
       lookup for it. */
    found = VG_(search_transtab)( NULL, NULL, NULL,
                                  ip, True/*upd_fast_cache*/ );
    if (UNLIKELY(!found)) {
       /* Not found; we need to request a translation. */
-      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, 
-                          bbs_done, True/*allow redirection*/ )) {
+      /* upgrade our read lock to a write lock. */
+      VG_(rd2wr_BigLock)(tid, "VG_(scheduler):handle_tt_miss.before.translate");
+      found = VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, 
+                              bbs_done, True/*allow redirection*/ );
+      VG_(wr2rd_BigLock)(tid, "VG_(scheduler):handle_tt_miss.after.translate");
+      if (found) {
          found = VG_(search_transtab)( NULL, NULL, NULL,
                                        ip, True ); 
          vg_assert2(found, "handle_tt_miss: missing tt_fast entry");
@@ -1021,8 +1106,10 @@ void handle_chain_me ( ThreadId tid, void* place_to_chain, Bool toFastEP )
    UInt to_sNo         = (UInt)-1;
    UInt to_tteNo       = (UInt)-1;
 
+   VG_(rd2wr_BigLock)(tid, "VG_(scheduler):handle_chain_me.enter");
    found = VG_(search_transtab)( NULL, &to_sNo, &to_tteNo,
                                  ip, False/*dont_upd_fast_cache*/ );
+
    if (!found) {
       /* Not found; we need to request a translation. */
       if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, 
@@ -1036,6 +1123,7 @@ void handle_chain_me ( ThreadId tid, void* place_to_chain, Bool toFastEP )
 	 // means that either a signal has been set up for delivery,
 	 // or the thread has been marked for termination.  Either
 	 // way, we just need to go back into the scheduler loop.
+         VG_(wr2rd_BigLock)(tid, "VG_(scheduler):handle_chain_me.failed");
         return;
       }
    }
@@ -1048,6 +1136,7 @@ void handle_chain_me ( ThreadId tid, void* place_to_chain, Bool toFastEP )
       in the case that the destination block gets deleted. */
    VG_(tt_tc_do_chaining)( place_to_chain,
                            to_sNo, to_tteNo, toFastEP );
+   VG_(wr2rd_BigLock)(tid, "VG_(scheduler):handle_chain_me.exit");
 }
 
 static void handle_syscall(ThreadId tid, UInt trc)
@@ -1191,6 +1280,10 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
    block_signals();
    
    vg_assert(VG_(is_running_thread)(tid));
+   vg_assert(tst->slk == VgTs_WriteLock);
+   // threads are initially created with the write lock.
+   // Downgrade it to a read lock.
+   VG_(wr2rd_BigLock)(tid, "VG_(scheduler): starting loop");
 
    dispatch_ctr = SCHEDULING_QUANTUM;
 
@@ -1220,7 +1313,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
                                    "VG_(scheduler):timeslice");
 	 /* ------------ now we don't have The Lock ------------ */
 
-	 VG_(acquire_BigLock)(tid, "VG_(scheduler):timeslice");
+	 VG_(acquire_BigLock)(tid, VgTs_ReadLock, "VG_(scheduler):timeslice");
 	 /* ------------ now we do have The Lock ------------ */
 
 	 /* OK, do some relatively expensive housekeeping stuff */
@@ -1235,7 +1328,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	    break;		/* poll_signals picked up a fatal signal */
 
 	 /* For stats purposes only. */
-	 n_scheduling_events_MAJOR++;
+	 atomic_increment(&n_scheduling_events_MAJOR);
 
 	 /* Figure out how many bbs to ask vg_run_innerloop to do.  Note
 	    that it decrements the counter before testing it for zero, so
@@ -1253,11 +1346,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       }
 
       /* For stats purposes only. */
-      n_scheduling_events_MINOR++;
-
-      if (0)
-         VG_(message)(Vg_DebugMsg, "thread %d: running for %d bbs\n", 
-                                   tid, dispatch_ctr - 1 );
+      atomic_increment(&n_scheduling_events_MINOR);
 
       HWord trc[2]; /* "two_words" */
       run_thread_for_a_while( &trc[0],
@@ -1990,12 +2079,12 @@ void scheduler_sanity ( ThreadId tid )
       bad = True;
    }
 
-   if (lwpid != ML_(get_sched_lock_owner)(the_BigLock)) {
-      VG_(message)(Vg_DebugMsg,
-                   "Thread (LWPID) %d doesn't own the_BigLock\n",
-                   tid);
-      bad = True;
-   }
+//??mt   if (lwpid != ML_(get_sched_lock_owner)(the_BigLock)) {
+//??mt      VG_(message)(Vg_DebugMsg,
+//??mt                   "Thread (LWPID) %d doesn't own the_BigLock\n",
+//??mt                   tid);
+//??mt      bad = True;
+//??mt   }
 
    if (0) {
       /* Periodically show the state of all threads, for debugging
@@ -2028,7 +2117,7 @@ void VG_(sanity_check_general) ( Bool force_expensive )
 
    /* --- First do all the tests that we can do quickly. ---*/
 
-   sanity_fast_count++;
+   atomic_increment(&sanity_fast_count);
 
    /* Check stuff pertaining to the memory check system. */
 

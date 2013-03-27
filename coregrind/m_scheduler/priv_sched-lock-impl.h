@@ -37,11 +37,12 @@ struct sched_lock_ops {
    struct sched_lock *(*create_sched_lock)(void);
    void (*destroy_sched_lock)(struct sched_lock *p);
    int (*get_sched_lock_owner)(struct sched_lock *p);
-   void (*acquire_sched_lock)(struct sched_lock *p);
-   void (*release_sched_lock)(struct sched_lock *p);
+   void (*acquire_sched_lock)(struct sched_lock *p, ThreadId tid, SchedLockKind slk);
+   void (*release_sched_lock)(struct sched_lock *p, ThreadId tid, SchedLockKind slk);
 };
 
 extern const struct sched_lock_ops ML_(generic_sched_lock_ops);
+extern const struct sched_lock_ops ML_(rwlock_sched_lock_ops);
 extern const struct sched_lock_ops ML_(linux_ticket_lock_ops);
 
 #endif   // __PRIV_SCHED_LOCK_IMPL_H

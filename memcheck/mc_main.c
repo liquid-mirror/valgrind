@@ -46,6 +46,58 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_threadstate.h"
 
+//#define MTV_USE_LOCK 1
+
+#ifdef MTV_USE_LOCK
+#include "pub_tool_lock.h"
+// This is outrageously slow (bz2 about 4 times slower)
+// and due to contention, big_parallel_sleepers xxx times
+// slower.
+#else
+// trial to measure atomic instructions in helperc
+// to measure the performance
+// results on bz2:
+// with lock/unlock first atomic instructions inlined: more than 2 times slower.
+// with only the lock atomic_bit_test_set first atomic instruction: 55% slower.
+// with only the lock for the "store operations" : 4% slower.
+//    big_parallel_sleepers however becomes a lot slower (slower than serial)
+//    when there is a atomic instruction in all store helpers:
+//        real	9m6.364s
+//        user	33m54.187s
+//        sys	0m3.484s
+// with only the lock for the store operation in V8:
+//   bz2 about 3% slower
+//   big parallel sleepers then is reasonable speed:
+//      serial:               parallel:
+//        real	3m47.979s     real	1m36.296s
+//        user	3m47.114s     user	4m23.068s
+//        sys	0m0.852s      sys	0m2.872s 
+// (with 15 iterations of big_parallel_sleepers, so with some cost
+// due to transtab 
+// It is however unclear that it is sane to assume that most
+// operations are on 16 or 32 or 64 bits and that there is
+// no interactions between threads which are ok but would
+// cause false positive (we might tolerate false negative
+// as we probably need a lot of misluck to have a racey
+// access to the VA bits.
+
+#include "pub_tool_atomic.h"
+typedef  Int  Mutex;
+#define vgPlain_mutex_init(mutex) (*mutex = 0)
+#define vgPlain_mutex_lock(mutex)  atomic_bit_test_set (mutex, 31)
+
+/* Switch between the below to have or not an atomic instruction in
+the unlock */
+//#define vgPlain_mutex_unlock(mutex) atomic_add_zero (mutex, 0x80000000)
+#define vgPlain_mutex_unlock(mutex) 
+
+/* Comment/uncomment the below to have or not lock operations in the
+   store va bits. */
+#define MTV_DISABLE_LOCK_IN_LOAD_HELPER 1
+
+//#define MTV_DISABLE_LOCK_IN_STORE_HELPER_V_GT_8 1
+#endif
+
 #include "mc_include.h"
 #include "memcheck.h"   /* for client requests */
 
@@ -361,6 +413,7 @@ static void update_SM_counts(SecMap* oldSM, SecMap* newSM)
 */
 static SecMap* primary_map[N_PRIMARY_MAP];
 
+static Mutex va_mutex;
 
 /* An entry in the auxiliary primary map.  base must be a 64k-aligned
    value, and sm points at the relevant secondary map.  As with the
@@ -4130,11 +4183,21 @@ ULong mc_LOADV64 ( Addr a, Bool isBigEndian )
 
 VG_REGPARM(1) ULong MC_(helperc_LOADV64be) ( Addr a )
 {
-   return mc_LOADV64(a, True);
+#ifndef MTV_DISABLE_LOCK_IN_LOAD_HELPER
+   VG_(mutex_lock) (&va_mutex);
+#endif
+   ULong res = mc_LOADV64(a, True);
+   VG_(mutex_unlock) (&va_mutex);
+   return res;
 }
 VG_REGPARM(1) ULong MC_(helperc_LOADV64le) ( Addr a )
 {
-   return mc_LOADV64(a, False);
+#ifndef MTV_DISABLE_LOCK_IN_LOAD_HELPER
+   VG_(mutex_lock) (&va_mutex);
+#endif
+   ULong res = mc_LOADV64(a, False);
+   VG_(mutex_unlock) (&va_mutex);
+   return res;
 }
 
 
@@ -4189,11 +4252,19 @@ void mc_STOREV64 ( Addr a, ULong vbits64, Bool isBigEndian )
 
 VG_REGPARM(1) void MC_(helperc_STOREV64be) ( Addr a, ULong vbits64 )
 {
+#ifndef MTV_DISABLE_LOCK_IN_STORE_HELPER_V_GT_8
+   VG_(mutex_lock) (&va_mutex);
+#endif
    mc_STOREV64(a, vbits64, True);
+   VG_(mutex_unlock) (&va_mutex);
 }
 VG_REGPARM(1) void MC_(helperc_STOREV64le) ( Addr a, ULong vbits64 )
 {
+#ifndef MTV_DISABLE_LOCK_IN_STORE_HELPER_V_GT_8
+   VG_(mutex_lock) (&va_mutex);
+#endif
    mc_STOREV64(a, vbits64, False);
+   VG_(mutex_unlock) (&va_mutex);
 }
 
 
@@ -4240,11 +4311,21 @@ UWord mc_LOADV32 ( Addr a, Bool isBigEndian )
 
 VG_REGPARM(1) UWord MC_(helperc_LOADV32be) ( Addr a )
 {
-   return mc_LOADV32(a, True);
+#ifndef MTV_DISABLE_LOCK_IN_LOAD_HELPER
+   VG_(mutex_lock) (&va_mutex);
+#endif
+   UWord res = mc_LOADV32(a, True);
+   VG_(mutex_unlock) (&va_mutex);
+   return res;
 }
 VG_REGPARM(1) UWord MC_(helperc_LOADV32le) ( Addr a )
 {
-   return mc_LOADV32(a, False);
+#ifndef MTV_DISABLE_LOCK_IN_LOAD_HELPER
+   VG_(mutex_lock) (&va_mutex);
+#endif
+   UWord res = mc_LOADV32(a, False);
+   VG_(mutex_unlock) (&va_mutex);
+   return res;
 }
 
 
@@ -4305,11 +4386,19 @@ void mc_STOREV32 ( Addr a, UWord vbits32, Bool isBigEndian )
 
 VG_REGPARM(2) void MC_(helperc_STOREV32be) ( Addr a, UWord vbits32 )
 {
+#ifndef MTV_DISABLE_LOCK_IN_STORE_HELPER_V_GT_8
+   VG_(mutex_lock) (&va_mutex);
+#endif
    mc_STOREV32(a, vbits32, True);
+   VG_(mutex_unlock) (&va_mutex);
 }
 VG_REGPARM(2) void MC_(helperc_STOREV32le) ( Addr a, UWord vbits32 )
 {
+#ifndef MTV_DISABLE_LOCK_IN_STORE_HELPER_V_GT_8
+   VG_(mutex_lock) (&va_mutex);
+#endif
    mc_STOREV32(a, vbits32, False);
+   VG_(mutex_unlock) (&va_mutex);
 }
 
 
@@ -4358,11 +4447,21 @@ UWord mc_LOADV16 ( Addr a, Bool isBigEndian )
 
 VG_REGPARM(1) UWord MC_(helperc_LOADV16be) ( Addr a )
 {
-   return mc_LOADV16(a, True);
+#ifndef MTV_DISABLE_LOCK_IN_LOAD_HELPER
+   VG_(mutex_lock) (&va_mutex);
+#endif
+   UWord res = mc_LOADV16(a, True);
+   VG_(mutex_unlock) (&va_mutex);
+   return res;
 }
 VG_REGPARM(1) UWord MC_(helperc_LOADV16le) ( Addr a )
 {
-   return mc_LOADV16(a, False);
+#ifndef MTV_DISABLE_LOCK_IN_LOAD_HELPER
+   VG_(mutex_lock) (&va_mutex);
+#endif
+   UWord res = mc_LOADV16(a, False);
+   VG_(mutex_unlock) (&va_mutex);
+   return res;
 }
 
 
@@ -4416,11 +4515,19 @@ void mc_STOREV16 ( Addr a, UWord vbits16, Bool isBigEndian )
 
 VG_REGPARM(2) void MC_(helperc_STOREV16be) ( Addr a, UWord vbits16 )
 {
+#ifndef MTV_DISABLE_LOCK_IN_STORE_HELPER_V_GT_8
+   VG_(mutex_lock) (&va_mutex);
+#endif
    mc_STOREV16(a, vbits16, True);
+   VG_(mutex_unlock) (&va_mutex);
 }
 VG_REGPARM(2) void MC_(helperc_STOREV16le) ( Addr a, UWord vbits16 )
 {
+#ifndef MTV_DISABLE_LOCK_IN_STORE_HELPER_V_GT_8
+   VG_(mutex_lock) (&va_mutex);
+#endif
    mc_STOREV16(a, vbits16, False);
+   VG_(mutex_unlock) (&va_mutex);
 }
 
 
@@ -4430,10 +4537,15 @@ VG_REGPARM(2) void MC_(helperc_STOREV16le) ( Addr a, UWord vbits16 )
 VG_REGPARM(1)
 UWord MC_(helperc_LOADV8) ( Addr a )
 {
+#ifndef MTV_DISABLE_LOCK_IN_LOAD_HELPERV8
+   VG_(mutex_lock) (&va_mutex);
+#endif
    PROF_EVENT(260, "mc_LOADV8");
 
 #ifndef PERF_FAST_LOADV
-   return (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+   UWord res = (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+   VG_(mutex_unlock) (&va_mutex);
+   return res;
 #else
    {
       UWord   sm_off, vabits8;
@@ -4441,7 +4553,9 @@ UWord MC_(helperc_LOADV8) ( Addr a )
 
       if (UNLIKELY( UNALIGNED_OR_HIGH(a,8) )) {
          PROF_EVENT(261, "mc_LOADV8-slow1");
-         return (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+         UWord res = (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+         VG_(mutex_unlock) (&va_mutex);
+         return res;
       }
 
       sm      = get_secmap_for_reading_low(a);
@@ -4450,18 +4564,24 @@ UWord MC_(helperc_LOADV8) ( Addr a )
       // Convert V bits from compact memory form to expanded register form
       // Handle common case quickly: a is mapped, and the entire
       // word32 it lives in is addressible.
-      if      (LIKELY(vabits8 == VA_BITS8_DEFINED  )) { return V_BITS8_DEFINED;   }
-      else if (LIKELY(vabits8 == VA_BITS8_UNDEFINED)) { return V_BITS8_UNDEFINED; }
+      if      (LIKELY(vabits8 == VA_BITS8_DEFINED  )) 
+         { VG_(mutex_unlock) (&va_mutex); return V_BITS8_DEFINED;   }
+      else if (LIKELY(vabits8 == VA_BITS8_UNDEFINED)) 
+         { VG_(mutex_unlock) (&va_mutex); return V_BITS8_UNDEFINED; }
       else {
          // The 4 (yes, 4) bytes are not all-defined or all-undefined, check
          // the single byte.
          UChar vabits2 = extract_vabits2_from_vabits8(a, vabits8);
-         if      (vabits2 == VA_BITS2_DEFINED  ) { return V_BITS8_DEFINED;   }
-         else if (vabits2 == VA_BITS2_UNDEFINED) { return V_BITS8_UNDEFINED; }
+         if      (vabits2 == VA_BITS2_DEFINED  ) 
+            { VG_(mutex_unlock) (&va_mutex); return V_BITS8_DEFINED;   }
+         else if (vabits2 == VA_BITS2_UNDEFINED) 
+            { VG_(mutex_unlock) (&va_mutex); return V_BITS8_UNDEFINED; }
          else {
             /* Slow case: the byte is not all-defined or all-undefined. */
             PROF_EVENT(262, "mc_LOADV8-slow2");
-            return (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+            UWord res = (UWord)mc_LOADVn_slow( a, 8, False/*irrelevant*/ );
+            VG_(mutex_unlock) (&va_mutex);
+            return res;
          }
       }
    }
@@ -4472,6 +4592,7 @@ UWord MC_(helperc_LOADV8) ( Addr a )
 VG_REGPARM(2)
 void MC_(helperc_STOREV8) ( Addr a, UWord vbits8 )
 {
+   VG_(mutex_lock) (&va_mutex);
    PROF_EVENT(270, "mc_STOREV8");
 
 #ifndef PERF_FAST_STOREV
@@ -4484,6 +4605,7 @@ void MC_(helperc_STOREV8) ( Addr a, UWord vbits8 )
       if (UNLIKELY( UNALIGNED_OR_HIGH(a,8) )) {
          PROF_EVENT(271, "mc_STOREV8-slow1");
          mc_STOREVn_slow( a, 8, (ULong)vbits8, False/*irrelevant*/ );
+         VG_(mutex_unlock) (&va_mutex);
          return;
       }
 
@@ -4517,6 +4639,7 @@ void MC_(helperc_STOREV8) ( Addr a, UWord vbits8 )
          PROF_EVENT(273, "mc_STOREV8-slow3");
          mc_STOREVn_slow( a, 8, (ULong)vbits8, False/*irrelevant*/ );
       }
+      VG_(mutex_unlock) (&va_mutex);
    }
 #endif
 }
@@ -6526,6 +6649,8 @@ static void mc_pre_clo_init(void)
 
    // BYTES_PER_SEC_VBIT_NODE must be a power of two.
    tl_assert(-1 != VG_(log2)(BYTES_PER_SEC_VBIT_NODE));
+
+   VG_(mutex_init)    (&va_mutex);
 
    /* This is small.  Always initialise it. */
    init_nia_to_ecu_cache();

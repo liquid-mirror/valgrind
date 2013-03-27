@@ -44,7 +44,7 @@
 #include "pub_core_mallocfree.h" // VG_(out_of_memory_NORETURN)
 #include "pub_core_xarray.h"
 #include "pub_core_dispatch.h"   // For VG_(disp_cp*) addresses
-
+#include "pub_tool_lock.h"
 
 #define DEBUG_TRANSTAB 0
 
@@ -348,6 +348,20 @@ typedef
    N_TC_SECTORS.  The initial -1 value indicates the TT/TC system is
    not yet initialised. 
 */
+
+/* translation table search/add/... protected by the below mutex.
+   Why is this mutex needed ?
+   Why can't we just use the Big Lock e.g. in Read mode ?
+   Having the Big Lock in read mode does not provide
+   a safe access to the translation table. A.o., a search in
+   the translation table will modify various "small caches"
+   arrays (such as the order in which sectors are searched.
+   It would be possible to use the Big Lock in write mode.
+   This was even tried. This gave catastrophic performances:
+   more total CPU and longer total elapsed time than the
+   serialised Valgrind. */
+static Mutex tt_mutex;
+
 static Sector sectors[N_SECTORS];
 static Int    youngest_sector = -1;
 
@@ -673,6 +687,7 @@ Bool find_TTEntry_from_hcode( /*OUT*/UInt* from_sNo,
 {
    Int i;
 
+   VG_(mutex_lock) (&tt_mutex);
    /* Search order logic copied from VG_(search_transtab). */
    for (i = 0; i < N_SECTORS; i++) {
       Int sno = sector_search_order[i];
@@ -700,9 +715,10 @@ Bool find_TTEntry_from_hcode( /*OUT*/UInt* from_sNo,
 
          /* if this hx entry corresponds to dead host code, we must
             tell this code has not been found, as it cannot be patched. */
-         if (HostExtent__is_dead (hx, sec))
+         if (HostExtent__is_dead (hx, sec)) {
+            VG_(mutex_unlock) (&tt_mutex);
             return False;
-
+         }
          vg_assert(sec->tt[tteNo].status == InUse);
          /* Can only half check that the found TTEntry contains hcode,
             due to not having a length value for the hcode in the
@@ -711,9 +727,11 @@ Bool find_TTEntry_from_hcode( /*OUT*/UInt* from_sNo,
          /* Looks plausible */
          *from_sNo   = sno;
          *from_tteNo = (UInt)tteNo;
+         VG_(mutex_unlock) (&tt_mutex);
          return True;
       }
    }
+   VG_(mutex_unlock) (&tt_mutex);
    return False;
 }
 
@@ -783,6 +801,26 @@ void VG_(tt_tc_do_chaining) ( void* from__patch_addr,
    }
 
    TTEntry* from_tte = index_tte(from_sNo, from_tteNo);
+   HWord from_offs = (HWord)( (UChar*)from__patch_addr
+                              - (UChar*)from_tte->tcptr );
+   vg_assert(from_offs < 100000/* let's say */);
+
+   /* The chaining might have been done already by another thread.
+      In such a case, don't redo the chaining. */
+   /* Visit all OutEdges owned by from_tte. */
+   UWord n = OutEdgeArr__size(&from_tte->out_edges);
+   UWord i;
+   for (i = 0; i < n; i++) {
+      OutEdge* oe = OutEdgeArr__index(&from_tte->out_edges, i);
+      if (oe->to_sNo == to_sNo && oe->to_tteNo == to_tteNo
+          && oe->from_offs == from_offs) {
+         VG_(debugLog)(1,"transtab",
+                       "host code %p already chained"
+                       " => no chaining redone\n",
+                       from__patch_addr);
+         return;
+      }
+   }
 
    /* Get VEX to do the patching itself.  We have to hand it off
       since it is host-dependent. */
@@ -808,9 +846,6 @@ void VG_(tt_tc_do_chaining) ( void* from__patch_addr,
    ie.from_sNo   = from_sNo;
    ie.from_tteNo = from_tteNo;
    ie.to_fastEP  = to_fastEP;
-   HWord from_offs = (HWord)( (UChar*)from__patch_addr
-                              - (UChar*)from_tte->tcptr );
-   vg_assert(from_offs < 100000/* let's say */);
    ie.from_offs  = (UInt)from_offs;
 
    /* This is the new to_ -> from_ backlink to add. */
@@ -1528,6 +1563,7 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
       VG_(printf)("add_to_transtab(entry = 0x%llx, len = %d) ...\n",
                   entry, code_len);
 
+   VG_(mutex_lock) (&tt_mutex);
    n_in_count++;
    n_in_tsize += code_len;
    n_in_osize += vge_osize(vge);
@@ -1660,8 +1696,8 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
 
    /* Note the eclass numbers for this translation. */
    upd_eclasses_after_add( &sectors[y], i );
+   VG_(mutex_unlock) (&tt_mutex);
 }
-
 
 /* Search for the translation of the given guest address.  If
    requested, a successful search can also cause the fast-caches to be
@@ -1678,18 +1714,22 @@ Bool VG_(search_transtab) ( /*OUT*/AddrH* res_hcode,
    vg_assert(init_done);
    /* Find the initial probe point just once.  It will be the same in
       all sectors and avoids multiple expensive % operations. */
-   n_full_lookups++;
    k      = -1;
    kstart = HASH_TT(guest_addr);
    vg_assert(kstart >= 0 && kstart < N_TTES_PER_SECTOR);
+
+   VG_(mutex_lock) (&tt_mutex);
+   n_full_lookups++;
 
    /* Search in all the sectors,using sector_search_order[] as a
       heuristic guide as to what order to visit the sectors. */
    for (i = 0; i < N_SECTORS; i++) {
 
       sno = sector_search_order[i];
-      if (UNLIKELY(sno == -1))
+      if (UNLIKELY(sno == -1)) {
+         VG_(mutex_unlock) (&tt_mutex);
          return False; /* run out of sectors to search */
+      }
 
       k = kstart;
       for (j = 0; j < N_TTES_PER_SECTOR; j++) {
@@ -1714,6 +1754,7 @@ Bool VG_(search_transtab) ( /*OUT*/AddrH* res_hcode,
                sector_search_order[i-1] = sector_search_order[i];
                sector_search_order[i] = tmp;
             }
+            VG_(mutex_unlock) (&tt_mutex);
             return True;
          }
          if (sectors[sno].tt[k].status == Empty)
@@ -1729,6 +1770,7 @@ Bool VG_(search_transtab) ( /*OUT*/AddrH* res_hcode,
    }
 
    /* Not found in any sector. */
+   VG_(mutex_unlock) (&tt_mutex);
    return False;
 }
 
@@ -2175,6 +2217,8 @@ void VG_(init_tt_tc) ( void )
 {
    Int i, j, avg_codeszQ;
 
+   VG_(mutex_init) (&tt_mutex);
+   VG_(mutex_lock)(&tt_mutex);
    vg_assert(!init_done);
    init_done = True;
 
@@ -2249,6 +2293,7 @@ void VG_(init_tt_tc) ( void )
       N_SECTORS * N_TTES_PER_SECTOR,
       N_SECTORS * N_TTES_PER_SECTOR_USABLE, 
       SECTOR_TT_LIMIT_PERCENT );
+   VG_(mutex_unlock)(&tt_mutex);
 }
 
 

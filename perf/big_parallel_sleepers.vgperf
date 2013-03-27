@@ -1,0 +1,7 @@
+# several threads executing big code in  parallel.
+# Note that the mtV prototype is slower than the serial Valgrind
+# version for small nr of iterations (first arg). This is believed
+# to be caused by t-chaining done/tried by several threads
+# (see docs/internals/mtV.txt, search for duplicate t-chaining)
+prog: big_parallel_sleepers
+args: 5 0 10000 BSBSBSBS

@@ -36,6 +36,7 @@
 #include "pub_core_options.h"
 #include "pub_core_stacks.h"
 #include "pub_core_tooliface.h"
+#include "pub_tool_atomic.h"
 
 /*
    The stack
@@ -148,7 +149,7 @@ static Stack* find_stack_by_addr(Addr sp)
    static UWord n_searches = 0;
    static UWord n_steps = 0;
    Stack *i = stacks;
-   n_searches++;
+   atomic_increment (&n_searches);
    if (0 && 0 == (n_searches % 10000))
       VG_(printf)("(hgdev) %lu searches, %lu steps, %lu fails\n",
                   n_searches, n_steps+1, n_fails);
@@ -157,7 +158,7 @@ static Stack* find_stack_by_addr(Addr sp)
       return i;
    /* else search the list */
    while (i) {
-      n_steps++;
+      atomic_increment (&n_steps);
       if (sp >= i->start && sp <= i->end) {
          if (1 && (n_searches & 0x3F) == 0) {
             move_Stack_one_step_forward( i );
@@ -166,7 +167,7 @@ static Stack* find_stack_by_addr(Addr sp)
       }
       i = i->next;
    }
-   n_fails++;
+   atomic_increment (&n_fails);
    return NULL;
 }
 
@@ -307,11 +308,20 @@ static void complaints_stack_switch (Addr old_SP, Addr new_SP)
    These functions are performance critical, so are built with macros. */
 
 // preamble + check if stack has switched.
+/* m_stacks.c semantic and stack chg handlign is somewhat unclear
+   and kludgy. The below current_stack chg gives a lot of race condition
+   in the mtV prototype. Disabling this code on a trunk untouched
+   only makes one regression test fail.
+   Waiting for a clearer definition of this module, the easiest
+   is to disable this piece of code.
+   The alternative would be to have a mutex around this.
+   But this is perf critical (a.o. called by the generated code).
+   We better do not introduce a mutex here. */
 #define IF_STACK_SWITCH_SET_current_task_AND_RETURN                     \
    Word delta  = (Word)new_SP - (Word)old_SP;                           \
                                                                         \
    /* Check if the stack pointer is still in the same stack as before. */ \
-   if (UNLIKELY(current_stack == NULL ||                                \
+   if (0 && UNLIKELY(current_stack == NULL ||                           \
       new_SP < current_stack->start || new_SP > current_stack->end)) {  \
       Stack* new_stack = find_stack_by_addr(new_SP);                    \
       if (new_stack                                                     \

@@ -304,7 +304,13 @@ static SysRes do_clone ( ThreadId ptid,
       if we don't state the new thread exists prior to that point.
       If the clone fails, we'll send out a ll_exit notification for it
       at the out: label below, to clean up. */
+#ifdef SINGLEV
    vg_assert(VG_(owns_BigLock_LL)(ptid));
+#else
+   vg_assert(ptst->slk == VgTs_ReadLock);
+   //mtV? or should we acquire the write lock ?
+#endif
+
    VG_TRACK ( pre_thread_ll_create, ptid, ctid );
 
    if (flags & VKI_CLONE_SETTLS) {

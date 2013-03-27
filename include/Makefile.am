@@ -2,6 +2,9 @@
 # The "nobase" means that the vki/ path on some of them will be preserved
 # when they are installed into $(includedir)/valgrind.
 nobase_pkginclude_HEADERS = \
+	pub_tool_atomic.h 		\
+	priv_atomic_x86.h 		\
+	priv_atomic_amd64.h 		\
 	pub_tool_basics.h 		\
 	pub_tool_basics_asm.h 		\
 	pub_tool_aspacehl.h 		\
@@ -22,6 +25,7 @@ nobase_pkginclude_HEADERS = \
 	pub_tool_libcproc.h 		\
 	pub_tool_libcsetjmp.h 		\
 	pub_tool_libcsignal.h 		\
+	pub_tool_lock.h 		\
 	pub_tool_machine.h 		\
 	pub_tool_mallocfree.h 		\
 	pub_tool_options.h 		\

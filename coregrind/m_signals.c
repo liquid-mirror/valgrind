@@ -2116,7 +2116,8 @@ void async_signalhandler ( Int sigNo,
 
    /* The thread isn't currently running, make it so before going on */
    vg_assert(tst->status == VgTs_WaitSys);
-   VG_(acquire_BigLock)(tid, "async_signalhandler");
+   VG_(acquire_BigLock)(tid, VgTs_ReadLock, "async_signalhandler");
+   //mtV? unclear which kind of lock we need here. Normally a readlock I guess.
 
    info->si_code = sanitize_si_code(info->si_code);
 
@@ -2414,12 +2415,13 @@ static
 void sync_signalhandler_from_kernel ( ThreadId tid,
          Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
+   ThreadState *tst = VG_(get_ThreadState)(tid);
    /* Check to see if some part of Valgrind itself is interested in faults.
       The fault catcher should never be set whilst we're in generated code, so
       check for that.  AFAIK the only use of the catcher right now is
       memcheck's leak detector. */
    if (fault_catcher) {
-      vg_assert(VG_(in_generated_code) == False);
+      vg_assert(tst->in_generated_code == False);
 
       (*fault_catcher)(sigNo, (Addr)info->VKI_SIGINFO_si_addr);
       /* If the catcher returns, then it didn't handle the fault,
@@ -2434,14 +2436,13 @@ void sync_signalhandler_from_kernel ( ThreadId tid,
       /* OK, this is a signal we really have to deal with.  If it came
          from the client's code, then we can jump back into the scheduler
          and have it delivered.  Otherwise it's a Valgrind bug. */
-      ThreadState *tst = VG_(get_ThreadState)(tid);
 
       if (VG_(sigismember)(&tst->sig_mask, sigNo)) {
          /* signal is blocked, but they're not allowed to block faults */
          VG_(set_default_handler)(sigNo);
       }
 
-      if (VG_(in_generated_code)) {
+      if (tst->in_generated_code) {
          if (VG_(gdbserver_report_signal) (sigNo, tid)
              || VG_(sigismember)(&tst->sig_mask, sigNo)) {
             /* Can't continue; must longjmp back to the scheduler and thus
@@ -2553,7 +2554,7 @@ static void sigvgkill_handler(int signo, vki_siginfo_t *si,
    if (VG_(clo_trace_signals))
       VG_(dmsg)("sigvgkill for lwp %d tid %d\n", VG_(gettid)(), tid);
 
-   VG_(acquire_BigLock)(tid, "sigvgkill_handler");
+   VG_(acquire_BigLock)(tid, VgTs_ReadLock, "sigvgkill_handler"); //mtV? see async_signalhandler
 
    vg_assert(signo == VG_SIGVGKILL);
    vg_assert(si->si_signo == signo);

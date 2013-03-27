@@ -40,6 +40,7 @@
 #include "pub_core_vkiscnums.h"  // system call numbers
 #include "pub_core_vki.h"        // VKI_PAGE_SIZE, VKI_MREMAP_MAYMOVE,
                                  // VKI_MREMAP_FIXED, vki_stat64
+#include "pub_tool_lock.h"
 
 #include "pub_core_debuglog.h"   // VG_(debugLog)
 

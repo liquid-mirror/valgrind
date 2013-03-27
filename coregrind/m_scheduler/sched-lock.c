@@ -31,15 +31,23 @@
 #include "pub_core_basics.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_mallocfree.h"
+#include "pub_core_libcsetjmp.h"    // To keep pub_core_threadstate.h happy
+#include "pub_core_vki.h"           // To keep pub_core_threadstate.h happy
+#include "pub_core_threadstate.h"
 #include "priv_sema.h"
 #include "priv_sched-lock.h"
 #include "priv_sched-lock-impl.h"
 
 static struct sched_lock_ops const *sched_lock_ops =
-   &ML_(generic_sched_lock_ops);
+//   &ML_(generic_sched_lock_ops);
+   &ML_(rwlock_sched_lock_ops); //mtV? we need a better way
+// to define the scheduler policy. Probably something like
+// --sched=[list of policies acceptable separated by commas]
+// if a sched policy is not ok, then we try the next one.
 
 static struct sched_lock_ops const *const sched_lock_impl[] = {
    [sched_lock_generic] = &ML_(generic_sched_lock_ops),
+   [sched_lock_rwlock] = &ML_(rwlock_sched_lock_ops),
 #ifdef ENABLE_LINUX_TICKET_LOCK
    [sched_lock_ticket]  = &ML_(linux_ticket_lock_ops),
 #endif
@@ -85,12 +93,12 @@ int ML_(get_sched_lock_owner)(struct sched_lock *p)
    return (sched_lock_ops->get_sched_lock_owner)(p);
 }
 
-void ML_(acquire_sched_lock)(struct sched_lock *p)
+void ML_(acquire_sched_lock)(struct sched_lock *p, ThreadId tid, SchedLockKind slk)
 {
-   return (sched_lock_ops->acquire_sched_lock)(p);
+   return (sched_lock_ops->acquire_sched_lock)(p, tid, slk);
 }
 
-void ML_(release_sched_lock)(struct sched_lock *p)
+void ML_(release_sched_lock)(struct sched_lock *p, ThreadId tid, SchedLockKind slk)
 {
-   return (sched_lock_ops->release_sched_lock)(p);
+   return (sched_lock_ops->release_sched_lock)(p, tid, slk);
 }

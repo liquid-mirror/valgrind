@@ -63,6 +63,13 @@ typedef
    }
    ThreadStatus;
 
+typedef
+   enum SchedLockKind {
+      VgTs_NoLock,
+      VgTs_ReadLock,
+      VgTs_WriteLock
+   } SchedLockKind;
+
 /* Return codes from the scheduler. */
 typedef
    enum { 
@@ -289,6 +296,9 @@ typedef struct {
 
    /* Current scheduling status. */
    ThreadStatus status;
+   SchedLockKind slk;
+   /* If in_generated_code False, a fault is Valgrind-internal (ie, a bug) */
+   Bool in_generated_code;
 
    /* This is set if the thread is in the process of exiting for any
       reason.  The precise details of the exit are in the OS-specific
@@ -382,6 +392,9 @@ void VG_(init_Threads)(void);
 
 // Convert a ThreadStatus to a string.
 const HChar* VG_(name_of_ThreadStatus) ( ThreadStatus status );
+
+// Convert a SchedLockKind to a string.
+const HChar* VG_(name_of_SchedLockKind) ( SchedLockKind slk );
 
 /* Get the ThreadState for a particular thread */
 extern ThreadState *VG_(get_ThreadState) ( ThreadId tid );

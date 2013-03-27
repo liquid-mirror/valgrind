@@ -43,7 +43,8 @@
 #include "pub_core_vkiscnums.h"    // __NR_futex
 #include "pub_tool_libcproc.h"
 #include "pub_tool_mallocfree.h"
-#include "pub_tool_threadstate.h"
+#include "pub_core_libcsetjmp.h"    // To keep pub_core_threadstate.h happy
+#include "pub_core_threadstate.h"
 #include "pub_tool_inner.h"
 #if defined(ENABLE_INNER_CLIENT_REQUEST)
 #include "helgrind/helgrind.h"
@@ -114,7 +115,7 @@ static int get_sched_lock_owner(struct sched_lock *p)
  * See also Nick Piggin, x86: FIFO ticket spinlocks, Linux kernel mailing list
  * (http://lkml.org/lkml/2007/11/1/125) for more info.
  */
-static void acquire_sched_lock(struct sched_lock *p)
+static void acquire_sched_lock(struct sched_lock *p, ThreadId tid, SchedLockKind slk)
 {
    unsigned ticket, futex_value;
    volatile unsigned *futex;
@@ -158,7 +159,7 @@ static void acquire_sched_lock(struct sched_lock *p)
  * declared as volatile and since the __sync...() functions imply a memory
  * barrier.
  */
-static void release_sched_lock(struct sched_lock *p)
+static void release_sched_lock(struct sched_lock *p, ThreadId tid, SchedLockKind slk)
 {
    unsigned wakeup_ticket, futex_value;
    volatile unsigned *futex;

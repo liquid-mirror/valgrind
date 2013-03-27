@@ -230,11 +230,15 @@ void VG_(show_sched_status) ( void )
 {
    Int i; 
    VG_(printf)("\nsched status:\n"); 
+#ifdef SINGLEV
    VG_(printf)("  running_tid=%d\n", VG_(get_running_tid)());
+#endif
    for (i = 1; i < VG_N_THREADS; i++) {
       if (VG_(threads)[i].status == VgTs_Empty) continue;
-      VG_(printf)( "\nThread %d: status = %s\n", i, 
-                   VG_(name_of_ThreadStatus)(VG_(threads)[i].status) );
+      VG_(printf)( "\nThread %d: status = %s slk = %s in_gen_code %d\n", i, 
+                   VG_(name_of_ThreadStatus)(VG_(threads)[i].status),
+                   VG_(name_of_SchedLockKind)(VG_(threads)[i].slk),
+                   VG_(threads)[i].in_generated_code);
       VG_(get_and_pp_StackTrace)( i, BACKTRACE_DEPTH );
    }
    VG_(printf)("\n");

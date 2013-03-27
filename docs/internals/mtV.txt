@@ -1,0 +1,982 @@
+Valgrind supports multi-threaded applications, but schedules
+only one thread at a time. In other words, a multi-threaded application
+running under Valgrind will not benefit from multiple CPUs.
+
+A prototype has been developped of a "really" multi threaded Valgrind
+(mtV).  The prototype is made of ugly and/or inefficient
+kludges/trials/...  
+Now, you have been warned that you will encounter horrors.
+The only objective of this prototype is to understand the problems of
+doing an mtV, see what are the possible approaches, possible
+performance gains.
+The current state of the patches and/or tests results are maintained
+in bugzilla in bug
+https://bugs.kde.org/show_bug.cgi?id=301830
+
+
+The document starts with a description of the current behaviour and
+structure of Valgrind.
+It then contains a description of the prototype developped,
+the techniques used, the problems still opened.
+The document below has some sections.
+Section title starts with a #.
+The first section is some general information, which might
+be skipped by most V developpers.
+
+
+# The 3 Valgrind "layers": 
+==========================
+    ------------------------------------------------------------------------
+    |                                           |                          |
+    |  TOOL            "runtime code"           |    "instrument function" |
+    ------------------------------------------------------------------------
+    |                                       |
+    |   GUEST JIT code                      |
+    |     (generated/instrumented code)     | 
+    --------------------------------------------------------------------
+    |                                                                  |   
+    |   CORE layer                                                     |
+    --------------------------------------------------------------------
+
+
+     CORE layer   : this contains the V framework & modules
+                    used to support the TOOL code.
+     TOOL layer   : made of two big parts.
+                 1. The instrument function is called by the CORE layer.
+                    It instruments the code of the executable running
+                    under V small blocks at a time, producing
+                    "translated and instrumented" small pieces of JIT code.
+                    These pieces of JIT codes are called by the scheduler
+                    contained in the CORE layer.
+                 2. the TOOL "runtime code" (C helper functions and data
+                    structures needed by the GUEST JIT code).
+                    For example, for memcheck, it contains the data
+                    structures to track the allocated and freed memory.
+     GUEST layer  : contains GUEST JIT : this is the process guest code
+                    translated and instrumented by the TOOL instrument function.
+
+
+    The typical control flow is:
+
+       1. CORE layer calls the "instrument function", producing 
+          instrumented GUEST JIT code
+
+       2. CORE layer calls the GUEST JIT generated code.
+
+       3. the GUEST JIT code runs. It will typically do many calls to
+          the tool runtime code. 
+
+          Note: the none tool is special : the "instrument function"
+          does not do any code transformation. The none tool has no
+          runtime code.
+
+          The tool runtime code can itself do calls to the CORE layer.
+
+   Example: 
+     the guest process code is:   char *s;
+                                  s = malloc (10);
+                                  strcpy(s, "abc");
+                                  (*fnptr)();
+     The following sequence will  happen:
+        1. CORE will decode the guest process code.
+        2. CORE will call the TOOL function to instrument this decoded code
+          For memcheck, the instrumented code will be made of:
+              a call to the memcheck malloc replacement function
+                (this replacement function is part of memcheck runtime code,
+                 it a.o. tracks the allocated memory to allow leak search).
+              an assignment of the result of the malloc replacement to s
+              a call to a tool C helper to indicate that s (the ptr) is now
+                 initialized
+              a call to the function strcpy
+              a (dynamic) call to the function pointed to by fnptr.
+        3. CORE will translate the instrumented code to executable code (JIT)
+           and will store this code in a data structure (the translation table).
+           Basically, the translation table is a mapping between a guest code
+           address and the corresponding translated JIT code.
+        4. CORE scheduler will call the JIT code (the just translated piece of
+           code)
+        5. the JIT code does the following:
+            call the tool malloc replacement function, which does:
+                 call the CORE code to allocate a block of memory
+                     (10 bytes + some admin overhead).
+                 call the CORE code to compute (and store) a stack trace of
+                 the guest code call stack.
+                 call the CORE code to store in an hash table
+                     the address of the allocated block 
+                     + the stack trace reference
+                 maintain in a memcheck data structure that the 10 bytes are
+                 accessible but not initialized.
+            the JIT code should normally call strcpy. Because strcpy
+            is not translated yet, the call code is exiting to the scheduler.
+            So, the JIT code executes a return, giving back the control to
+            the CORE scheduler
+        6. the scheduler will translate the strcpy function (generating a new
+           piece of instrumented JIT code) and add it in the translation table.
+           Possibly, the table is full. Then the old translations have to be
+           removed from the table.
+        7. The scheduler then calls the new JIT code
+           The JIT code will execute the strcpy instrumented JIT code
+           (this code will typically do multiple calls to the tool runtime
+           code to indicate that the 4 first bytes pointed to by s are now
+           initialized).
+        8. The JIT code will search in the translation table for the
+           translated piece of code corresponding to *fnptr.
+           If existing, it is called.
+           Otherwise, control is given back to scheduler for instrumentation.
+        
+  
+For a typical tool and guest application being executed, most of the
+time is spent in GUEST JIT code, in the TOOL runtime code and in
+the CORE code. It is deemed that the time spent in TOOL instrument
+function is not a major part : usually, a translated piece of code
+is executed often.
+
+If we have an application containing multiple threads, there is no
+(to be more precise, almost no) parallel execution : at any moment
+in time, there is maximum one thread which "really" executes some code.
+This thread can be busy either in the CORE layer (possibly calling
+the TOOL instrument function), or can be busy in GUEST JIT code
+or in the TOOL runtime code.
+
+This "single thread busy" model is needed because neither the CORE
+layer, nor the TOOL layer (runtime or instrument) are re-entrant.
+These 3 layers are containing global variables/data structures/...
+which can only be used by one thread at a time.
+
+To ensure thread-safety of this non-reentrant code, V uses the very
+simple approach of "single thread busy". The "single thread busy" is
+ensured by the "Big Lock".
+
+A thread must acquire the Big Lock before it executes CORE or GUEST or
+TOOL code. When a thread acquires the Big Lock, it becomes THE running
+thread.
+
+The running thread releases the Big Lock after it has executed a certain
+quantity of GUEST code. Releasing the Big lock will allow another thread
+to run during some time.
+
+The other threads (ready to run) are all blocked,  trying
+to acquire the Big Lock. One of these threads will acquire the Big Lock
+and start to execute some code. Typically, it will start to execute
+GUEST JIT code. But it might also start to execute CORE code because
+some guest code has to be instrumented.
+
+If the running thread executing GUEST JIT code has to execute a
+syscall (e.g. reading data on a socket), the running thread must
+release the Big Lock : if this thread would not release the Big Lock
+before doing a syscall, then the whole application will be blocked
+waiting for this thread to finish its syscall.
+
+In other words, the only real parallelism provided by Valgrind is
+between one thread doing some CPU in CORE/GUEST/TOOL
+and all other threads doing a system call called by GUEST JIT code.
+
+This is a very low level of parallelism. If an application does
+an intensive usage of threads, the typically slowdown factor
+of the V tool (e.g. 5 to 20 for memcheck) will be multiplied
+by the serial execution of the CORE/GUEST/TOOL code.
+
+The objective of the prototype is to determine how to best increase
+the parallelism of Valgrind.
+
+# the non-thread safe code
+==========================
+To increase the performance, we want to have multiple
+threads running in parallel (e.g. executing the code of the example).
+For this, the Big Lock must be removed and replaced by other
+techniques : in all the above steps, global data structures are used
+that will be corrupted by parallel access : almost all the steps are
+not thread safe if the Big Lock is removed.
+Typically, for the translation part, the following are not thread safe :
+   the VEX lib (used by the CORE and tool instrument function)
+   the tool instrument function itself
+   the CORE translation framework
+   ...
+
+At runtime (executing JIT code), e.g. the following are not thread safe
+   the CORE scheduler
+   the memcheck C helpers
+   memcheck malloc replacement
+   memcheck V and A bits C helpers
+   the CORE malloc/free
+   the CORE aspacemgr (used e.g. by the CORE malloc/free)
+   ...
+
+At many places in the code, we have statistical counters 
+to help understand the behaviour/performance of V.
+(e.g. CORE malloc is counting how many bytes have been malloc-ed).
+These counters are all non-thread safe.
+
+The guest code might or might not be thread safe (e.g. might contain
+race condition). Such non thread safe guest code is not a problem
+for our objective, as such non thread safety will only corrupt the
+guest process data structure (the developper of the guest code might
+use helgrind to search for such non thread safe code).
+
+However, currently, even thread-safe guest code can result in non
+thread safe JIT code. For example, two threads executing
+at the same time a call to a not yet translated function (e.g. strcpy)
+will corrupt the JIT code (t-chaining).
+
+Making all the above thread safe can be done using various techniques:
+   using thread local storage instead of global variables
+   using mutex locks
+   using read/write locks
+   using atomic instructions
+        (e.g. for statistical counters)
+   using lock-less algorithms
+        (e.g. to maintain data structures without
+              using locks. Such lock-less algorithms are
+              based on atomic instructions)
+        Note: mutex can be implemented using atomic instructions and
+        OS syscalls (e.g. based on futex). If there is no contention,
+        the perf. of mutex based approach will be very probably similar
+        (or even maybe better?) than a lock-less algorithm.
+        Lock-less algorithms might however help either to increase
+        the throughput or to avoid difficulties such as deadlocks.
+
+The prototype has explored some of the above techniques.
+Some "testing" (ha ha) has been done. See # testing below.
+
+At this stage, only the thread safe aspect of CORE and JIT layer
+was looked at for the prototype. Nothing has been done to look
+at the tool runtime layer.
+
+# prototype
+===========
+
+The very first version of the prototype was based on the following
+idea (looking somewhat wrong a posteriori):
+  When a thread executes guest code, it has to use some data
+  structures (e.g. the translation table, the JIT code itself, ...).
+  These structures can't be protected by a mutex, otherwise
+  we are back to stage 1: no parallelism.
+  So, let's transform the Big Lock into a rwlock.
+  Before executing guest code, a thread must acquire
+  the Big Lock in read mode.
+  Before doing any modifications to any data structure, the 
+  thread must acquire the Big Lock in write mode.
+
+So, the Big Lock was transformed into a rwlock by using
+low level "semaphores". These semaphores are the
+same as the current trunk scheduler "big lock", i.e. implemented
+using a pipe. !!! Fair scheduler has not been looked at.
+The rwlock implemented on top of these semaphores is not
+efficient as it implies several read/write syscall
+to acquire/release the lock. Really
+
+With this, a bunch of changes were needed to avoid assertions
+being raised. A.o.:
+  * the concept of THE lock owner disappears
+    so this cannot be checked anymore
+  * the concept of THE running thread disappears similarly
+  * the concept of a global 'in generated code' disappears
+  * a bunch of failing asserts have been #ifdef-ed or commented.
+
+After fixing the above, the 4 threads were able to run in parallel.
+One observe the following on the "big_parallel_sleepers" test:
+  * during +- 40 seconds, about 125% CPU is used
+  * after that, jump to 400%.
+ Interpretation of this: making the translations and storing them
+ in the transtab is still very serialized by the Big Lock.
+ Once all the code is translated, full speed is possible.
+ See also the "duplicate t-chaining" below.
+  
+
+helgrind (trunk) was then used in a setup "outer trunk helgrind/inner
+none tool prototype" to find race conditions.
+
+A bunch of such race conditions were found.
+Typically:
+   * race conditions in statistical counters
+   * ... need to retrieve and document more of these changes done.
+
+There are some tricky races as some actions looks like they are just
+reading some data, but in fact they do modifications to global
+variables.  E.g. all the functions which are maintaining a small static
+local cache will write to the local cache. Typical example in the
+aspacemgr or in the transtab.
+The transtab (VG_(tt_fast)) is the worst case because:
+  1. it is used a lot 
+  2. it is used by the asm dispatch code.
+=> using a rw lock for this might not be an ideal solution.
+See # tt_fast below for another suggested approach.
+Currently the VG_(tt_fast) race condition is not fixed
+in the prototype.
+The other data structures related to translation tables were
+first tried to be protected the following way:
+  Before having to search or modify the translation table,
+  the Big Lock has to be acquired in W mode.
+  So, if a thread had the Big Lock in R mode, it
+  was reacquiring it in W mode (by releasing and re-acquiring).
+  Really not efficient, the effect of this was really bad:
+   The max CPU usage dropped from 400% till 140%.
+   Worse, the total elapsed time to run the test was
+   bigger than with the V trunk.
+
+The conclusion of this was : a (reasonable) mtV cannot be based
+purely on a RW Big Lock.
+
+* So, started to make a pub_tool_lock.h and m_lock.c module.
+ (currently only contains a mutex, based on atomic instructions
+  and futex syscall). It should at least be completed with
+  a rwlock. Maybe also spin locks ?
+  Some constraints for this module:
+    * it should be initialisable very early in the startup sequence
+     (as e.g. aspacemgr will need it. Even maybe DebugLog might
+      need locks).
+
+  The m_lock.c is derived from (lgpl 2.1) NPTL glibc 2.13 code.
+  Atomic instructions for x86 and amd64 were also copied from
+  the NPTL pthread lib and slightly transformed.
+  Basically, removed the 'catomic*' kind of actions, which are
+  optimisations done referencing a global pthread NPTL var
+  to "skip" the LOCK prefix when there is only one thread.
+  !!! There is one asm statement in priv_atomic_x86.h
+  giving a compile/assembly error.
+  Replaced by __sync_add_and_fetch temporarily. This should
+  be fixed.
+  !!! the fair scheduler should be rewritten based on the
+  atomic instructions rather than the __sync.. and __builtin
+  so that it will be available everywhere.
+  !!! need to see if all 32 bits platforms are supporting
+  an atomic increment of a 64 bit counter. Might either not
+  be supported or cause problems like the x86 compile error above.
+  Then these will have to be emulated. This might all be
+  costly so we might have to avoid some of the 64 bits statistical
+  counters.
+
+* The above efficient futex based mutex was used to protect
+  the translation table. With this, many race condiions
+  disappeared. CPU usage back to 400%.
+
+* VG_(unknown_SP_update) is a perf. critical function.
+  This function contains a piece of non thread safe code
+  for detecting stack changes. This code has been
+  disabled waiting for a proper solution.
+  A possible approach is to use TLS : the current_stack
+  global variable would become a 'per thread' variable.
+  See # TLS below for the trial of thread local storage.
+
+* aspacemgr locking: race condition detected e.g. between
+          VG_(am_find_nsegment)
+  and a mmap syscall, calling VG_(am_notify_client_mmap)
+  => a mutex was added in aspacemgr, protecting at least
+  the race between these 2 functions.
+  However, it is far to be clear that the aspacemgr is
+  "safe" with that. Effectively, VG_(am_find_nsegment)
+  returns a pointer to an element of the segment array.
+  So, if another thread is modifying the entry in the
+  array once the first thread has got an access to it,
+  then what ? It looks however that  VG_(am_find_nsegment)
+  is used for "small durations". But still it is not
+  clear this is a "clean thread safe interface".
+  It is unclear exactly what and how should be protected
+  in the aspace mgr. Protecting all the public interface
+  of aspacemgr could be done (need to avoid recursive locking,
+  as pub_tool_lock.h does not detect that). Howeve, unclear
+  if this is good enough (or not).
+
+* When doing the trial of protecting aspacemgr globally,
+  deadlock obtained due to recursive locking.
+  => one might need to make "safe" locks (currently,
+  m_lock.c does not verify non-recursive locking).
+  Also, if we do plenty of fine grained locking everywhere,
+  deadlocks might be difficult to avoid.
+  Lock-free algorithms might help to avoid these.
+  See # Lock free algorithms below.
+
+* Need to avoid "duplicate t-chaining".
+  Got an assert failure in VEX, as the place to t-chain did not
+  contain the expected bytes. This was created by two threads
+  detecting at the same time that a t-chaining is to be done.
+  Then, even if Write Locked one after each other, the 2nd
+  thread would assert as the expected bytes to replace
+  for t-chain are not there anymore.
+  So, in the t-chaining protected critical section, there
+  is a verification if the t-chaining has not been done
+  in the meantime.
+  This causes a really bizarre perf impact (search for really bizarre
+  in the # Performance measurements) :
+  running 150 iterations with 4 parallel threads is total less cpu
+  than in serial. But running only 2 iterations is significantly slower
+  in parallel than serial.
+  The most probable explanation: I suppose there is some useless work
+  done e.g. during translation which consumes CPU : a thread detects it
+  must do t-chaining" : it exits to the scheduler, takes the write big
+  lock, detects that this t-chaining has already be done by another
+  thread and so has done all this work for nothing.
+  This hypothesis is confirmed when giving -d.
+  This causes plenty of traces:
+  --22919:1:transtab host code 0x40537438F already chained => no chaining redone
+  But by which miracle are the parallel threads "recuperating" this cpu burned
+  for nothing  later on when doing more iterations ?
+
+  Whatever: a possible solution might be to have VEX provide an
+  efficient way to check that the current ip of the thread has
+  been already chained. Then a "already done t-chaining" would only
+  cost an exit to the C scheduler, and a few "VEX" if-s.
+  This condition looks easy to implement in VEX.
+  Is it safe ? I believe yes:
+  At least VEX can detect that the t-chaining has been done
+  already (or rather that the place is not t-chainable anymore).
+  I suppose just a "!" on this condition would do it :
+    if a place has to be chained, then it contains (for x86)
+       BA <4 bytes value == disp_cp_chain_me_EXPECTED>
+       FF D2
+  otherwise it contains something different.
+
+  ??? is it so clear that this will avoid burning cpu : when a thread
+  exits to C, it will try to acquire the big lock to do t-chaining,
+  but will not be able till all threads go out of the JIT code
+  either due to need of t-chaining or due to QUANTUM expired).
+  If all exits due to QUANTUM expired, our thread will get
+  the big lock, do the t-chaining and all is well.
+  But if the other threads have to do the same t-chaining,
+  they will all exits, see that the t-chaining is not done,
+  and then queue to acquire the write big lock.
+  One will get it, do the t-chaining, then all others will one
+  by one get the write lock, and see the t-chaining is done.
+  Threads have quite some chance to get to the same not
+  done t-chaining if they all execute the same code.
+
+  ??? or even isn't it that the translation table and
+  the rd/wr big lock protecting it is just not scalable :
+  whenever there are some threads which are executing
+  JITted code not yet translated and/or t-chained, there
+  is a high level of contention, causing a lot of
+  lock/unlock, consuming user and sys cpu ?
+
+
+# tt_fast "xor" approach
+========================
+(the tt_fast race condition has not been solved yet.
+Here is a suggested very elegant approach. But is
+this really working ?)
+[after a lot of discussion, it became clear that this does
+not work. There is a small probability of a wrong
+value being read. See at the end of the section the
+failing case and probability analysis]
+
+tt_fast is used (read only) by the asm dispatcher.
+tt_fast is accessed for every 'dynamic' call/jump/...
+(the 'static' call/jump/... are resolved using translation
+chaining).
+tt_fast is modified either when a new translation is
+done or when an already translated piece of code is
+found in the translation cache.
+In other words, one see that even if tt_fast+translation
+table is logically only read, it is also modified by a search.
+
+http://www.cis.uab.edu/hyatt/hashing.html
+describes a technique which (I believe) would allow to use
+tt_fast without locking and without atomic instruction,
+with very few changes in the asm dispatcher.
+
+Basically, the idea of the paper applied on tt_fast would be:
+  tt_fast is an array of pair (G, H)
+   where G is a guest code address and H is the address
+   of the JIT translation of G.
+  (G, H) is stored at a position in tt_fast obtained by
+  "hashing" G (basically, shifting and masking some bits of G).
+If we have a pair (G1,H1) and (G2,H2) which have the same
+hash value, and these pairs are inserted (or modified)
+in parallel, a third thread reading this table might get
+one of the following 4 pairs:
+   (G1,H1) (good)
+   (G2,H2) (good)
+   (G1,H2) (bad)
+   (G2,H1) (bad)
+The idea is that the asm dispatcher would detect the
+bad cases, and then just fall back to the normal
+search (exiting the asm dispatcher to do a full search
+in the translation table).
+To differentiate the good from the bad (without an ugly lock :),
+the idea is to store in tt_fast the following:
+   (G xor H, H)
+Then when searching for G1, one does the following:
+   k = hash(G1)
+   g_xor_h = tt_fast(k).g
+   h = tt_fast(k).h
+   if (g_xor_h xor h == G1)
+   then
+     h is H1
+   else
+     a full search in translation table is needed
+     as either we have (G2,H2) (a good case, but not
+     ok for us) or one of the (temporary) bad case.
+A bad case will be "repaired" by the next full search
+which goes to the same hash bucket.
+
+I believe that even without memory __sync_synchronize,
+this should all work : either the pair is consistent
+and usable or it is inconsistent and not usable.
+
+[some explanation about the above not working, and the
+probability of failing]
+If I am not wrong, assuming G and H are somewhat random on the full address
+space, the probability to fail is something like 1/2^32 for a 32 bits :
+
+Thread 1 writes G1_xor_H1 H1
+Thread 2 writes G2_xor_H2 .. (and is interrupted before writing H2)
+Thread 3 does a search which lands in the same bucket as G1 and G2.
+
+There is only one G value which will cause thread 3 to believe that H1 is good
+and can be used (while in fact it is a corrupted entry).
+This G value is equal to G2_xor_H2 xor H1. As G is supposed to be randomly
+distributed over the 4Gb, we thus have 1 chance on 4 Gb to use a corrupted
+entry. We might also have to count the probability that G2_xor_H2 xor H1
+lands in the same bucket as G1 and G2. At least currently, it is 1/2^15
+(tt_fast has 32K entries).
+
+So, if the above is correct, the probability to have a thread using a wrong H
+is 1/(32Kb * 4Gb) (I believe this is only true if we have equivalent
+nr of read and write operations. Having less write operations decreases
+the probability for a read to have a problem).
+
+I can understand why this is acceptable for a chess game :). Maybe the
+chess program has more chance to lose due a cosmic ray than due to the
+above bad luck ?
+
+I however think that for Valgrind, the probability to fail is somewhat
+higher, as the G values are not chess position well distributed hash
+values (like in the original chess paper) but are addresses which have
+a lot of chance to have some bits always the same (e.g. some high
+order bits might have a high probability to be 0, and the 2 low order
+bits might also be always 0 due to alignment constraints on the code).
+
+Note that Eliot Moss suggested a way to fix the above by having some
+bits of the values used to store a thread nr. Then reading an inconsistent
+pair G^H,H will be detected as the inconsistent pair will be written
+by two different threads (we need a memory write fence in a thread
+to cleanly separate the writes of a first pair from a second pair
+by this thread).
+
+# remaining race conditions
+===========================
+Currently, there is (for the none tool) at least
+the following race conditions to fix:
+
+* these are counters used for sanity checking or gdbserver polling
+  Probably to be fixed either by TLS or by atomic instructions.
+==23743== Location 0x284d2880 is 0 bytes inside local var "slow_check_interval"
+==23743== Location 0x284d2884 is 0 bytes inside local var "next_slow_check_at"
+==23743== Location 0x28670dac is 0 bytes inside local var "sanity_slow_count"
+
+==23743== Location 0x28670e30 is 0 bytes inside local var "vgdb_next_poll"
+==23743== Location 0x2866aafc is 0 bytes inside local var "busy"
+
+* to be analysed: many races reported on none/tests/pth_once (and other
+ similar tests).
+  Looks like the clone syscall needs to lock somewhat more things)
+  Maybe it needs to lock rw ?
+  Or maybe helgrind needs a hb relationship on the clone syscall
+   (helgrind does a hb relationship for pthread level but not for
+    the os level) ?
+==29332== Location 0x284fd2c8 is 0 bytes inside local var "nsegments_used"
+==29332== Location 0x28c70010 is 0 bytes inside vgPlain_threads[2].exitreason,
+==29332== Location 0x28c70020 is 0 bytes inside vgPlain_threads[2].arch.vex.host_EvC_FAILADDR,
+==29332== Location 0x28c70028 is 0 bytes inside vgPlain_threads[2].arch.vex.host_EvC_COUNTER,
+==29332== Location 0x28c71b00 is 0 bytes inside vgPlain_threads[2].sig_mask.sig[0],
+==29332== Location 0x28c71b44 is 0 bytes inside vgPlain_threads[2].os_state.threadgroup,
+.... too much races to all put here ...
+
+* VG_(tt_fast) xor technique to be implemented:
+==23743== Location 0x28fe1350 is 0 bytes inside vgPlain_tt_fast[*].guest,
+==23743== Location 0x28fe1358 is 0 bytes inside vgPlain_tt_fast[*].host,
+
+# debuglog
+==========
+Output can currently be done by multiple threads in parallel
+(e.g. in case of a crash/inconsistency, each thread might detect
+this and report the state of the scheduler at crash time).
+This causes output to be mixed/unreadable.
+We might maybe have a mutex to have each debugLog being
+a single syscall and have a flush for each write.
+But some messages (e.g. a stack trace) are made of
+several debuglog calls ?
+
+# testing
+=========
+At this stage, very little testing done.
+
+The "testing" (ha ha) of the prototype was done mostly
+using parallel_sleepers (a slightly modified version of
+gdbserver_tests/sleepers.c by removing setaffinity to a single CPU)
+or by big_parallel_sleepers (sleepers.c more heavily modified
+to have multiple threads executing in parallel the code of 
+perf/bigcode1).
+[as part of the new version of mtV patch, gdbserver_tests/sleepers
+has an optional arg 5 -p telling to disable setaffinity.
+big_parallel_sleepers has been put in perf/ directory]
+
+These two test programs have command line arguments to
+indicate to 4 threads to do a mix of cpu burning or
+syscall (sleep during some milli-seconds).
+When telling to only burn CPU, for a perfectly parallel V,
+the 4 threads should consume 400% of cpu (on a >= 4 CPU system).
+
+There will be a whole additional bunch of tests needed before
+we could have a reasonable trust in the race-free state of a V.
+For example, we will need test programs doing mmap/munmap
+and similar with multiple threads in parallel.
+
+9 June: none tests run succesfully on f12/x86 and deb6/amd64.
+(does not mean much: we for sure still have race conditions).
+
+12 June: run the none tests in an outer helgrind inner none config.
+A bunch of race conditions to analyse (a lot seems caused
+by the clone syscall which might not be understood by helgrind).
+Also, the outer.log file contains some null bytes which are written.
+Need to see why these are produced (might be just the outer/inner
+setup : to be verified with an inner trunk untouched).
+
+
+
+# TLS
+=====
+It is highly probable that mtV will need an efficient way
+to retrieve "per thread" values.
+This looks needed e.g. for VG_(unknown_SP_update).
+But it will also very probably be needed for the tool
+runtime code (to e.g. retrieve the current thread which
+is calling the tool runtime code, or retrieve per thread
+tool data structures).
+
+There exists multiple ways to manage TLS. For example, a TLS variable
+defined in a shared lib is managed differently than in the
+statically linked part of the executable.
+
+The runtime requirements are limited for what is called the 
+ELD 'local-exec' model. Basically, the only need is to have
+for each thread (including the main thread) a static zone of
+memory big enough for all the TLS variable in the statically linked
+part of the executable. TLS variables in shared libs are not supported
+(it is suspected that shared libs specified at link time might work
+but not tested. In any case, V does not use such linked shared libs).
+This static zone of memory has been added in the VG_(threads) array.
+For the main thread, very early in the V startup sequence, the
+thread register is modified to point at this zone.
+There are small differences depending on the platforms.
+All these differences are hidden in m_tls.c.
+For the non main threads, the clone syscall must specify the TLS area
+of the thread. Some operations might be needed before and after the clone.
+Again, the specifics of these operations is inside m_tls.c.
+
+Currently, m_tls.c is working on linux x86/amd64/ppc32/ppc64.
+It is unclear how to implement TLS on MacOS (missing documentation)
+Arm (Android or Linux) is also still to be looked at.
+Android TLS seems to be emulated (at least with current gcc NDK)
+so TLS will not be ultra fast.
+s390x also still to be looked at (probably easy).
+
+* TLS storage is not necessarily properly/efficiently supported
+  in all environment, depending e.g. on the OS version and/or
+  of the gcc version.
+  Assuming we cannot make the __thread keyword properly supported
+  in all the environments, here is a sketch of how such TLS
+  could be replaced by something less comfortable but still
+  providing the same 'per thread variable'.
+
+  The assumption is that inside the CORE code, we (most of the time)
+  have either the tid or the thread state pointer.
+  With the thread state pointer, one can efficiently reference an
+  offset in the thread state. So, thread local variables can
+  be defined by an offset (obtained at module init time).
+  Then the address of a local thread variable is obtained by e.g.
+   int * my_thread_specific_counter 
+     = GETTLS(tst, my_thread_specific_counter_offset);
+
+  and then *my_thread_specific_counter can be safely used as
+  a TLS pointer variable.
+  
+  The JIT code must then pass the thread state to all the C helpers
+  which need to have access to TLS. The thread state pointer is normally
+  efficiently available in a register.
+
+  This is less comfortable than __thread attributes, and will oblige to
+  put the thread state as argument to many C helpers.
+  If TLS storage is really needed, this might be better than nothing.
+
+
+# outer helgrind difficulties
+=============================
+Running an outer helgrind on an inner (parallel) V is
+a very easy way to find (some?) race conditions.
+
+However, several traps were encountered, and are documented
+here.
+
+1. Encountered a crash in the outer helgrind 
+   when adding some hg client request in the inner.
+This crash seems to be linked with the stack of a new
+thread (or main thread?) not being registered early
+enough. Then if the outer helgrind has to do a stacktrace
+at this early stage, the stack trace code was crashing.
+This has been bypassed by the following patch in the outer V.
+It is not very clear what to do. A proper (earlier) registration
+of the stack might solve the problem. Maybe the hack below
+is not such an horrible hack at the end: if stack_limits
+cannot find the stack of the stack pointer, then it looks unwise
+to allow unwinding without taking reasonable stack limits into
+account.
+===================================================================
+--- coregrind/m_stacktrace.c	(revision 12593)
++++ coregrind/m_stacktrace.c	(working copy)
+@@ -801,6 +801,8 @@
+    /* See if we can get a better idea of the stack limits */
+    VG_(stack_limits)( (Addr)startRegs.r_sp,
+                       &stack_lowest_word, &stack_highest_word );
++   // Hack to avoid crash in outer Valgrind:
++   if (stack_lowest_word == 0) stack_highest_word = 0; // Hack
+ 
+    /* Take into account the first_ip_delta. */
+    startRegs.r_pc += (Long)(Word)first_ip_delta;
+
+2. Non thread safe aspect in the guest process are detected
+  by the outer helgrind. However, this is detected in the
+  JIT code generated by the inner V.
+  So, the outer V does not understand the origin of this
+  race condition. This means the suppression (for e.g. the
+  normal libc race conditions) do not work.
+  Adding --read-var-info=yes helped to determine these
+  races as the outer V was able to point at global variables
+  in libc.
+  The assumption taken was that any stack trace that the outer V
+  cannot properly associate with some inner code is considered
+  as an irrelevant race condition.
+
+3. mutex order: the Big Lock was transformed in a rwlock 
+  using two "lower level" locks (more exactly token passing).
+  I believe the rwlock code is correct, but still helgrind detects
+  problems in it e.g. because one thread releases a lock that
+  was taken by another thread (not abnormal, as the low level
+  "locks" are in fact a token).
+  The helgrind marking code in the low level locks was removed.
+  Only the Big Lock itself was marked with RW lock annotations.
+
+4. helgrind does not understand that the clone syscall
+  is introducing a happens-before relationship between
+  the actions in the parent thread before the clone,
+  and the actions in the child thread after the clone.
+  A trial was done to mark this relationship, but it
+  did not help much (probably because the race condition
+  is detected in the asm just after the clone syscall.
+  The HG annotations cannot be put in asm code, and so
+  might not be done precisely enough to avoid hg to report
+  the error.
+
+
+# how to schedule the changes
+=============================
+Obtaining an mtV might imply some significant
+changes in the code. It might be more difficult to
+implement on macOS or on android than on the other
+Linux platforms.
+Making an mtV which works better for multi threaded
+apps might make the (maybe more important case ?)
+of a non-threaded application slower.
+Also, each tool will have to be updated to
+be really multi-threaded.
+
+So, here are a bunch of questions:
+* Should we try to have a core library
+    "single threaded" and another one "multi-threaded" ?
+Each tool would link with the appropriate lib.
+Also, one might imagine that a tool could work
+both in a single threaded setup, or in a multi-threaded 
+version.
+This all might make the transition and/or testing
+easier/less risky.
+
+* Alternatively, one could imagine that the core
+ would switch from "null" locking primitives 
+ to "real locking primitives" just before the first clone
+ syscall is done.
+ E.g. we would have a struct containing the addresses
+ of the locks/unlocks primitives to call.
+ Initially, they would point at empty procedures.
+ When a first clone syscall is to be executed, the
+ struct would be set to point to real locking primitives.
+
+ Depending on the tool, one might then have a Bool
+ singleV (or mtV) which serialises the threads
+ for the not yet (or not to be) parallelised tool.
+
+ The scheduler policy (currently --fair-sched) could be
+ replaced by --sched=[a list of policy to try]
+ Then depending on the tool and the OS/platform support,
+ the first working policy would be selected.
+ Then we would have something like:
+   --sched=parallel,fair,generic
+       will take the first working in the order p/f/g
+ or
+   --sched=fair
+       will fail if fair scheduler not available.
+
+ The tool would have to agree on the policy.
+ So, a tool not yet mtV ready would only agree on fair
+ and generic. Core would then ensure that the calls
+ to the tool layer is serialised.
+
+ This allows a gradual migration of (some of) the tools
+ to a mtV.
+
+ Note: this looks to be a good balance between having
+ 2 different coregrind libraries (mtV and serial)
+ and oblige all tools to either be all migrated to
+ mtV or to have a lock/unlock for each helper call.
+
+
+# parallelising memcheck
+========================
+The prototype shows that we can relatively easily
+parallelise the none tool, and have good scalability.
+(there is however very probably poor scalability when
+translating and t-chaining. Unclear if this is a
+real life problem, or only a problem for the
+big_parallel_sleeper test program).
+
+We need to have at least one useful tool made parallel
+to be convinced that mtV can be useful.
+memcheck (the most used tool) is a very good candidate
+for that.
+
+A simple approach is to have a "big tool lock" (BTL)
+(similarly to the core BL). (Possibly the BTL could be a rwlock).
+Whenever a C helper is called, it takes the BTL.  This will then make
+the tool code itself thread-safe.  It is assumed (but is this really
+the case ?) that the tool instrument function generates JIT code which
+is itself thread-safe. In other words, only the c helper might need
+protection.
+  Note: this is not necessarily the case. Eg. if memcheck generates IR
+  which does read/write in a global data structure directly, then the
+  JIT code itself is not thread-safe. Such non thread safe was ok with a
+  big lock allowing only one thread to execute JITted code at a
+  time. Approach is dead for a mtV tool. If this is the case for
+  memcheck, then it looks like the IR will have to be changed.
+The BTL will also automatically protect the data structure
+of the core which are only used by the tool
+(for example, the error list mgr).
+However, there are many core data structures which can be used
+both directly by the core and (indirectly or directly) by the tool
+runtime code. For example, VG_(malloc) can be called by the core
+code and by the tool runtime code. The aspacemgr data structure
+is another similar example.
+Probably we need to have specific locks for this core/tool shared
+data structures ?
+
+However, using a BTL has a big performance drawback (at least
+for most tools, which have C helpers called very frequently) :
+acquiring and releasing the BTL for each C helper will 
+very probably be a perf disaster. Even without contention,
+each C helper call will imply (for a simple mutex) two
+atomic instructions. But with such a simple approach, it is
+probable that there will be a very high contention on the BTL
+(is there some statistics about the ratio between CPU time
+spend in core versus JITted code versus tool runtime ?).
+In case of contention, the price for each c helper call
+will be a few atomic instructions and two syscalls.
+
+So, a BTL might be useful, but for operations done very
+frequently (e.g. V and A bits related C helpers), it
+will be needed to have something better.
+
+Options to look at:
+1. have "smaller grain" locking for some data structures
+  e.g. rather than to use the BTL in some C helpers, have
+  a different lock for each 64 KB of memory tracked by
+  the memcheck memory map. This will reduce the contention
+  assuming that most threads do not work often with the
+  same 64Kb of memory.
+2. use lock-less algorithms.
+  See below # lock free algorithms
+
+
+
+...
+Not much done yet on the aspect of parallelising memcheck.
+Need to find relevant ways to attack the problem.
+...
+
+# lock free algorithms
+======================
+Searched on internet to try to find lock free algorithm
+or code.
+http://www.concurrencykit.org seems an attractive
+candidate to provide:
+   * predefined atomic primitives for a bunch of arch.
+   * if arch not supported natively, it fallsback on
+     gcc builtin
+   * provides multiple type of locks
+   * relatively good documentation
+   * it has several lock free data structures that might
+     be useful.
+   * no dependency to pthread, libc, and similar.
+   * very few usage of standard headers
+   * Contact was taken with the main developper, who
+     was positive about doing the changes needed to
+     allow usage of ck inside Valgrind.
+
+
+# Performance measurements
+==========================
+Mostly done on gcc20, amd64.
+Most recent measurements at the top.
+time ./vg-in-place --tool=none ../small_programs/big_parallel_sleepers 150 1 300000 BSBSBSBS
+
+9 June
+Prototype V2 (with futex rwlock, rather than 3 low level sema)
+real	2m49.817s
+user	10m8.686s
+sys	0m6.332s
+Trunk
+real	10m22.792s
+user	10m20.171s
+sys	0m5.212s
+
+9 June, first measurements with an *UNPROTECTED* memcheck:
+Prototype V2
+real	9m23.239s
+user	35m53.615s
+sys	0m3.056s
+Trunk
+real	36m31.915s
+user	36m26.805s
+sys	0m7.952s
+
+7 June
+Prototype V2
+real	2m52.839s
+user	10m17.147s
+sys	0m8.469s
+Trunk
+real	10m40.479s
+user	10m36.788s
+sys	0m6.808s
+
+7 June, same test but replacing 150 by 2.
+time ./vg-in-place --tool=none ../small_programs/big_parallel_sleepers 2 1 300000 BSBSBSBS
+?????? really bizarre. See t-chaining above.
+Prototype V2
+real	0m23.689s
+user	0m25.042s
+sys	0m6.428s
+Trunk
+real	0m13.583s
+user	0m13.477s
+sys	0m0.124s
+
+
+6 June
+Prototype V1
+real	3m7.894s
+user	10m49.673s
+sys	0m10.561s
+Trunk
+real	11m26.408s
+user	11m22.483s
+sys	0m7.600s
+
+
+

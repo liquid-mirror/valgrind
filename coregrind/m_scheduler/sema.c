@@ -45,13 +45,6 @@
    pipe-based token passing scheme.
  */
 
-/* Cycle the char passed through the pipe through 'A' .. 'Z' to make
-   it easier to make sense of strace/truss output - makes it possible
-   to see more clearly the change of ownership of the lock.  Need to
-   be careful to reinitialise it at fork() time. */
-static HChar sema_char = '!'; /* will cause assertion failures if used
-                                 before sema_init */
-
 void ML_(sema_init)(vg_sema_t *sema)
 {
    HChar buf[2];
@@ -70,15 +63,30 @@ void ML_(sema_init)(vg_sema_t *sema)
    vg_assert(sema->pipe[0] != sema->pipe[1]);
 
    sema->owner_lwpid = -1;
+   sema->held_as_LL = False;
 
    /* create initial token */
-   sema_char = 'A';
-   buf[0] = sema_char; 
+   sema->sema_char = 'A';
+   buf[0] = sema->sema_char; 
    buf[1] = 0;
-   sema_char++;
-   INNER_REQUEST(ANNOTATE_RWLOCK_CREATE(sema));
+   sema->sema_char++;
+   //INNER_REQUEST(ANNOTATE_RWLOCK_CREATE(sema));
+   // disabled the above inner request, seems to give false problems/alarms
+   // with mixing the high level lock logic (the big rwlock) with the low level
+   // locks (here).
+   // All this should be re-done with proper lock module.
+
+   /* all the below are benign as in any case, such data cannot be used
+      anymore when we have a lock that is read-acquired by multiple threads */
+   /* The only real mystery is the held_as_LL */
    INNER_REQUEST(ANNOTATE_BENIGN_RACE_SIZED(&sema->owner_lwpid,
                                             sizeof(sema->owner_lwpid), ""));
+   INNER_REQUEST(ANNOTATE_BENIGN_RACE_SIZED(&sema->sema_char,
+                                            sizeof(sema->sema_char), 
+                                            "semaphore sema_char inc"));
+   INNER_REQUEST(ANNOTATE_BENIGN_RACE_SIZED(&sema->held_as_LL,
+                                            sizeof(sema->held_as_LL), 
+                                            "semaphore sema_char inc"));
    res = VG_(write)(sema->pipe[1], buf, 1);
    vg_assert(res == 1);
 }
@@ -87,11 +95,12 @@ void ML_(sema_deinit)(vg_sema_t *sema)
 {
    vg_assert(sema->owner_lwpid != -1); /* must be initialised */
    vg_assert(sema->pipe[0] != sema->pipe[1]);
-   INNER_REQUEST(ANNOTATE_RWLOCK_DESTROY(sema));
+   //INNER_REQUEST(ANNOTATE_RWLOCK_DESTROY(sema));
    VG_(close)(sema->pipe[0]);
    VG_(close)(sema->pipe[1]);
    sema->pipe[0] = sema->pipe[1] = -1;
    sema->owner_lwpid = -1;
+   sema->held_as_LL = False;
 }
 
 /* get a token */
@@ -101,13 +110,12 @@ void ML_(sema_down)( vg_sema_t *sema, Bool as_LL )
    Int ret;
    Int lwpid = VG_(gettid)();
 
-   vg_assert(sema->owner_lwpid != lwpid); /* can't have it already */
    vg_assert(sema->pipe[0] != sema->pipe[1]);
 
   again:
    buf[0] = buf[1] = 0;
    ret = VG_(read)(sema->pipe[0], buf, 1);
-   INNER_REQUEST(ANNOTATE_RWLOCK_ACQUIRED(sema, /*is_w*/1));
+   //INNER_REQUEST(ANNOTATE_RWLOCK_ACQUIRED(sema, /*is_w*/1));
 
    if (ret != 1) 
       VG_(debugLog)(0, "scheduler", 
@@ -116,11 +124,12 @@ void ML_(sema_down)( vg_sema_t *sema, Bool as_LL )
    if (ret == -VKI_EINTR)
       goto again;
 
+   vg_assert(sema->owner_lwpid != lwpid); /* can't have it already */
    vg_assert(ret == 1);		/* should get exactly 1 token */
    vg_assert(buf[0] >= 'A' && buf[0] <= 'Z');
    vg_assert(buf[1] == 0);
 
-   if (sema_char == 'Z') sema_char = 'A'; else sema_char++;
+   if (sema->sema_char == 'Z') sema->sema_char = 'A'; else sema->sema_char++;
 
    sema->owner_lwpid = lwpid;
    sema->held_as_LL = as_LL;
@@ -132,15 +141,16 @@ void ML_(sema_up)( vg_sema_t *sema, Bool as_LL )
    Int ret;
    HChar buf[2];
    vg_assert(as_LL == sema->held_as_LL);
-   buf[0] = sema_char; 
+   buf[0] = sema->sema_char; 
    buf[1] = 0;
    vg_assert(sema->owner_lwpid != -1); /* must be initialised */
    vg_assert(sema->pipe[0] != sema->pipe[1]);
-   vg_assert(sema->owner_lwpid == VG_(gettid)()); /* must have it */
+   //??mt vg_assert(sema->owner_lwpid == VG_(gettid)()); /* must have it */
+   //??reader lock can be locked by a reader, and unlocked by another one.
 
    sema->owner_lwpid = 0;
 
-   INNER_REQUEST(ANNOTATE_RWLOCK_RELEASED(sema, /*is_w*/1));
+   //INNER_REQUEST(ANNOTATE_RWLOCK_RELEASED(sema, /*is_w*/1));
    ret = VG_(write)(sema->pipe[1], buf, 1);
 
    if (ret != 1) 

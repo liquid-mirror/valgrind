@@ -33,6 +33,7 @@
 #include "pub_core_libcsetjmp.h"    // to keep _threadstate.h happy
 #include "pub_core_threadstate.h"
 #include "pub_core_libcassert.h"
+#include "pub_core_libcproc.h"      // For VG_(gettid)()
 #include "pub_tool_inner.h"
 #if defined(ENABLE_INNER_CLIENT_REQUEST)
 #include "helgrind/helgrind.h"
@@ -78,6 +79,16 @@ const HChar* VG_(name_of_ThreadStatus) ( ThreadStatus status )
   }
 }
 
+const HChar* VG_(name_of_SchedLockKind) ( SchedLockKind slk )
+{
+   switch (slk) {
+   case VgTs_NoLock:    return "VgTs_NoLock";
+   case VgTs_ReadLock:  return "VgTs_ReadLock";
+   case VgTs_WriteLock: return "VgTs_WriteLock";
+   default:             return "VgTs_???";
+  }
+}
+
 ThreadState *VG_(get_ThreadState)(ThreadId tid)
 {
    vg_assert(tid >= 0 && tid < VG_N_THREADS);
@@ -97,7 +108,8 @@ Bool VG_(is_valid_tid) ( ThreadId tid )
 // This function is for tools to call.
 ThreadId VG_(get_running_tid)(void)
 {
-   return VG_(running_tid);
+   Int lwpid = VG_(gettid)(); // mtV? this is costly : syscall + linear search.
+   return VG_(lwpid_to_vgtid)(lwpid); // Use TLS instead /???
 }
 
 Bool VG_(is_running_thread)(ThreadId tid)
@@ -106,7 +118,8 @@ Bool VG_(is_running_thread)(ThreadId tid)
 
    return 
 //      tst->os_state.lwpid == VG_(gettid)() &&	// check we're this tid
-      VG_(running_tid) == tid	           &&	// and that we've got the lock
+//      VG_(running_tid) == tid	           &&	// and that we've got the lock
+      (tst->slk == VgTs_ReadLock || tst->slk == VgTs_WriteLock) &&
       tst->status == VgTs_Runnable;		// and we're runnable
 }
 

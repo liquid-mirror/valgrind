@@ -737,7 +737,7 @@ static void call_gdbserver ( ThreadId tid , CallReason reason)
       if (tst->status == VgTs_Yielding) {
          SysRes sres;
          VG_(memset)(&sres, 0, sizeof(SysRes));
-         VG_(acquire_BigLock)(tid, "gdbsrv VG_MINIMAL_LONGJMP");
+         VG_(acquire_BigLock)(tid, VgTs_WriteLock, "gdbsrv VG_MINIMAL_LONGJMP");
       }
       if (tst->sched_jmpbuf_valid) {
          /* resume scheduler */

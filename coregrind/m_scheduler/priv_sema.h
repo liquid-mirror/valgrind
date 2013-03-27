@@ -34,9 +34,15 @@
 /* Not really a semaphore, but use a pipe for a token-passing scheme */
 typedef struct {
    Int  pipe[2];
+   Char sema_char;
    Int  owner_lwpid;  /* who currently has it */
    Bool held_as_LL;   /* if held, True == held by a _LL call */
 } vg_sema_t;
+
+/* Cycle the sema_char passed through the pipe through 'A' .. 'Z' to make
+   it easier to make sense of strace/truss output - makes it possible
+   to see more clearly the change of ownership of the lock.  Need to
+   be careful to reinitialise it at fork() time. */
 
 // Nb: this may be OS-specific, but let's not factor it out until we
 // implement an OS port for which this isn't ok.
