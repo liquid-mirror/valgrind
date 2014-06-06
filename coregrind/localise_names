@@ -1,0 +1,28 @@
+#!/bin/sh
+
+if [ $# != 2 ]
+then 
+   echo "usage: localise_names input_file.o output_file.o"
+   exit 1
+fi
+
+rm -f tmpnames1 tmpnames2
+
+# get global text/data names into tmpnames1
+
+nm $1 | grep " T " > tmpnames1
+nm $1 | grep " D " >> tmpnames1
+
+# expecting tmpnames1 to look like this
+# 00016904 T AMD64AMode_IR
+# 00016958 T AMD64AMode_IRRS
+
+cut -c 20- < tmpnames1 | grep -v _start_valgrind > tmpnames2
+
+# tmpnames2 now holds the names we need to change from global
+# to local scope.  Hand this to objcopy to do the hard work of
+# messing with ELF object internals.
+
+objcopy --localize-symbols tmpnames2 $1 $2
+
+rm -f tmpnames1 tmpnames2

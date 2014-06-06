@@ -1,0 +1,146 @@
+{
+   CNK-BASELINE-1
+   Memcheck:Leak
+   fun:memalign
+   fun:posix_memalign
+   fun:_ZN4PAMI6Memory17HeapMemoryManager8*
+   ...
+   fun:_GLOBAL__I___global
+}
+
+{
+   CNK-BASELINE-2
+   Memcheck:Leak
+   fun:memalign
+   fun:posix_memalign
+   fun:_ZN4PAMI6Memory17HeapMemoryManager8*
+   fun:_ZN4PAMI6Memory13MemoryManager17Mem*
+   ...
+   fun:_ZN4PAMI6Client18createContext_impl*
+   fun:PAMI_Context_createv
+}
+
+{
+   CNK-BASELINE-3
+   Memcheck:Leak
+   fun:memalign
+   fun:posix_memalign
+   fun:_ZN4PAMI6Memory17HeapMemoryManager8*
+   ...
+   fun:_ZN4PAMI6Client18createContext_impl*
+   fun:PAMI_Context_createv
+}
+
+{
+   CNK-BASELINE-4
+   Memcheck:Leak
+   fun:memalign
+   fun:posix_memalign
+   fun:_ZN4PAMI6Memory17HeapMemoryManager8*
+   ...
+   fun:PAMI_Client_create
+   fun:MPID_Init
+}
+
+{
+   CNK-BASELINE-5
+   Memcheck:Leak
+   fun:malloc
+   fun:_ZN4PAMI6Device2MU21Collective2Devi*
+   fun:_ZN4PAMI6Client18createContext_impl*
+   fun:PAMI_Context_createv
+}
+
+{
+   CNK-BASELINE-6
+   Memcheck:Leak
+   fun:malloc
+   fun:_ZN4PAMI6Device2MU7Factory13generat*
+   fun:_ZN4PAMI18PlatformDeviceList8genera*
+   fun:_ZN4PAMI6Client18createContext_impl*
+   fun:PAMI_Context_createv
+}
+
+{
+   CNK-BASELINE-7
+   Memcheck:Leak
+   fun:_Znwm
+   fun:_ZNSt6vectorIPvSaIS0_EE9push_backER*
+   fun:_ZN4PAMI15MemoryAllocatorILj*
+   ...
+   fun:_ZN4PAMI6Client18createContext_impl*
+   fun:PAMI_Context_createv
+}
+
+{
+   CNK-BASELINE-8
+   Memcheck:Leak
+   fun:_Znwm
+   ...
+   fun:_ZN4PAMI6Client18createContext_impl*
+   fun:PAMI_Context_createv
+   fun:MPID_Init
+}
+
+{
+   CNK-BASELINE-9
+   Memcheck:Leak
+   fun:memalign
+   fun:posix_memalign
+   fun:_ZN4PAMI6Memory17HeapMemoryManager8*
+   fun:_ZN4PAMI8Protocol4Send5EagerINS_6De*
+   fun:PAMI_Dispatch_set
+}
+
+{
+   CNK-BASELINE-10
+   Memcheck:Leak
+   fun:calloc
+   fun:init_default_collops
+   fun:MPIR_Comm_commit
+   fun:MPID_Init
+   fun:MPIR_Init_thread
+   fun:PMPI_Init
+}
+
+{
+   CNK-BASELINE-11
+   Memcheck:Leak
+   fun:malloc
+   fun:MPIDI_Coll_comm_destroy
+   fun:MPIDI_Comm_destroy
+   fun:MPIR_Comm_delete_internal
+   fun:MPIR_Comm_release_always
+   fun:MPID_Finalize
+}
+
+{
+   CNK-BASELINE-12
+   Memcheck:Leak
+   fun:memalign
+   fun:posix_memalign
+   fun:_ZN4PAMI6Memory17HeapMemoryManager8*
+   fun:PAMI_Extension_open
+   fun:MPIDI_Mutex_initialize
+   fun:MPIR_Init_thread
+   fun:PMPI_Init
+}
+
+{
+   CNK-BASELINE-13
+   Memcheck:Leak
+   fun:_Znwm
+   fun:_ZNSt8_Rb_treeIjSt4pairIKjSt3mapIjS*
+   fun:_ZNSt3mapIjS_IjS_ImN4PAMI8Geometry9*
+   fun:PAMI_Geometry_algorithms_num
+}
+
+{
+   CNK-BASELINE-14
+   Memcheck:Leak
+   fun:memalign
+   fun:posix_memalign
+   fun:_ZN4PAMI6Memory17HeapMemoryManager8*
+   fun:PAMI_Geometry_destroy
+   fun:geom_destroy_wrapper
+}

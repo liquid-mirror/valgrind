@@ -1,0 +1,14 @@
+--- power_ISA2_05.stderr.exp	2012-09-07 05:51:27.000000000 -0700
++++ power_ISA2_05.stderr.out	2012-11-11 08:05:54.812599000 -0800
+@@ -1,10 +1 @@
+-
+-
+-HEAP SUMMARY:
+-    in use at exit: 0 bytes in 0 blocks
+-  total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+-
+-For a detailed leak analysis, rerun with: --leak-check=full
+-
+-For counts of detected and suppressed errors, rerun with: -v
+-ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
++valgrind: foo: command not found

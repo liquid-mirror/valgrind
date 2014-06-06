@@ -1,0 +1,19 @@
+As of 17 April 2014:
+
+* QVFRE, QVFRES (reciprocal estimate):
+  QVFRSQRTES (reciprocal square-root estimate):
+  Valgrind computes a more exact result than the hardware does.
+
+* Store-indicate instructions: these generate SIGFPE if the stored
+  value is a NaN or Infinity, regardless of the value of SNEE and SIEE
+  for the thread.  The implemented behaviour appears to be identical
+  to how QPX on the compute nodes is actually configured.
+
+* QVFPERM: the documentation specifies that for some operand values,
+  the resulting value is "Undefined".  The implemented behaviour in
+  such cases is identical to that of the hardware, as far as I can
+  tell.
+
+* Misaligned loads/stores: it may be that Valgrind is stricter than
+  the hardware, and will generate SIGBUS for some misaligned accesses
+  that succeed when run natively.  This requires further investigation.
