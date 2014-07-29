@@ -43,7 +43,7 @@
  * (2) undoes C++ demangling, if 'do_cxx_demangle' is True.  */
 extern 
 void VG_(demangle) ( Bool do_cxx_demangling, Bool do_z_demangling,
-                     HChar* orig, HChar* result, Int result_size );
+                     HChar* orig, HChar** result );
 
 /* Demangle a Z-encoded name as described in pub_tool_redir.h. 
    Z-encoded names are used by Valgrind for doing function 
@@ -59,8 +59,8 @@ void VG_(demangle) ( Bool do_cxx_demangling, Bool do_z_demangling,
 
 extern 
 Bool VG_(maybe_Z_demangle) ( const HChar* sym, 
-                             /*OUT*/HChar* so, Int soLen,
-                             /*OUT*/HChar* fn, Int fnLen,
+                             /*OUT*/HChar** so,
+                             /*OUT*/HChar** fn,
                              /*OUT*/Bool* isWrap,
                              /*OUT*/Int*  eclassTag,
                              /*OUT*/Int*  eclassPrio );

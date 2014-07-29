@@ -385,8 +385,6 @@ static HChar const* advance_to_comma ( HChar const* c ) {
    topspecs list, and (2) figure out what new binding are now active,
    and, as a result, add them to the actives mapping. */
 
-#define N_DEMANGLED 256
-
 void VG_(redir_notify_new_DebugInfo)( DebugInfo* newdi )
 {
    Bool         ok, isWrap;
@@ -398,8 +396,8 @@ void VG_(redir_notify_new_DebugInfo)( DebugInfo* newdi )
    HChar*       sym_name_pri;
    HChar**      sym_names_sec;
    Addr         sym_addr, sym_toc;
-   HChar        demangled_sopatt[N_DEMANGLED];
-   HChar        demangled_fnpatt[N_DEMANGLED];
+   HChar*       demangled_sopatt;
+   HChar*       demangled_fnpatt;
    Bool         check_ppcTOCs = False;
    Bool         isText;
    const HChar* newdi_soname;
@@ -509,8 +507,8 @@ void VG_(redir_notify_new_DebugInfo)( DebugInfo* newdi )
       HChar** names;
       for (names = names_init; *names; names++) {
          ok = VG_(maybe_Z_demangle)( *names,
-                                     demangled_sopatt, N_DEMANGLED,
-                                     demangled_fnpatt, N_DEMANGLED,
+                                     &demangled_sopatt,
+                                     &demangled_fnpatt,
                                      &isWrap, &becTag, &becPrio );
          /* ignore data symbols */
          if (!isText)
@@ -602,8 +600,8 @@ void VG_(redir_notify_new_DebugInfo)( DebugInfo* newdi )
          for (names = names_init; *names; names++) {
             ok = isText
                  && VG_(maybe_Z_demangle)( 
-                       *names, demangled_sopatt, N_DEMANGLED,
-                       demangled_fnpatt, N_DEMANGLED, &isWrap, NULL, NULL );
+                       *names, &demangled_sopatt,
+                       &demangled_fnpatt, &isWrap, NULL, NULL );
             if (!ok)
                /* not a redirect.  Ignore. */
                continue;
@@ -684,8 +682,6 @@ void VG_(redir_notify_new_DebugInfo)( DebugInfo* newdi )
       specifications we might have. */
    handle_require_text_symbols(newdi);
 }
-
-#undef N_DEMANGLED
 
 /* Add a new target for an indirect function. Adds a new redirection
    for the indirection function with address old_from that redirects
@@ -1637,13 +1633,17 @@ static void show_spec ( const HChar* left, Spec* spec )
 static void show_active ( const HChar* left, Active* act )
 {
    Bool ok;
-   HChar name1[64] = "";
-   HChar name2[64] = "";
-   name1[0] = name2[0] = 0;
-   ok = VG_(get_fnname_w_offset)(act->from_addr, name1, 64);
-   if (!ok) VG_(strcpy)(name1, "???");
-   ok = VG_(get_fnname_w_offset)(act->to_addr, name2, 64);
-   if (!ok) VG_(strcpy)(name2, "???");
+   HChar *buf;
+
+   ok = VG_(get_fnname_w_offset)(act->from_addr, &buf);
+   if (!ok) buf = (HChar *)"???";  // FIXME: constification
+   // Stash away name1
+   HChar name1[VG_(strlen)(buf) + 1];
+   VG_(strcpy)(name1, buf);
+
+   HChar *name2;
+   ok = VG_(get_fnname_w_offset)(act->to_addr, &name2);
+   if (!ok) name2 = (HChar *)"???";  // FIXME: constification
 
    VG_(message)(Vg_DebugMsg, "%s0x%08llx (%20s) %s-> (%04d.%d) 0x%08llx %s\n", 
                              left, 

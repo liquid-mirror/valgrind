@@ -716,15 +716,13 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       frame. */
    lr_is_first_RA = False;
    {
-#     define M_VG_ERRTXT 1000
-      HChar buf_lr[M_VG_ERRTXT], buf_ip[M_VG_ERRTXT];
+      HChar *buf_lr, *buf_ip;
       /* The following conditional looks grossly inefficient and
          surely could be majorly improved, with not much effort. */
-      if (VG_(get_fnname_raw) (lr, buf_lr, M_VG_ERRTXT))
-         if (VG_(get_fnname_raw) (ip, buf_ip, M_VG_ERRTXT))
-            if (VG_(strncmp)(buf_lr, buf_ip, M_VG_ERRTXT))
+      if (VG_(get_fnname_raw) (lr, &buf_lr))
+         if (VG_(get_fnname_raw) (ip, &buf_ip))
+            if (VG_(strcmp)(buf_lr, buf_ip))
                lr_is_first_RA = True;
-#     undef M_VG_ERRTXT
    }
 
    if (sps) sps[0] = fp; /* NB. not sp */

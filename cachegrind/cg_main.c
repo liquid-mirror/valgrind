@@ -59,7 +59,6 @@
 
 #define MIN_LINE_SIZE         16
 #define FILE_LEN              VKI_PATH_MAX
-#define FN_LEN                256
 
 /*------------------------------------------------------------*/
 /*--- Options                                              ---*/
@@ -214,7 +213,7 @@ static HChar* get_perm_string(HChar* s)
 /*------------------------------------------------------------*/
 
 static void get_debug_info(Addr instr_addr, HChar file[FILE_LEN],
-                           HChar fn[FN_LEN], UInt* line)
+                           HChar **fn, UInt* line)
 {
    HChar dir[FILE_LEN];
    Bool found_dirname;
@@ -224,14 +223,14 @@ static void get_debug_info(Addr instr_addr, HChar file[FILE_LEN],
                              dir,  FILE_LEN, &found_dirname,
                              line
                           );
-   Bool found_fn        = VG_(get_fnname)(instr_addr, fn, FN_LEN);
+   Bool found_fn        = VG_(get_fnname)(instr_addr, fn);
 
    if (!found_file_line) {
       VG_(strcpy)(file, "???");
       *line = 0;
    }
    if (!found_fn) {
-      VG_(strcpy)(fn,  "???");
+      *fn = (HChar *)"???";    // FIXME: constification
    }
 
    if (found_dirname) {
@@ -255,12 +254,12 @@ static void get_debug_info(Addr instr_addr, HChar file[FILE_LEN],
 // Returns a pointer to the line CC, creates a new one if necessary.
 static LineCC* get_lineCC(Addr origAddr)
 {
-   HChar   file[FILE_LEN], fn[FN_LEN];
+   HChar   file[FILE_LEN], *fn;
    UInt    line;
    CodeLoc loc;
    LineCC* lineCC;
 
-   get_debug_info(origAddr, file, fn, &line);
+   get_debug_info(origAddr, file, &fn, &line);
 
    loc.file = file;
    loc.fn   = fn;
@@ -1385,6 +1384,7 @@ static void fprint_CC_table_and_calc_totals(void)
 {
    Int     i, fd;
    SysRes  sres;
+   // FIXME: use an xarray and VG_(xaprintf) instead 
    HChar    buf[512];
    HChar   *currFile = NULL, *currFn = NULL;
    LineCC* lineCC;

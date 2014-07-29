@@ -82,15 +82,12 @@ void VG_(describe_addr) ( Addr a, /*OUT*/AddrInfo* ai )
    }
    /* -- Have a look at the low level data symbols - perhaps it's in
       there. -- */
-   VG_(memset)( &ai->Addr.DataSym.name,
-                0, sizeof(ai->Addr.DataSym.name));
+   HChar *name;
    if (VG_(get_datasym_and_offset)(
-             a, &ai->Addr.DataSym.name[0],
-             sizeof(ai->Addr.DataSym.name)-1,
+             a, &name,
              &ai->Addr.DataSym.offset )) {
+      ai->Addr.DataSym.name = VG_(strdup)("mc.da.dsname", name);
       ai->tag = Addr_DataSym;
-      vg_assert( ai->Addr.DataSym.name
-                    [ sizeof(ai->Addr.DataSym.name)-1 ] == 0);
       return;
    }
    /* -- Perhaps it's on a thread's stack? -- */
@@ -198,6 +195,7 @@ void VG_(clear_addrinfo) ( AddrInfo* ai)
          break;
 
       case Addr_DataSym:
+         VG_(free)(ai->Addr.DataSym.name);
          break;
 
       case Addr_Variable:
@@ -285,7 +283,7 @@ static void pp_addrinfo_WRK ( Addr a, AddrInfo* ai, Bool mc, Bool maybe_gcc )
                     xpost );
          if (ai->Addr.Stack.frameNo != -1 && ai->Addr.Stack.IP != 0) {
 #define     FLEN                256
-            HChar fn[FLEN];
+            HChar *fn;
             Bool  hasfn;
             HChar file[FLEN];
             Bool  hasfile;
@@ -293,7 +291,6 @@ static void pp_addrinfo_WRK ( Addr a, AddrInfo* ai, Bool mc, Bool maybe_gcc )
             Bool haslinenum;
             PtrdiffT offset;
 
-            hasfn = VG_(get_fnname)(ai->Addr.Stack.IP, fn, FLEN);
             if (VG_(get_inst_offset_in_function)( ai->Addr.Stack.IP,
                                                   &offset))
                haslinenum = VG_(get_linenum) (ai->Addr.Stack.IP - offset,
@@ -308,6 +305,8 @@ static void pp_addrinfo_WRK ( Addr a, AddrInfo* ai, Bool mc, Bool maybe_gcc )
                VG_(strncat) (file, strlinenum, 
                              FLEN - VG_(strlen)(file) - 1);
             }
+
+            hasfn = VG_(get_fnname)(ai->Addr.Stack.IP, &fn);
 
             if (hasfn || hasfile)
                VG_(emit)( "%sin frame #%d, created by %s (%s)%s\n",

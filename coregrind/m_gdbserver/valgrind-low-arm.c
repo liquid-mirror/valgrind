@@ -144,14 +144,14 @@ Addr thumb_pc (Addr pc)
 
    // pc aligned on 4 bytes. We need to use debug info.
    {
-      HChar fnname[200]; // ??? max size
+      HChar *fnname;
       Addr entrypoint;
       Addr ptoc; // unused but needed.
       // If this is a thumb instruction, we need to ask
       // the debug info with the bit0 set
       // (why can't debug info do that for us ???)
       // (why if this is a 4 bytes thumb instruction ???)
-      if (VG_(get_fnname_raw) (pc | 1, fnname, 200)) {
+      if (VG_(get_fnname_raw) (pc | 1, &fnname)) {
          if (VG_(lookup_symbol_SLOW)( "*", fnname, &entrypoint, &ptoc )) {
             dlog (1, "fnname %s lookupsym %p => %p %s.\n",
                   fnname, C2v(entrypoint), C2v(pc),
