@@ -4192,20 +4192,8 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, const HChar* s,
 
 
 /*------------------------------------------------------------*/
-/*--- Functions called directly from generated code:       ---*/
-/*--- Load/store handlers.                                 ---*/
+/*--- Definition of MASK                                   ---*/
 /*------------------------------------------------------------*/
-
-/* Types:  LOADV32, LOADV16, LOADV8 are:
-               UWord fn ( Addr a )
-   so they return 32-bits on 32-bit machines and 64-bits on
-   64-bit machines.  Addr has the same size as a host word.
-
-   LOADV64 is always  ULong fn ( Addr a )
-
-   Similarly for STOREV8, STOREV16, STOREV32, the supplied vbits
-   are a UWord, and for STOREV64 they are a ULong.
-*/
 
 /* If any part of '_a' indicated by the mask is 1, either '_a' is not
    naturally '_sz/8'-aligned, or it exceeds the range covered by the
@@ -4281,6 +4269,92 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, const HChar* s,
            = 0xFFFF'FFF0'0000'0007
 */
 
+
+/*------------------------------------------------------------*/
+/*--- Creating NCode templates                             ---*/
+/*------------------------------------------------------------*/
+
+static ULong mc_LOADV64le_slow ( Addr a );
+
+static void* ncode_alloc ( UInt n ) {
+   return VG_(malloc)("mc.ncode_alloc (NCode, permanent)", n);
+}
+
+static NReg mkNRegINVALID ( void ) {
+   return mkNReg(Nrr_INVALID, 0);
+}
+
+static NReg* mkNRegVec1 ( NAlloc na, NReg r0 ) {
+   NReg* vec = na(2 * sizeof(NReg));
+   vec[0] = r0;
+   vec[1] = mkNRegINVALID();
+   return vec;
+}
+
+NCodeTemplate* MC_(tmpl__LOADV64le_on_64) = NULL;
+
+static NCodeTemplate* mk_tmpl__LOADV64le_on_64 ( NAlloc na )
+{
+   NInstr** hot  = na((11+1) * sizeof(NInstr*));
+   NInstr** cold = na((6+1) * sizeof(NInstr*));
+
+   NReg rINVALID = mkNRegINVALID();
+
+   NReg r0 = mkNReg(Nrr_Result,   0);
+   NReg a0 = mkNReg(Nrr_Argument, 0);
+   NReg s0 = mkNReg(Nrr_Scratch,  0);
+
+   hot[0]  = NInstr_SetFlagsWri (na,  Nsf_TEST, a0, MASK(8));
+   hot[1]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 4));
+   hot[2]  = NInstr_ShiftWri    (na,  Nsh_SHR, s0, a0, 16);
+   hot[3]  = NInstr_LoadU       (na,  s0, NEA_IRS(na, (HWord)&primary_map[0], 
+                                                  s0, 3), 8);
+   hot[4]  = NInstr_AluWri      (na,  Nalu_AND, r0, a0, 0xFFFF);
+   hot[5]  = NInstr_ShiftWri    (na,  Nsh_SHR, r0, r0, 3);
+   hot[6]  = NInstr_LoadU       (na,  r0, NEA_RRS(na, s0, r0, 1), 2);
+   hot[7]  = NInstr_SetFlagsWri (na,  Nsf_CMP, r0, VA_BITS16_DEFINED);
+   hot[8]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 0));
+   hot[9]  = NInstr_ImmW        (na,  r0, V_BITS64_DEFINED);
+   hot[10] = NInstr_Nop         (na);
+
+   cold[0] = NInstr_MovW        (na,  s0, r0);
+   cold[1] = NInstr_ImmW        (na,  r0, V_BITS64_UNDEFINED);
+   cold[2] = NInstr_SetFlagsWri (na,  Nsf_CMP, s0, VA_BITS16_UNDEFINED);
+   cold[3] = NInstr_Branch      (na,  Ncc_Z, mkNLabel(Nlz_Hot, 10));
+   cold[4] = NInstr_Call        (na,  rINVALID, r0, mkNRegVec1(na, a0),
+                                      (void*)& mc_LOADV64le_slow,
+                                      "mc_LOADV64le_slow");
+   cold[5] = NInstr_Branch(na,  Ncc_ALWAYS, mkNLabel(Nlz_Hot, 10));
+
+   hot[11] = cold[6] = NULL;
+   NCodeTemplate* tmpl
+      = mkNCodeTemplate(na,"LOADV64le_on_64",
+                        /*res, parms, scratch*/1, 1, 1, hot, cold);
+   return tmpl;
+}
+
+void MC_(create_ncode_templates) ( void )
+{
+   tl_assert(MC_(tmpl__LOADV64le_on_64) == NULL);
+   MC_(tmpl__LOADV64le_on_64) = mk_tmpl__LOADV64le_on_64(ncode_alloc);
+}
+
+
+/*------------------------------------------------------------*/
+/*--- Functions called directly from generated code:       ---*/
+/*--- Load/store handlers.                                 ---*/
+/*------------------------------------------------------------*/
+
+/* Types:  LOADV32, LOADV16, LOADV8 are:
+               UWord fn ( Addr a )
+   so they return 32-bits on 32-bit machines and 64-bits on
+   64-bit machines.  Addr has the same size as a host word.
+
+   LOADV64 is always  ULong fn ( Addr a )
+
+   Similarly for STOREV8, STOREV16, STOREV32, the supplied vbits
+   are a UWord, and for STOREV64 they are a ULong.
+*/
 
 /* ------------------------ Size = 16 ------------------------ */
 
@@ -4398,6 +4472,10 @@ VG_REGPARM(1) ULong MC_(helperc_LOADV64le) ( Addr a )
    return mc_LOADV64(a, False);
 }
 
+static ULong mc_LOADV64le_slow ( Addr a )
+{
+   return mc_LOADVn_slow( a, 64, False/*!isBigEndian*/ );
+}
 
 static INLINE
 void mc_STOREV64 ( Addr a, ULong vbits64, Bool isBigEndian )
@@ -6660,6 +6738,12 @@ static void mc_post_clo_init ( void )
    /* Do not check definedness of guest state if --undef-value-errors=no */
    if (MC_(clo_mc_level) >= 2)
       VG_(track_pre_reg_read) ( mc_pre_reg_read );
+
+   /* The NCode templates also need to be created, but this is done
+      later, at the first call to MC_(instrument), so as to allow VEX
+      to more be more fully initialised.  In particular, at this
+      point, we can create the templates, but we can't yet print them,
+      which is inconvenient for debugging.  Create them later on. */
 }
 
 static void print_SM_info(const HChar* type, Int n_SMs)

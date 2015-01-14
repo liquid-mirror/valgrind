@@ -4582,9 +4582,39 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
       the address (shadow) to 'defined' following the test. */
    complainIfUndefined( mce, addr, guard );
 
+   /* Generate the actual address into addrAct. */
+   IRAtom* addrAct;
+   if (bias == 0) {
+      addrAct = addr;
+   } else {
+      IROp    mkAdd;
+      IRAtom* eBias;
+      IRType  tyAddr  = mce->hWordTy;
+      tl_assert( tyAddr == Ity_I32 || tyAddr == Ity_I64 );
+      mkAdd   = tyAddr==Ity_I32 ? Iop_Add32 : Iop_Add64;
+      eBias   = tyAddr==Ity_I32 ? mkU32(bias) : mkU64(bias);
+      addrAct = assignNew('V', mce, tyAddr, binop(mkAdd, addr, eBias) );
+   }
+
+   /* We need to have a place to park the V bits we're just about to
+      read. */
+   ty = shadowTypeV(ty);
+   IRTemp datavbits = newTemp(mce, ty, VSh);
+
+   /* ------ BEGIN inline NCode ? ------ */
+   if (guard == NULL
+       && end == Iend_LE && ty == Ity_I64 && mce->hWordTy == Ity_I64) {
+      /* Unconditional LOAD64le on 64 bit host.  Generate inline code. */
+      NCodeTemplate* tmpl = MC_(tmpl__LOADV64le_on_64);
+      IRAtom**       args = mkIRExprVec_1( addrAct );
+      IRTemp*        ress = mkIRTempVec_1( datavbits );
+      stmt( 'V', mce, IRStmt_NCode(tmpl, args, ress) );
+      return mkexpr(datavbits);
+   }
+   /* ------ END inline NCode ? ------ */
+
    /* Now cook up a call to the relevant helper function, to read the
       data V bits from shadow memory. */
-   ty = shadowTypeV(ty);
 
    void*        helper           = NULL;
    const HChar* hname            = NULL;
@@ -4644,24 +4674,6 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
 
    tl_assert(helper);
    tl_assert(hname);
-
-   /* Generate the actual address into addrAct. */
-   IRAtom* addrAct;
-   if (bias == 0) {
-      addrAct = addr;
-   } else {
-      IROp    mkAdd;
-      IRAtom* eBias;
-      IRType  tyAddr  = mce->hWordTy;
-      tl_assert( tyAddr == Ity_I32 || tyAddr == Ity_I64 );
-      mkAdd   = tyAddr==Ity_I32 ? Iop_Add32 : Iop_Add64;
-      eBias   = tyAddr==Ity_I32 ? mkU32(bias) : mkU64(bias);
-      addrAct = assignNew('V', mce, tyAddr, binop(mkAdd, addr, eBias) );
-   }
-
-   /* We need to have a place to park the V bits we're just about to
-      read. */
-   IRTemp datavbits = newTemp(mce, ty, VSh);
 
    /* Here's the call. */
    IRDirty* di;
@@ -6225,6 +6237,13 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    tl_assert(sizeof(Int)    == 4);
 
    tl_assert(MC_(clo_mc_level) >= 1 && MC_(clo_mc_level) <= 3);
+
+   /* If this is the first call, set up the NCode templates. */
+   static Bool ncode_templates_created = False;
+   if (!ncode_templates_created) {
+      ncode_templates_created = True;
+      MC_(create_ncode_templates)();
+   }
 
    /* Set up SB */
    sb_out = deepCopyIRSBExceptStmts(sb_in);

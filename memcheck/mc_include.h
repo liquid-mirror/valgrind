@@ -596,7 +596,14 @@ extern Bool MC_(clo_show_mismatched_frees);
 /*--- Instrumentation                                      ---*/
 /*------------------------------------------------------------*/
 
-/* Functions defined in mc_main.c */
+/* NCode templates and template generators, defined in mc_main.c */
+
+void MC_(create_ncode_templates) ( void );
+
+extern NCodeTemplate* MC_(tmpl__LOADV64le_on_64);
+
+
+/* Helper functions defined in mc_main.c */
 
 /* For the fail_w_o functions, the UWord arg is actually the 32-bit
    origin tag and should really be UInt, but to be simple and safe

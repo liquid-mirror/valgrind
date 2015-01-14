@@ -1664,19 +1664,19 @@ Bool VG_(translate) ( ThreadId tid,
       hassle, because we don't expect them to get used often.  So
       don't bother. */
    if (allow_redirection) {
-      vta.disp_cp_chain_me_to_slowEP
+      vta.vda.disp_cp_chain_me_to_slowEP
          = VG_(fnptr_to_fnentry)( &VG_(disp_cp_chain_me_to_slowEP) );
-      vta.disp_cp_chain_me_to_fastEP
+      vta.vda.disp_cp_chain_me_to_fastEP
          = VG_(fnptr_to_fnentry)( &VG_(disp_cp_chain_me_to_fastEP) );
-      vta.disp_cp_xindir
+      vta.vda.disp_cp_xindir
          = VG_(fnptr_to_fnentry)( &VG_(disp_cp_xindir) );
    } else {
-      vta.disp_cp_chain_me_to_slowEP = NULL;
-      vta.disp_cp_chain_me_to_fastEP = NULL;
-      vta.disp_cp_xindir             = NULL;
+      vta.vda.disp_cp_chain_me_to_slowEP = NULL;
+      vta.vda.disp_cp_chain_me_to_fastEP = NULL;
+      vta.vda.disp_cp_xindir             = NULL;
    }
    /* This doesn't involve chaining and so is always allowable. */
-   vta.disp_cp_xassisted
+   vta.vda.disp_cp_xassisted
       = VG_(fnptr_to_fnentry)( &VG_(disp_cp_xassisted) );
 
    /* Sheesh.  Finally, actually _do_ the translation! */
