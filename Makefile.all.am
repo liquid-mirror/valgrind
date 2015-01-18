@@ -112,7 +112,7 @@ AM_CFLAGS_BASE = \
 	@FLAG_W_FORMAT_SECURITY@ \
 	@FLAG_FNO_STACK_PROTECTOR@ \
 	-fno-strict-aliasing \
-	-fno-builtin -O -g
+	-fno-builtin
 
 if COMPILER_IS_CLANG
 AM_CFLAGS_BASE += -Wno-cast-align -Wno-self-assign \
