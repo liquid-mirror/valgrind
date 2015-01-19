@@ -4274,7 +4274,8 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, const HChar* s,
 /*--- Creating NCode templates                             ---*/
 /*------------------------------------------------------------*/
 
-static ULong mc_LOADV64le_slow ( Addr a );
+VG_REGPARM(1) static ULong mc_LOADV64le_on_64_slow ( Addr a );
+VG_REGPARM(1) static ULong mc_LOADV32le_on_64_slow ( Addr a );
 
 static void* ncode_alloc ( UInt n ) {
    return VG_(malloc)("mc.ncode_alloc (NCode, permanent)", n);
@@ -4292,6 +4293,7 @@ static NReg* mkNRegVec1 ( NAlloc na, NReg r0 ) {
 }
 
 NCodeTemplate* MC_(tmpl__LOADV64le_on_64) = NULL;
+NCodeTemplate* MC_(tmpl__LOADV32le_on_64) = NULL;
 
 static NCodeTemplate* mk_tmpl__LOADV64le_on_64 ( NAlloc na )
 {
@@ -4322,8 +4324,8 @@ static NCodeTemplate* mk_tmpl__LOADV64le_on_64 ( NAlloc na )
    cold[2] = NInstr_SetFlagsWri (na,  Nsf_CMP, s0, VA_BITS16_UNDEFINED);
    cold[3] = NInstr_Branch      (na,  Ncc_Z, mkNLabel(Nlz_Hot, 10));
    cold[4] = NInstr_Call        (na,  rINVALID, r0, mkNRegVec1(na, a0),
-                                      (void*)& mc_LOADV64le_slow,
-                                      "mc_LOADV64le_slow");
+                                      (void*)& mc_LOADV64le_on_64_slow,
+                                      "mc_LOADV64le_on_64_slow");
    cold[5] = NInstr_Branch(na,  Ncc_ALWAYS, mkNLabel(Nlz_Hot, 10));
 
    hot[11] = cold[6] = NULL;
@@ -4333,10 +4335,54 @@ static NCodeTemplate* mk_tmpl__LOADV64le_on_64 ( NAlloc na )
    return tmpl;
 }
 
+static NCodeTemplate* mk_tmpl__LOADV32le_on_64 ( NAlloc na )
+{
+   NInstr** hot  = na((11+1) * sizeof(NInstr*));
+   NInstr** cold = na((6+1) * sizeof(NInstr*));
+
+   NReg rINVALID = mkNRegINVALID();
+
+   NReg r0 = mkNReg(Nrr_Result,   0);
+   NReg a0 = mkNReg(Nrr_Argument, 0);
+   NReg s0 = mkNReg(Nrr_Scratch,  0);
+
+   hot[0]  = NInstr_SetFlagsWri (na,  Nsf_TEST, a0, MASK(4));
+   hot[1]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 4));
+   hot[2]  = NInstr_ShiftWri    (na,  Nsh_SHR, s0, a0, 16);
+   hot[3]  = NInstr_LoadU       (na,  s0, NEA_IRS(na, (HWord)&primary_map[0], 
+                                                  s0, 3), 8);
+   hot[4]  = NInstr_AluWri      (na,  Nalu_AND, r0, a0, 0xFFFF);
+   hot[5]  = NInstr_ShiftWri    (na,  Nsh_SHR, r0, r0, 2);
+   hot[6]  = NInstr_LoadU       (na,  r0, NEA_RRS(na, s0, r0, 0), 1);
+   hot[7]  = NInstr_SetFlagsWri (na,  Nsf_CMP, r0, VA_BITS8_DEFINED);
+   hot[8]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 0));
+   hot[9]  = NInstr_ImmW        (na,  r0, 0xFFFFFFFF00000000ULL 
+                                          | (ULong)V_BITS32_DEFINED);
+   hot[10] = NInstr_Nop         (na);
+
+   cold[0] = NInstr_MovW        (na,  s0, r0);
+   cold[1] = NInstr_ImmW        (na,  r0, 0xFFFFFFFF00000000ULL
+                                          | (ULong)V_BITS32_UNDEFINED);
+   cold[2] = NInstr_SetFlagsWri (na,  Nsf_CMP, s0, VA_BITS8_UNDEFINED);
+   cold[3] = NInstr_Branch      (na,  Ncc_Z, mkNLabel(Nlz_Hot, 10));
+   cold[4] = NInstr_Call        (na,  rINVALID, r0, mkNRegVec1(na, a0),
+                                      (void*)& mc_LOADV32le_on_64_slow,
+                                      "mc_LOADV32le_on_64_slow");
+   cold[5] = NInstr_Branch(na,  Ncc_ALWAYS, mkNLabel(Nlz_Hot, 10));
+
+   hot[11] = cold[6] = NULL;
+   NCodeTemplate* tmpl
+      = mkNCodeTemplate(na,"LOADV32le_on_64",
+                        /*res, parms, scratch*/1, 1, 1, hot, cold);
+   return tmpl;
+}
+
 void MC_(create_ncode_templates) ( void )
 {
    tl_assert(MC_(tmpl__LOADV64le_on_64) == NULL);
+   tl_assert(MC_(tmpl__LOADV32le_on_64) == NULL);
    MC_(tmpl__LOADV64le_on_64) = mk_tmpl__LOADV64le_on_64(ncode_alloc);
+   MC_(tmpl__LOADV32le_on_64) = mk_tmpl__LOADV32le_on_64(ncode_alloc);
 }
 
 
@@ -4471,8 +4517,7 @@ VG_REGPARM(1) ULong MC_(helperc_LOADV64le) ( Addr a )
 {
    return mc_LOADV64(a, False);
 }
-
-static ULong mc_LOADV64le_slow ( Addr a )
+VG_REGPARM(1) static ULong mc_LOADV64le_on_64_slow ( Addr a )
 {
    return mc_LOADVn_slow( a, 64, False/*!isBigEndian*/ );
 }
@@ -4592,6 +4637,10 @@ VG_REGPARM(1) UWord MC_(helperc_LOADV32be) ( Addr a )
 VG_REGPARM(1) UWord MC_(helperc_LOADV32le) ( Addr a )
 {
    return mc_LOADV32(a, False);
+}
+VG_REGPARM(1) static ULong mc_LOADV32le_on_64_slow ( Addr a )
+{
+   return mc_LOADVn_slow( a, 32, False/*!isBigEndian*/ );
 }
 
 

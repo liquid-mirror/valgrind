@@ -4556,6 +4556,23 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
 }
 
 
+/* Checks to see if a guard for expr2vbits_Load_WRK denotes 'always true'.
+   Either by being NULL or by being the constant 1:I1. */
+static Bool guardIsAlwaysTrue ( IRAtom* guard )
+{
+   if (guard == NULL)
+      return True;
+   if (guard->tag == Iex_Const) {
+      IRConst* c = guard->Iex.Const.con;
+      tl_assert(c->tag == Ico_U1); /* else ill-typed IR */
+      if (c->Ico.U1 == True)  return True;
+      if (c->Ico.U1 == False) return False;
+      tl_assert(0); /* invalid constant */
+   }
+   return False;
+} 
+
+
 /* Worker function -- do not call directly.  See comments on
    expr2vbits_Load for the meaning of |guard|.
 
@@ -4599,23 +4616,40 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
    /* We need to have a place to park the V bits we're just about to
       read. */
    ty = shadowTypeV(ty);
-   IRTemp datavbits = newTemp(mce, ty, VSh);
+   /* ty is now the shadow type for the load. */
 
    /* ------ BEGIN inline NCode ? ------ */
-   if (guard == NULL
-       && end == Iend_LE && ty == Ity_I64 && mce->hWordTy == Ity_I64) {
-      /* Unconditional LOAD64le on 64 bit host.  Generate inline code. */
-      NCodeTemplate* tmpl = MC_(tmpl__LOADV64le_on_64);
-      IRAtom**       args = mkIRExprVec_1( addrAct );
-      IRTemp*        ress = mkIRTempVec_1( datavbits );
-      stmt( 'V', mce, IRStmt_NCode(tmpl, args, ress) );
-      return mkexpr(datavbits);
+   if (guardIsAlwaysTrue(guard) && mce->hWordTy == Ity_I64 && end == Iend_LE) {
+      if (ty == Ity_I64) {
+         /* Unconditional LOAD64le on 64 bit host.  Generate inline code. */
+         IRTemp         datavbits64 = newTemp(mce, Ity_I64, VSh);
+         NCodeTemplate* tmpl        = MC_(tmpl__LOADV64le_on_64);
+         IRAtom**       args        = mkIRExprVec_1( addrAct );
+         IRTemp*        ress        = mkIRTempVec_1( datavbits64 );
+         stmt( 'V', mce, IRStmt_NCode(tmpl, args, ress) );
+         return mkexpr(datavbits64);
+      }
+      if (ty == Ity_I32) {
+         /* Unconditional LOAD32le on 64 bit host.  Generate inline code. */
+         IRTemp         datavbits64 = newTemp(mce, Ity_I64, VSh);
+         NCodeTemplate* tmpl        = MC_(tmpl__LOADV32le_on_64);
+         IRAtom**       args        = mkIRExprVec_1( addrAct );
+         IRTemp*        ress        = mkIRTempVec_1( datavbits64 );
+         /* The NCode block produces a 64 bit value, but we need to
+            truncate it to 32 bits. */
+         stmt( 'V', mce, IRStmt_NCode(tmpl, args, ress) );
+         IRAtom* datavbits32
+           = assignNew('V', mce, Ity_I32, unop(Iop_64to32, mkexpr(datavbits64)));
+         return datavbits32;
+      }
+      /* else fall through */
    }
    /* ------ END inline NCode ? ------ */
 
    /* Now cook up a call to the relevant helper function, to read the
       data V bits from shadow memory. */
 
+   IRTemp       datavbits        = newTemp(mce, ty, VSh);
    void*        helper           = NULL;
    const HChar* hname            = NULL;
    Bool         ret_via_outparam = False;
