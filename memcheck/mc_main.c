@@ -4309,11 +4309,11 @@ static NCodeTemplate* mk_tmpl__LOADV64le_on_64 ( NAlloc na )
    hot[0]  = NInstr_SetFlagsWri (na,  Nsf_TEST, a0, MASK(8));
    hot[1]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 4));
    hot[2]  = NInstr_ShiftWri    (na,  Nsh_SHR, s0, a0, 16);
-   hot[3]  = NInstr_LoadU       (na,  s0, NEA_IRS(na, (HWord)&primary_map[0], 
-                                                  s0, 3), 8);
+   hot[3]  = NInstr_LoadU       (na,  8, s0, NEA_IRS(na, (HWord)&primary_map[0], 
+                                                         s0, 3));
    hot[4]  = NInstr_AluWri      (na,  Nalu_AND, r0, a0, 0xFFFF);
    hot[5]  = NInstr_ShiftWri    (na,  Nsh_SHR, r0, r0, 3);
-   hot[6]  = NInstr_LoadU       (na,  r0, NEA_RRS(na, s0, r0, 1), 2);
+   hot[6]  = NInstr_LoadU       (na,  2, r0, NEA_RRS(na, s0, r0, 1));
    hot[7]  = NInstr_SetFlagsWri (na,  Nsf_CMP, r0, VA_BITS16_DEFINED);
    hot[8]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 0));
    hot[9]  = NInstr_ImmW        (na,  r0, V_BITS64_DEFINED);
@@ -4349,11 +4349,11 @@ static NCodeTemplate* mk_tmpl__LOADV32le_on_64 ( NAlloc na )
    hot[0]  = NInstr_SetFlagsWri (na,  Nsf_TEST, a0, MASK(4));
    hot[1]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 4));
    hot[2]  = NInstr_ShiftWri    (na,  Nsh_SHR, s0, a0, 16);
-   hot[3]  = NInstr_LoadU       (na,  s0, NEA_IRS(na, (HWord)&primary_map[0], 
-                                                  s0, 3), 8);
+   hot[3]  = NInstr_LoadU       (na,  8, s0, NEA_IRS(na, (HWord)&primary_map[0], 
+                                                         s0, 3));
    hot[4]  = NInstr_AluWri      (na,  Nalu_AND, r0, a0, 0xFFFF);
    hot[5]  = NInstr_ShiftWri    (na,  Nsh_SHR, r0, r0, 2);
-   hot[6]  = NInstr_LoadU       (na,  r0, NEA_RRS(na, s0, r0, 0), 1);
+   hot[6]  = NInstr_LoadU       (na,  1, r0, NEA_RRS(na, s0, r0, 0));
    hot[7]  = NInstr_SetFlagsWri (na,  Nsf_CMP, r0, VA_BITS8_DEFINED);
    hot[8]  = NInstr_Branch      (na,  Ncc_NZ, mkNLabel(Nlz_Cold, 0));
    hot[9]  = NInstr_ImmW        (na,  r0, 0xFFFFFFFF00000000ULL 
