@@ -1,3 +1,4 @@
+/* -*- mode: C; c-basic-offset: 3; -*- */
 
 /*--------------------------------------------------------------------*/
 /*--- Startup: create initial process image on Linux               ---*/
@@ -830,70 +831,28 @@ Addr setup_client_stack( void*  init_sp,
 }
 
 
-/* Allocate the client data segment.  It is an expandable anonymous
-   mapping abutting a shrinkable reservation of size max_dseg_size.
+/* Allocate the client data (brk) segment.
    The data segment starts at VG_(brk_base), which is page-aligned,
    and runs up to VG_(brk_limit), which isn't. */
-
 static void setup_client_dataseg ( SizeT max_size )
 {
-   Bool   ok;
-   SysRes sres;
-   Addr   anon_start  = VG_(brk_base);
-   SizeT  anon_size   = VKI_PAGE_SIZE;
-   Addr   resvn_start = anon_start + anon_size;
-   SizeT  resvn_size  = max_size - anon_size;
-
-   vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
-   vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
-   vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
-   vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
-
    /* Because there's been no brk activity yet: */
    vg_assert(VG_(brk_base) == VG_(brk_limit));
 
-   /* Try to create the data seg and associated reservation where
-      VG_(brk_base) says. */
-   ok = VG_(am_create_reservation)( 
-           resvn_start, 
-           resvn_size, 
-           SmLower, 
-           anon_size
-        );
+   SysRes sres = VG_(am_alloc_client_dataseg)( VG_(brk_base), max_size);
 
-   if (!ok) {
-      /* Hmm, that didn't work.  Well, let aspacem suggest an address
-         it likes better, and try again with that. */
-      anon_start = VG_(am_get_advisory_client_simple)
-                      ( 0/*floating*/, anon_size+resvn_size, &ok );
-      if (ok) {
-         resvn_start = anon_start + anon_size;
-         ok = VG_(am_create_reservation)( 
-                 resvn_start, 
-                 resvn_size, 
-                 SmLower, 
-                 anon_size
-              );
-         if (ok)
-            VG_(brk_base) = VG_(brk_limit) = anon_start;
-      }
-      /* that too might have failed, but if it has, we're hosed: there
-         is no Plan C. */
+   if (sr_isError(sres)) {
+      // FIXME: use VG_(fmsg) and before that revert_to_stderr
+      // FIXME: perhaps add VG_(err_fatal) ... that does all that.
+      VG_(printf)("valgrind: Can't allocate client data segment.\n");
+      VG_(printf)("valgrind: Cannot continue.  Sorry.\n\n");
+      VG_(exit)(1);
    }
-   vg_assert(ok);
 
-   /* We make the data segment (heap) executable because LinuxThreads on
-      ppc32 creates trampolines in this area.  Also, on x86/Linux the data
-      segment is RWX natively, at least according to /proc/self/maps.
-      Also, having a non-executable data seg would kill any program which
-      tried to create code in the data seg and then run it. */
-   sres = VG_(am_mmap_anon_fixed_client)( 
-             anon_start, 
-             anon_size, 
-             VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
-          );
-   vg_assert(!sr_isError(sres));
-   vg_assert(sr_Res(sres) == anon_start);
+   VG_(brk_base) = VG_(brk_limit) = sr_Res(sres);
+
+   VG_(debugLog)(2, "initimg", "brk_base  = %#lx\n", VG_(brk_base));
+   VG_(debugLog)(2, "initimg", "brk_limit = %#lx\n", VG_(brk_limit));
 }
 
 
@@ -991,11 +950,12 @@ IIFinaliseImageInfo VG_(ii_create_image)( IICreateImageInfo iicii,
       SizeT m1 = 1024 * 1024;
       SizeT m8 = 8 * m1;
       SizeT dseg_max_size = (SizeT)VG_(client_rlimit_data).rlim_cur;
-      VG_(debugLog)(1, "initimg", "Setup client data (brk) segment\n");
       if (dseg_max_size < m1) dseg_max_size = m1;
       if (dseg_max_size > m8) dseg_max_size = m8;
       dseg_max_size = VG_PGROUNDUP(dseg_max_size);
 
+      VG_(debugLog)(1, "initimg", "Setup client data (brk) segment: "
+                       "size will be %lu\n", dseg_max_size);
       setup_client_dataseg( dseg_max_size );
    }
 

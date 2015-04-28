@@ -308,6 +308,10 @@ extern Bool VG_(am_relocate_nooverlap_client)( /*OUT*/Bool* need_discard,
                                                Addr old_addr, SizeT old_len,
                                                Addr new_addr, SizeT new_len );
 
+
+// Client memory segments
+extern SysRes VG_(am_alloc_client_dataseg) ( Addr base, SizeT size );
+
 //--------------------------------------------------------------
 // Valgrind (non-client) thread stacks.  V itself runs on such
 // stacks.  The address space manager provides and suitably

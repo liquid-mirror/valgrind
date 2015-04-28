@@ -2892,6 +2892,65 @@ const NSegment *VG_(am_extend_into_adjacent_reservation_client)( Addr addr,
 }
 
 
+/*-----------------------------------------------------------------*/
+/*---                                                           ---*/
+/*--- Client memory segments                                    ---*/
+/*---                                                           ---*/
+/*-----------------------------------------------------------------*/
+
+/* Allocate the client data segment at address BASE with size SIZE. It is
+   an expandable anonymous mapping abutting a shrinkable reservation segment. 
+   BASE is the preferred address for the data segment but cannot be
+   guaranteed. Therefore, if successful, the function returns the actual
+   base address of the data segment, possibly different from BASE. If the
+   data segment could not be allocated the function returns an error. */
+SysRes VG_(am_alloc_client_dataseg) ( Addr base, SizeT size )
+{
+   Bool   ok;
+   Addr   anon_start  = base;
+   SizeT  anon_size   = VKI_PAGE_SIZE;
+   Addr   resvn_start = anon_start + anon_size;
+   SizeT  resvn_size  = size - anon_size;
+
+   aspacem_assert(size > anon_size);   // avoid wrap-around for resvn_size
+   aspacem_assert(VG_IS_PAGE_ALIGNED(anon_size));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(resvn_size));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(anon_start));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(resvn_start));
+
+   /* Try to create the data seg and associated reservation where
+      BASE says. */
+   ok = VG_(am_create_reservation)( resvn_start, resvn_size, 
+                                    SmLower, anon_size );
+
+   if (!ok) {
+      /* Hmm, that didn't work.  Well, let aspacem suggest an address
+         it likes better, and try again with that. */
+      anon_start = VG_(am_get_advisory_client_simple)
+                      ( 0/*floating*/, anon_size + resvn_size, &ok );
+      if (ok) {
+         resvn_start = anon_start + anon_size;
+         ok = VG_(am_create_reservation)( resvn_start, resvn_size, 
+                                          SmLower, anon_size );
+      }
+   }
+
+   /* That too might have failed, but if it has, we're hosed: there
+      is no Plan C. */
+   if (!ok)
+      return VG_(mk_SysRes_Error)( VKI_ENOMEM );
+
+   /* We make the data segment (heap) executable because LinuxThreads on
+      ppc32 creates trampolines in this area.  Also, on x86/Linux the data
+      segment is RWX natively, at least according to /proc/self/maps.
+      Also, having a non-executable data seg would kill any program which
+      tried to create code in the data seg and then run it. */
+   UInt prot = VKI_PROT_READ | VKI_PROT_WRITE | VKI_PROT_EXEC;
+
+   return VG_(am_mmap_anon_fixed_client)( anon_start, anon_size, prot );
+}
+
+
 /* --- --- --- resizing/move a mapping --- --- --- */
 
 #if HAVE_MREMAP
