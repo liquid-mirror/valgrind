@@ -1558,7 +1558,25 @@ VG_(am_is_valid_for_aspacem_minAddr)( Addr addr, const HChar **errmsg )
    return ok;
 }
 
-/* See description in pub_core_aspacemgr.h */
+
+/* Overall memory layout and initial segments:
+
+            |<------------ addressable  ----------->|
+            |                                       |
+ Addr_MIN   |<---- client ---->|<---- valgrind ---->|     Addr_MAX
+      +-----+------------------+-+------------------+-----+
+      |  R  |                  |R|                  |  R  |
+      +-----+------------------+-+------------------+-----+
+      0     ^                  ^                    ^     ff....ff
+            |                  |                    |
+            |                  |                    +--- aspacem_maxAddr
+            |                  +--- aspacem_vStart
+            +--- aspacem_cStart
+            |
+            +--- aspacem_minAddr
+
+   The function returns the highest addressable byte in the client stack.
+*/
 Addr VG_(am_startup) ( Addr sp_at_startup )
 {
    NSegment seg;
